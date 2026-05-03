@@ -81,6 +81,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                   status: draft.status,
                   latencyMs: draft.latencyMs,
                   detail: draft.detail,
+                  whisperPreview: draft.whisperBody.slice(0, 500),
                 },
                 "SAMA Student: draft ready",
               );

@@ -14,10 +14,10 @@ export type ChatwootMessageResult = {
 };
 
 function chatwootEnv() {
-  const base = process.env["CHATWOOT_BASE_URL"];
-  const token = process.env["CHATWOOT_API_ACCESS_TOKEN"];
+  const base = process.env["CHATWOOT_BASE_URL"]?.trim();
+  const token = process.env["CHATWOOT_API_ACCESS_TOKEN"]?.trim();
   if (!base || !token) return null;
-  return { base: base.replace(/\/$/, ""), token };
+  return { base: base.replace(/\/+$/, ""), token };
 }
 
 /**
