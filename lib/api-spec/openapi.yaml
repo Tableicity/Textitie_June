@@ -3,13 +3,23 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: SAMA Control Plane API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: tenants
+    description: Tenant management
+  - name: tiers
+    description: Pricing tier catalog
+  - name: injection
+    description: Conductor message injection
+  - name: webhooks
+    description: Inbound stub webhooks (Twilio / Chatwoot / n8n)
+  - name: stats
+    description: Control plane summary stats
 paths:
   /healthz:
     get:
@@ -24,6 +34,204 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /tiers:
+    get:
+      operationId: listTiers
+      tags: [tiers]
+      summary: List pricing tiers
+      responses:
+        "200":
+          description: List of tiers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tier"
+
+  /tenants:
+    get:
+      operationId: listTenants
+      tags: [tenants]
+      summary: List tenants
+      responses:
+        "200":
+          description: List of tenants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tenant"
+    post:
+      operationId: createTenant
+      tags: [tenants]
+      summary: Create tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantInput"
+      responses:
+        "201":
+          description: Created tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{id}:
+    get:
+      operationId: getTenant
+      tags: [tenants]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /inject:
+    post:
+      operationId: injectMessage
+      tags: [injection]
+      summary: Inject a message into the SAMA pipe
+      description: |
+        Conductor-authorized message injection. Forwards to the configured n8n
+        webhook (or stubs the call if N8N_WEBHOOK_URL is not set), records an
+        injection log entry, and returns the resulting log row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InjectMessageInput"
+      responses:
+        "201":
+          description: Injection accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InjectionLog"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /injections:
+    get:
+      operationId: listInjections
+      tags: [injection]
+      summary: List recent injection log entries
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Injection log entries (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InjectionLog"
+
+  /webhooks/{source}:
+    post:
+      operationId: receiveWebhook
+      tags: [webhooks]
+      summary: Receive an inbound webhook (stub)
+      description: |
+        Stubbed inbound webhook receiver for Twilio, Chatwoot, or n8n. Records
+        the raw payload to the webhook event log and acknowledges. No carrier
+        calls are made until the Conductor wires live credentials.
+      parameters:
+        - name: source
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [twilio, chatwoot, n8n]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookPayload"
+      responses:
+        "201":
+          description: Webhook recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEvent"
+
+  /webhook-events:
+    get:
+      operationId: listWebhookEvents
+      tags: [webhooks]
+      summary: List recent inbound webhook events
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Webhook events (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebhookEvent"
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [stats]
+      summary: Control plane summary
+      responses:
+        "200":
+          description: Aggregated control plane stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ControlPlaneStats"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +239,194 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    Region:
+      type: string
+      enum: [DE, EE, US]
+      description: Sovereign data residency region
+
+    TierCode:
+      type: string
+      enum: [starter, growth, enterprise]
+
+    Tier:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          $ref: "#/components/schemas/TierCode"
+        name:
+          type: string
+        description:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+      required: [id, code, name, description, features]
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+          description: Tenant slug, e.g. "acme" → acme.sama.io
+        name:
+          type: string
+        region:
+          $ref: "#/components/schemas/Region"
+        tierCode:
+          $ref: "#/components/schemas/TierCode"
+        sovereignToggle:
+          type: boolean
+          description: Enterprise-only DE residency lock
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, slug, name, region, tierCode, sovereignToggle, createdAt]
+
+    CreateTenantInput:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 2
+          maxLength: 64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        region:
+          $ref: "#/components/schemas/Region"
+        tierCode:
+          $ref: "#/components/schemas/TierCode"
+        sovereignToggle:
+          type: boolean
+          default: false
+      required: [slug, name, region, tierCode]
+
+    InjectMessageInput:
+      type: object
+      properties:
+        tenantId:
+          type: ["integer", "null"]
+          description: Optional tenant scope for the injection
+        to:
+          type: string
+          description: Destination phone number (E.164)
+          minLength: 3
+        body:
+          type: string
+          description: Message body
+          minLength: 1
+        conductorAuthorized:
+          type: boolean
+          default: true
+      required: [to, body]
+
+    InjectionStatus:
+      type: string
+      enum: [stubbed, sent, failed]
+
+    InjectionLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: ["integer", "null"]
+        toNumber:
+          type: string
+        body:
+          type: string
+        status:
+          $ref: "#/components/schemas/InjectionStatus"
+        responseSummary:
+          type: ["string", "null"]
+        conductorAuthorized:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenantId
+        - toNumber
+        - body
+        - status
+        - responseSummary
+        - conductorAuthorized
+        - createdAt
+
+    WebhookPayload:
+      type: object
+      additionalProperties: true
+
+    WebhookSource:
+      type: string
+      enum: [twilio, chatwoot, n8n]
+
+    WebhookEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        source:
+          $ref: "#/components/schemas/WebhookSource"
+        payload:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, source, payload, createdAt]
+
+    ControlPlaneStats:
+      type: object
+      properties:
+        tenantCount:
+          type: integer
+        injectionCount:
+          type: integer
+        webhookEventCount:
+          type: integer
+        injectionsLast24h:
+          type: integer
+        tenantsByRegion:
+          type: array
+          items:
+            type: object
+            properties:
+              region:
+                $ref: "#/components/schemas/Region"
+              count:
+                type: integer
+            required: [region, count]
+        tenantsByTier:
+          type: array
+          items:
+            type: object
+            properties:
+              tierCode:
+                $ref: "#/components/schemas/TierCode"
+              count:
+                type: integer
+            required: [tierCode, count]
+      required:
+        - tenantCount
+        - injectionCount
+        - webhookEventCount
+        - injectionsLast24h
+        - tenantsByRegion
+        - tenantsByTier

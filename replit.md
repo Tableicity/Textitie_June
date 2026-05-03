@@ -1,27 +1,39 @@
-# Workspace
+# Project SAMA — Control Plane (Gate 1)
 
-## Overview
+Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative). Master Conductor oversees tenants, fires injections into the SAMA pipe, watches inbound webhooks. Twilio / Chatwoot / n8n are stubbed at this gate — no live credentials.
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+## Architecture
 
-## Stack
+- **Monorepo**: pnpm workspace.
+- **Contract-first**: `lib/api-spec/openapi.yaml` → orval codegen → `@workspace/api-client-react` (React Query hooks) + `@workspace/api-zod` (zod schemas).
+- **DB**: Drizzle (Postgres) — schemas in `lib/db/src/schema/{tenants,tiers,injections,webhookEvents}.ts`.
+- **API**: `artifacts/api-server` (Express, port 8080, mounted at `/api`).
+- **UI**: `artifacts/eng-architect` (React + Vite + wouter + shadcn, mounted at `/`).
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+## API surface (all under `/api`)
 
-## Key Commands
+- `GET /healthz`
+- `GET /tiers` · `GET /tenants` · `POST /tenants` · `GET /tenants/:id`
+- `POST /inject` — Conductor-triggered message; STUBBED unless `N8N_WEBHOOK_URL` is set.
+- `GET /injections?limit=`
+- `POST /webhooks/:source` (twilio | chatwoot | n8n) — records arbitrary JSON payload.
+- `GET /webhook-events?limit=`
+- `GET /stats` — tenantCount, injectionCount, webhookEventCount, injectionsLast24h, tenantsByRegion, tenantsByTier.
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+## Gate-1 stub behavior
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+`artifacts/api-server/src/lib/sama.ts::forwardInjectionToN8n`:
+- If `N8N_WEBHOOK_URL` unset → injection logged with `status="stubbed"`, response `"Stubbed: N8N_WEBHOOK_URL not configured — Gate 1 plumbing only"`.
+- If set → POSTs `{ to, body, metadata: { source, conductor_authorized, tenant_id } }`; status becomes `sent` or `failed` based on n8n response.
+
+## Seed data
+
+3 tiers (starter / growth / enterprise) and 3 tenants (acme→DE/starter, orbital→EE/growth, helvetia→DE/enterprise, sovereignToggle=true).
+
+## UI pages
+
+`/` Dashboard · `/tenants` · `/tenants/:id` · `/injections` (with inline composer) · `/webhooks` (filter by source) · `/tiers`. Persistent left sidebar with SAMA wordmark + "CONDUCTOR MODE" indicator. Global "Inject Message" button in the header opens the composer dialog from anywhere.
+
+## Gate-2 wiring (next)
+
+Set `N8N_WEBHOOK_URL` (and later `TWILIO_*`, `CHATWOOT_*`) as environment secrets — code already routes to live endpoints when present.
