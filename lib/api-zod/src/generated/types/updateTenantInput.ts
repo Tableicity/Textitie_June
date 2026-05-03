@@ -8,19 +8,13 @@
 import type { Region } from "./region";
 import type { TierCode } from "./tierCode";
 
-export interface CreateTenantInput {
-  /**
-   * @minLength 2
-   * @maxLength 64
-   */
-  slug: string;
-  /**
-   * @minLength 1
-   * @maxLength 128
-   */
-  name: string;
-  region: Region;
-  tierCode: TierCode;
+/**
+ * Partial tenant update — only supplied fields are written.
+ */
+export interface UpdateTenantInput {
+  name?: string;
+  region?: Region;
+  tierCode?: TierCode;
   sovereignToggle?: boolean;
   /** @nullable */
   phoneNumber?: string | null;

@@ -1,9 +1,16 @@
+import { useEffect, useState } from "react";
 import { useParams } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetTenant, getGetTenantQueryKey, useInjectMessage, getListInjectionsQueryKey } from "@workspace/api-client-react";
+import {
+  useGetTenant,
+  getGetTenantQueryKey,
+  useInjectMessage,
+  useUpdateTenant,
+  getListInjectionsQueryKey,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -11,37 +18,53 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldCheck, Zap, Server, Shield } from "lucide-react";
+import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare } from "lucide-react";
 
-const formSchema = z.object({
+const injectSchema = z.object({
   to: z.string().min(3, "Phone number is required"),
   body: z.string().min(1, "Message body is required"),
+});
+
+const kbSchema = z.object({
+  knowledgeBase: z.string(),
 });
 
 export default function TenantDetail() {
   const params = useParams();
   const tenantId = params.id ? parseInt(params.id, 10) : 0;
-  
+
   const { data: tenant, isLoading } = useGetTenant(tenantId, {
     query: {
       enabled: !!tenantId,
-      queryKey: getGetTenantQueryKey(tenantId)
-    }
-  });
-
-  const injectMessage = useInjectMessage();
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      to: "",
-      body: "",
+      queryKey: getGetTenantQueryKey(tenantId),
     },
   });
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
+  const injectMessage = useInjectMessage();
+  const updateTenant = useUpdateTenant();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const injectForm = useForm<z.infer<typeof injectSchema>>({
+    resolver: zodResolver(injectSchema),
+    defaultValues: { to: "", body: "" },
+  });
+
+  const kbForm = useForm<z.infer<typeof kbSchema>>({
+    resolver: zodResolver(kbSchema),
+    defaultValues: { knowledgeBase: "" },
+  });
+
+  const [kbDirty, setKbDirty] = useState(false);
+  useEffect(() => {
+    if (tenant) {
+      kbForm.reset({ knowledgeBase: tenant.knowledgeBase ?? "" });
+      setKbDirty(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, tenant?.knowledgeBase]);
+
+  const onInject = (values: z.infer<typeof injectSchema>) => {
     if (!tenant) return;
     injectMessage.mutate(
       {
@@ -55,13 +78,30 @@ export default function TenantDetail() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListInjectionsQueryKey() });
-          form.reset();
+          injectForm.reset();
           toast({ title: "Injection Sent", description: `Message pushed to ${tenant.name} pipe successfully.` });
         },
         onError: (err) => {
           toast({ title: "Injection Failed", description: err.error || "An error occurred", variant: "destructive" });
-        }
-      }
+        },
+      },
+    );
+  };
+
+  const onSaveKb = (values: z.infer<typeof kbSchema>) => {
+    if (!tenant) return;
+    updateTenant.mutate(
+      { id: tenant.id, data: { knowledgeBase: values.knowledgeBase || null } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
+          setKbDirty(false);
+          toast({ title: "Knowledge Base Saved", description: `${tenant.name} AI Student updated.` });
+        },
+        onError: (err) => {
+          toast({ title: "Save Failed", description: err.error || "An error occurred", variant: "destructive" });
+        },
+      },
     );
   };
 
@@ -94,7 +134,7 @@ export default function TenantDetail() {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -130,6 +170,87 @@ export default function TenantDetail() {
         </Card>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Phone size={16} /> Telephony
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Tenant Number</span>
+              <span className="font-mono">{tenant.phoneNumber ?? <em className="text-muted-foreground">unset</em>}</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <MessageSquare size={16} /> Chatwoot Bridge
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Account ID</span>
+              <span className="font-mono">{tenant.chatwootAccountId ?? <em className="text-muted-foreground">unset</em>}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Inbox ID</span>
+              <span className="font-mono">{tenant.chatwootInboxId ?? <em className="text-muted-foreground">unset</em>}</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BookOpen size={20} /> Knowledge Base
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            The AI Student reads this before drafting a Whisper for every inbound message. Paste FAQs, product info, escalation rules.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Form {...kbForm}>
+            <form onSubmit={kbForm.handleSubmit(onSaveKb)} className="space-y-4">
+              <FormField
+                control={kbForm.control}
+                name="knowledgeBase"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Q: What are your hours?  A: 9am-6pm CET, Mon-Fri.&#10;Q: Refund policy?  A: 30 days, no questions asked.&#10;ESCALATE if: customer mentions 'lawyer' or 'fraud'."
+                        className="min-h-[260px] font-mono text-xs"
+                        {...field}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          setKbDirty(true);
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex justify-between items-center pt-2">
+                <span className="text-xs text-muted-foreground">
+                  {kbDirty ? "Unsaved changes" : "Up to date"}
+                </span>
+                <Button
+                  type="submit"
+                  disabled={updateTenant.isPending || !kbDirty}
+                >
+                  {updateTenant.isPending ? "Saving..." : "Save Knowledge Base"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+
       <Card className="border-primary/20">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-primary">
@@ -137,10 +258,10 @@ export default function TenantDetail() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 max-w-2xl">
+          <Form {...injectForm}>
+            <form onSubmit={injectForm.handleSubmit(onInject)} className="space-y-4 max-w-2xl">
               <FormField
-                control={form.control}
+                control={injectForm.control}
                 name="to"
                 render={({ field }) => (
                   <FormItem>
@@ -153,7 +274,7 @@ export default function TenantDetail() {
                 )}
               />
               <FormField
-                control={form.control}
+                control={injectForm.control}
                 name="body"
                 render={({ field }) => (
                   <FormItem>

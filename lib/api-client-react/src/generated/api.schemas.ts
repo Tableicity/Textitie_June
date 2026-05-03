@@ -58,6 +58,11 @@ export interface Tenant {
   chatwootAccountId: number | null;
   /** @nullable */
   chatwootInboxId: number | null;
+  /**
+   * Free-text knowledge base used by the AI Student to draft Whispers
+   * @nullable
+   */
+  knowledgeBase: string | null;
   createdAt: string;
 }
 
@@ -81,6 +86,26 @@ export interface CreateTenantInput {
   chatwootAccountId?: number | null;
   /** @nullable */
   chatwootInboxId?: number | null;
+  /** @nullable */
+  knowledgeBase?: string | null;
+}
+
+/**
+ * Partial tenant update — only supplied fields are written.
+ */
+export interface UpdateTenantInput {
+  name?: string;
+  region?: Region;
+  tierCode?: TierCode;
+  sovereignToggle?: boolean;
+  /** @nullable */
+  phoneNumber?: string | null;
+  /** @nullable */
+  chatwootAccountId?: number | null;
+  /** @nullable */
+  chatwootInboxId?: number | null;
+  /** @nullable */
+  knowledgeBase?: string | null;
 }
 
 export interface InjectMessageInput {

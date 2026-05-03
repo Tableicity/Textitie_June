@@ -111,6 +111,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateTenant
+      tags: [tenants]
+      summary: Patch tenant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantInput"
+      responses:
+        "200":
+          description: Updated tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /inject:
     post:
@@ -298,6 +333,9 @@ components:
           type: ["integer", "null"]
         chatwootInboxId:
           type: ["integer", "null"]
+        knowledgeBase:
+          type: ["string", "null"]
+          description: Free-text knowledge base used by the AI Student to draft Whispers
         createdAt:
           type: string
           format: date-time
@@ -311,6 +349,7 @@ components:
         - phoneNumber
         - chatwootAccountId
         - chatwootInboxId
+        - knowledgeBase
         - createdAt
 
     CreateTenantInput:
@@ -337,7 +376,30 @@ components:
           type: ["integer", "null"]
         chatwootInboxId:
           type: ["integer", "null"]
+        knowledgeBase:
+          type: ["string", "null"]
       required: [slug, name, region, tierCode]
+
+    UpdateTenantInput:
+      type: object
+      description: Partial tenant update — only supplied fields are written.
+      properties:
+        name:
+          type: string
+        region:
+          $ref: "#/components/schemas/Region"
+        tierCode:
+          $ref: "#/components/schemas/TierCode"
+        sovereignToggle:
+          type: boolean
+        phoneNumber:
+          type: ["string", "null"]
+        chatwootAccountId:
+          type: ["integer", "null"]
+        chatwootInboxId:
+          type: ["integer", "null"]
+        knowledgeBase:
+          type: ["string", "null"]
 
     InjectMessageInput:
       type: object

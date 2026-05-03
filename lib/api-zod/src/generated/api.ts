@@ -47,6 +47,12 @@ export const ListTenantsResponseItem = zod.object({
     ),
   chatwootAccountId: zod.number().nullable(),
   chatwootInboxId: zod.number().nullable(),
+  knowledgeBase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Free-text knowledge base used by the AI Student to draft Whispers",
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListTenantsResponse = zod.array(ListTenantsResponseItem);
@@ -74,6 +80,7 @@ export const CreateTenantBody = zod.object({
   phoneNumber: zod.string().nullish(),
   chatwootAccountId: zod.number().nullish(),
   chatwootInboxId: zod.number().nullish(),
+  knowledgeBase: zod.string().nullish(),
 });
 
 export const GetTenantParams = zod.object({
@@ -97,6 +104,61 @@ export const GetTenantResponse = zod.object({
     ),
   chatwootAccountId: zod.number().nullable(),
   chatwootInboxId: zod.number().nullable(),
+  knowledgeBase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Free-text knowledge base used by the AI Student to draft Whispers",
+    ),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Patch tenant
+ */
+export const UpdateTenantParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateTenantBody = zod
+  .object({
+    name: zod.string().optional(),
+    region: zod
+      .enum(["DE", "EE", "US"])
+      .optional()
+      .describe("Sovereign data residency region"),
+    tierCode: zod.enum(["starter", "growth", "enterprise"]).optional(),
+    sovereignToggle: zod.boolean().optional(),
+    phoneNumber: zod.string().nullish(),
+    chatwootAccountId: zod.number().nullish(),
+    chatwootInboxId: zod.number().nullish(),
+    knowledgeBase: zod.string().nullish(),
+  })
+  .describe("Partial tenant update — only supplied fields are written.");
+
+export const UpdateTenantResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string().describe('Tenant slug, e.g. \"acme\" → acme.sama.io'),
+  name: zod.string(),
+  region: zod
+    .enum(["DE", "EE", "US"])
+    .describe("Sovereign data residency region"),
+  tierCode: zod.enum(["starter", "growth", "enterprise"]),
+  sovereignToggle: zod.boolean().describe("Enterprise-only DE residency lock"),
+  phoneNumber: zod
+    .string()
+    .nullable()
+    .describe(
+      "E.164 number this tenant owns (used as outbound From and inbound routing key)",
+    ),
+  chatwootAccountId: zod.number().nullable(),
+  chatwootInboxId: zod.number().nullable(),
+  knowledgeBase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Free-text knowledge base used by the AI Student to draft Whispers",
+    ),
   createdAt: zod.coerce.date(),
 });
 

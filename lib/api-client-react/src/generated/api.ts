@@ -27,6 +27,7 @@ import type {
   ListWebhookEventsParams,
   Tenant,
   Tier,
+  UpdateTenantInput,
   WebhookEvent,
   WebhookPayload,
 } from "./api.schemas";
@@ -417,6 +418,93 @@ export function useGetTenant<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Patch tenant
+ */
+export const getUpdateTenantUrl = (id: number) => {
+  return `/api/tenants/${id}`;
+};
+
+export const updateTenant = async (
+  id: number,
+  updateTenantInput: UpdateTenantInput,
+  options?: RequestInit,
+): Promise<Tenant> => {
+  return customFetch<Tenant>(getUpdateTenantUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateTenantInput),
+  });
+};
+
+export const getUpdateTenantMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTenant>>,
+    TError,
+    { id: number; data: BodyType<UpdateTenantInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTenant>>,
+  TError,
+  { id: number; data: BodyType<UpdateTenantInput> },
+  TContext
+> => {
+  const mutationKey = ["updateTenant"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTenant>>,
+    { id: number; data: BodyType<UpdateTenantInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateTenant(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTenantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTenant>>
+>;
+export type UpdateTenantMutationBody = BodyType<UpdateTenantInput>;
+export type UpdateTenantMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Patch tenant
+ */
+export const useUpdateTenant = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTenant>>,
+    TError,
+    { id: number; data: BodyType<UpdateTenantInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTenant>>,
+  TError,
+  { id: number; data: BodyType<UpdateTenantInput> },
+  TContext
+> => {
+  return useMutation(getUpdateTenantMutationOptions(options));
+};
 
 /**
  * Conductor-authorized message injection. Forwards to the configured n8n

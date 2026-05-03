@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ const formSchema = z.object({
   phoneNumber: z.string().optional(),
   chatwootAccountId: z.string().optional(),
   chatwootInboxId: z.string().optional(),
+  knowledgeBase: z.string().optional(),
 });
 
 export default function Tenants() {
@@ -45,6 +47,7 @@ export default function Tenants() {
       phoneNumber: "",
       chatwootAccountId: "",
       chatwootInboxId: "",
+      knowledgeBase: "",
     },
   });
 
@@ -63,6 +66,9 @@ export default function Tenants() {
             : null,
           chatwootInboxId: values.chatwootInboxId?.trim()
             ? Number(values.chatwootInboxId)
+            : null,
+          knowledgeBase: values.knowledgeBase?.trim()
+            ? values.knowledgeBase
             : null,
         },
       },
@@ -210,6 +216,26 @@ export default function Tenants() {
                     )}
                   />
                 </div>
+                <FormField
+                  control={form.control}
+                  name="knowledgeBase"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Knowledge Base</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Paste FAQs, product info, escalation rules… The AI Student reads this before drafting Whispers."
+                          className="min-h-[120px] font-mono text-xs"
+                          {...field}
+                        />
+                      </FormControl>
+                      <div className="text-xs text-muted-foreground">
+                        Used by the AI Student for Whisper drafts on inbound messages.
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="sovereignToggle"

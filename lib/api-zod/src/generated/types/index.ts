@@ -21,6 +21,7 @@ export * from "./region";
 export * from "./tenant";
 export * from "./tier";
 export * from "./tierCode";
+export * from "./updateTenantInput";
 export * from "./webhookEvent";
 export * from "./webhookEventPayload";
 export * from "./webhookPayload";

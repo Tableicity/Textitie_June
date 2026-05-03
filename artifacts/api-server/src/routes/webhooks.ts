@@ -8,6 +8,8 @@ import {
   ListWebhookEventsResponseItem,
 } from "@workspace/api-zod";
 import { postChatwootMessage } from "../lib/chatwoot";
+import { studentWhisper } from "@workspace/ai-student";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -59,6 +61,59 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
             },
             "SAMA Inbound Router: forwarded to Chatwoot",
           );
+
+          // ---- AI Student Whisper (fire-and-forget) ----
+          // Twilio's webhook gets a fast 201 even if the LLM takes a moment.
+          const studentTenant = tenant;
+          const studentFrom = fromNumber;
+          const studentBody = messageBody;
+          const studentChatwoot = chatwootResult;
+          void (async () => {
+            try {
+              const draft = await studentWhisper({
+                tenant: studentTenant,
+                fromNumber: studentFrom,
+                inboundBody: studentBody,
+              });
+              logger.info(
+                {
+                  tenantSlug: studentTenant.slug,
+                  status: draft.status,
+                  latencyMs: draft.latencyMs,
+                  detail: draft.detail,
+                },
+                "SAMA Student: draft ready",
+              );
+              if (
+                studentChatwoot.status === "sent" &&
+                studentChatwoot.conversationId &&
+                studentTenant.chatwootAccountId &&
+                studentTenant.chatwootInboxId
+              ) {
+                const post = await postChatwootMessage({
+                  accountId: studentTenant.chatwootAccountId,
+                  inboxId: studentTenant.chatwootInboxId,
+                  contactPhone: studentFrom,
+                  body: draft.whisperBody,
+                  messageType: "outgoing",
+                  private: true,
+                });
+                logger.info(
+                  {
+                    tenantSlug: studentTenant.slug,
+                    whisperPost: post.status,
+                    detail: post.detail,
+                  },
+                  "SAMA Student: posted Whisper to Chatwoot",
+                );
+              }
+            } catch (err) {
+              logger.warn(
+                { err: err instanceof Error ? err.message : String(err) },
+                "SAMA Student: whisper pipeline failed",
+              );
+            }
+          })();
         } else {
           req.log.info(
             {

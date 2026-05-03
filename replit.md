@@ -1,4 +1,4 @@
-# Project SAMA — Control Plane (Gate 1)
+# Project SAMA — Control Plane (Gate 4)
 
 Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative). Master Conductor oversees tenants, fires injections into the SAMA pipe, watches inbound webhooks. Twilio / Chatwoot / n8n are stubbed at this gate — no live credentials.
 
@@ -38,6 +38,21 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 - Username: `CONDUCTOR_USERNAME` (default `conductor`).
 - Constant-time password compare via `node:crypto.timingSafeEqual`.
 
+## Multi-Tenant Intelligence (Gate 3)
+
+`tenants` table extended with `phone_number` (E.164, dual-purpose: outbound `From` + inbound routing key), `chatwoot_account_id`, `chatwoot_inbox_id`.
+
+- **Inbound Router** (`/api/webhooks/twilio`): matches `To` against `tenants.phone_number`. Match → POSTs to Chatwoot as `incoming` and annotates payload with `_sama:{routed,tenantSlug,chatwoot}`. No match → annotates `unassignedLead:true` and logs WARN.
+- **Per-tenant From**: `dispatchInjection` takes the full `Tenant`; `TwilioSender` accepts `fromOverride` so each tenant sends from its own number.
+- **Whisper** (forward path): if tenant has Chatwoot ids, posts a private note (`message_type=outgoing, private=true`) before the Twilio send.
+- `lib/chatwoot.ts` — REST client (search/create contact → ensure conversation → post). STUBBED when `CHATWOOT_BASE_URL` / `CHATWOOT_API_ACCESS_TOKEN` unset.
+
+## AI Student + Knowledge Base (Gate 4)
+
+- `tenants.knowledge_base text` column. Editable from `/tenants/:id` via new `PATCH /api/tenants/:id` endpoint.
+- `lib/ai-student/` — `studentWhisper({tenant, fromNumber, inboundBody})` calls OpenAI (`gpt-4o-mini` by default, override with `SAMA_STUDENT_MODEL`) with the tenant KB as RAG context. Returns SUMMARY / DRAFT REPLY / KB MATCH. STUBBED when `OPENAI_API_KEY` unset.
+- Wired into the inbound router as **fire-and-forget** — webhook returns 201 immediately; the Whisper drafts and posts to the same Chatwoot conversation as a Private Note shortly after.
+
 ## Seed data
 
 3 tiers (starter / growth / enterprise) and 3 tenants (acme→DE/starter, orbital→EE/growth, helvetia→DE/enterprise, sovereignToggle=true).
@@ -51,4 +66,6 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SAMA_FROM_NUMBER` — live Twilio sender.
 - `CONDUCTOR_PASSWORD` (and optionally `CONDUCTOR_USERNAME`) — enforce admin auth.
 - `N8N_WEBHOOK_URL` (optional) — downstream notification fan-out.
+- `CHATWOOT_BASE_URL`, `CHATWOOT_API_ACCESS_TOKEN` — activate live Chatwoot bridge (Gate 3/4).
+- `OPENAI_API_KEY` — activate the AI Student Whisperer (Gate 4). Optional `SAMA_STUDENT_MODEL` to override the default `gpt-4o-mini`.
 - Already present: `Brand_registration_SID`, `Trust_Hub_A2P_Bundle_SID`, `Connected_Customer_Profile_SID` (A2P registration; not yet referenced by code).

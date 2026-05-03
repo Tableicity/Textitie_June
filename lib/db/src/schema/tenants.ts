@@ -10,6 +10,7 @@ export const tenantsTable = pgTable("tenants", {
   phoneNumber: text("phone_number"),
   chatwootAccountId: integer("chatwoot_account_id"),
   chatwootInboxId: integer("chatwoot_inbox_id"),
+  knowledgeBase: text("knowledge_base"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

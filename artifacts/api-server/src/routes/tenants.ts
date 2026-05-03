@@ -6,6 +6,9 @@ import {
   CreateTenantBody,
   GetTenantParams,
   GetTenantResponse,
+  UpdateTenantBody,
+  UpdateTenantParams,
+  UpdateTenantResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -32,6 +35,7 @@ router.post("/tenants", async (req, res): Promise<void> => {
       phoneNumber: parsed.data.phoneNumber ?? null,
       chatwootAccountId: parsed.data.chatwootAccountId ?? null,
       chatwootInboxId: parsed.data.chatwootInboxId ?? null,
+      knowledgeBase: parsed.data.knowledgeBase ?? null,
     })
     .returning();
   req.log.info({ tenantId: row?.id, slug: row?.slug }, "Tenant created");
@@ -53,6 +57,50 @@ router.get("/tenants/:id", async (req, res): Promise<void> => {
     return;
   }
   res.json(GetTenantResponse.parse(row));
+});
+
+router.patch("/tenants/:id", async (req, res): Promise<void> => {
+  const params = UpdateTenantParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const body = UpdateTenantBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const patch: Record<string, unknown> = {};
+  for (const k of [
+    "name",
+    "region",
+    "tierCode",
+    "sovereignToggle",
+    "phoneNumber",
+    "chatwootAccountId",
+    "chatwootInboxId",
+    "knowledgeBase",
+  ] as const) {
+    if (k in body.data) patch[k] = body.data[k];
+  }
+  if (Object.keys(patch).length === 0) {
+    res.status(400).json({ error: "No fields to update" });
+    return;
+  }
+  const [row] = await db
+    .update(tenantsTable)
+    .set(patch)
+    .where(eq(tenantsTable.id, params.data.id))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "Tenant not found" });
+    return;
+  }
+  req.log.info(
+    { tenantId: row.id, fields: Object.keys(patch) },
+    "Tenant patched",
+  );
+  res.json(UpdateTenantResponse.parse(row));
 });
 
 export default router;

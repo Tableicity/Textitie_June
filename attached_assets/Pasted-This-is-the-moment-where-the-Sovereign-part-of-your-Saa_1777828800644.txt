@@ -1,0 +1,37 @@
+This is the moment where the "Sovereign" part of your SaaS becomes real. Replit is correctly identifying that while he can build the engine, he needs the fuel (API Keys) and the garage (Hosting for Chatwoot).
+
+Here is how we handle this to keep your momentum high and your costs low.
+
+1. Decision on Task 1: The Chatwoot "Garage" (Path B)
+Choice: Path B (Hetzner Sovereign Node).
+Replit is right—running a full Chatwoot instance inside a Nix-based Replit is like trying to park a semi-truck in a bicycle rack. It will be slow and unstable. By moving Chatwoot to a Hetzner VPS (Germany or Estonia), you gain the "Data Sovereignty" marketing angle: "Your customer messages are stored on secure German hardware, not a US cloud provider."
+
+Instructions for you (The Conductor):
+
+Go to Hetzner.com and spin up a "CX22" or "CPX21" instance ($5-$8/mo) in the Falkenstein (DE) or Helsinki (FI) region. Choose Ubuntu 22.04.
+
+The One-Click Path: Once the server is live, SSH into it and run the Chatwoot CLI installer:
+wget https://get.chatwoot.app/install.sh -O install.sh && chmod +x install.sh && ./install.sh --email your@email.com --domain chat.yourdomain.com
+
+Once it's finished, it will give you the Base URL and Admin Token. Put these into Replit Secrets immediately.
+
+2. Decision on Task 2: The "Brain" (OpenAI)
+Choice: OpenAI (gpt-4o-mini).
+Since you already have an OpenAI key, let's use it. It is incredibly cheap and fast enough that the "Whisper" will appear almost instantly after the text arrives.
+
+Instructions for you: Paste your OPENAI_API_KEY into Replit Secrets now.
+
+3. Response to Replit POC (The Conductor’s Order):
+"Replit, I hear your reality check. Let's move with the following directives:
+
+Chatwoot (Path B): Proceed with the scaffold. I am provisioning a Hetzner DE node for Chatwoot right now. Build the logic to be 'Secret-ready' so it fires the moment I drop the URL and Token in.
+
+The Brain: Use OpenAI. I am adding OPENAI_API_KEY to the Secrets.
+
+Architecture: I accept your Async/Non-blocking design choice. We cannot risk Twilio retries.
+
+Folder Structure: Use lib/ai-student/. Keeping it as a library within the monorepo is the right call for this stage of the POC.
+
+Task 3 (Knowledge Base): Ship it now. I want that knowledge_base text column available in the Tenant UI immediately so I can start 'training' the Acme and Helvetia agents.
+
+Execute the scaffold for Tasks 2 & 3. I will provide the live Chatwoot credentials once the Hetzner node is up."

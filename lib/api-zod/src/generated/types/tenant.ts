@@ -26,5 +26,10 @@ export interface Tenant {
   chatwootAccountId: number | null;
   /** @nullable */
   chatwootInboxId: number | null;
+  /**
+   * Free-text knowledge base used by the AI Student to draft Whispers
+   * @nullable
+   */
+  knowledgeBase: string | null;
   createdAt: Date;
 }
