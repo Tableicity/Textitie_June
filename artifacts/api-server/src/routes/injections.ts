@@ -7,7 +7,7 @@ import {
   ListInjectionsResponse,
   ListInjectionsResponseItem,
 } from "@workspace/api-zod";
-import { forwardInjectionToN8n } from "../lib/sama";
+import { dispatchInjection } from "../lib/sama";
 
 const router: IRouter = Router();
 
@@ -25,7 +25,7 @@ router.post("/inject", async (req, res): Promise<void> => {
     "SAMA Injection: received",
   );
 
-  const result = await forwardInjectionToN8n({
+  const result = await dispatchInjection({
     to,
     body,
     tenantId: tenantId ?? null,

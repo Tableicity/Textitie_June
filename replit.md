@@ -20,11 +20,23 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 - `GET /webhook-events?limit=`
 - `GET /stats` — tenantCount, injectionCount, webhookEventCount, injectionsLast24h, tenantsByRegion, tenantsByTier.
 
-## Gate-1 stub behavior
+## Modular sender pipeline (Gate 2: Twilio direct)
 
-`artifacts/api-server/src/lib/sama.ts::forwardInjectionToN8n`:
-- If `N8N_WEBHOOK_URL` unset → injection logged with `status="stubbed"`, response `"Stubbed: N8N_WEBHOOK_URL not configured — Gate 1 plumbing only"`.
-- If set → POSTs `{ to, body, metadata: { source, conductor_authorized, tenant_id } }`; status becomes `sent` or `failed` based on n8n response.
+`artifacts/api-server/src/lib/senders/` — pluggable engines behind one `MessageSender` interface so swapping Twilio↔Fonoster (Hetzner DE/EE) is a one-line change in the factory.
+
+- `TwilioSender` — direct Twilio REST (`twilio` SDK). Active when `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SAMA_FROM_NUMBER` are all set.
+- `StubSender` — Gate-1 fallback. Active when creds missing or `SAMA_SENDER=stub`.
+- Future: `FonosterSender` for the Hetzner self-hosted SIP node.
+
+`dispatchInjection()` calls the active sender, then (if `N8N_WEBHOOK_URL` is set) fires a non-blocking notification to n8n with the send result. n8n is now downstream observer/orchestrator, not the transport.
+
+## Conductor Auth (HTTP Basic)
+
+`artifacts/api-server/src/middleware/conductorAuth.ts` gates `/api/*` with HTTP Basic Auth.
+- Bypassed for `/api/healthz` and `/api/webhooks/*` (carriers can't send Basic Auth).
+- Enforced when `CONDUCTOR_PASSWORD` is set; logs WARN and stays open if unset.
+- Username: `CONDUCTOR_USERNAME` (default `conductor`).
+- Constant-time password compare via `node:crypto.timingSafeEqual`.
 
 ## Seed data
 
@@ -34,6 +46,9 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 
 `/` Dashboard · `/tenants` · `/tenants/:id` · `/injections` (with inline composer) · `/webhooks` (filter by source) · `/tiers`. Persistent left sidebar with SAMA wordmark + "CONDUCTOR MODE" indicator. Global "Inject Message" button in the header opens the composer dialog from anywhere.
 
-## Gate-2 wiring (next)
+## Required secrets
 
-Set `N8N_WEBHOOK_URL` (and later `TWILIO_*`, `CHATWOOT_*`) as environment secrets — code already routes to live endpoints when present.
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SAMA_FROM_NUMBER` — live Twilio sender.
+- `CONDUCTOR_PASSWORD` (and optionally `CONDUCTOR_USERNAME`) — enforce admin auth.
+- `N8N_WEBHOOK_URL` (optional) — downstream notification fan-out.
+- Already present: `Brand_registration_SID`, `Trust_Hub_A2P_Bundle_SID`, `Connected_Customer_Profile_SID` (A2P registration; not yet referenced by code).
