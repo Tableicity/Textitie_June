@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, integer, timestamp } from "drizzle-orm/pg-core";
 
 export const tenantsTable = pgTable("tenants", {
   id: serial("id").primaryKey(),
@@ -7,6 +7,9 @@ export const tenantsTable = pgTable("tenants", {
   region: text("region").notNull(),
   tierCode: text("tier_code").notNull(),
   sovereignToggle: boolean("sovereign_toggle").notNull().default(false),
+  phoneNumber: text("phone_number"),
+  chatwootAccountId: integer("chatwoot_account_id"),
+  chatwootInboxId: integer("chatwoot_inbox_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

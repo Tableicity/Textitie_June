@@ -22,4 +22,10 @@ export interface CreateTenantInput {
   region: Region;
   tierCode: TierCode;
   sovereignToggle?: boolean;
+  /** @nullable */
+  phoneNumber?: string | null;
+  /** @nullable */
+  chatwootAccountId?: number | null;
+  /** @nullable */
+  chatwootInboxId?: number | null;
 }

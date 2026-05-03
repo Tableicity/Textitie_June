@@ -39,6 +39,14 @@ export const ListTenantsResponseItem = zod.object({
     .describe("Sovereign data residency region"),
   tierCode: zod.enum(["starter", "growth", "enterprise"]),
   sovereignToggle: zod.boolean().describe("Enterprise-only DE residency lock"),
+  phoneNumber: zod
+    .string()
+    .nullable()
+    .describe(
+      "E.164 number this tenant owns (used as outbound From and inbound routing key)",
+    ),
+  chatwootAccountId: zod.number().nullable(),
+  chatwootInboxId: zod.number().nullable(),
   createdAt: zod.coerce.date(),
 });
 export const ListTenantsResponse = zod.array(ListTenantsResponseItem);
@@ -63,6 +71,9 @@ export const CreateTenantBody = zod.object({
   sovereignToggle: zod
     .boolean()
     .default(createTenantBodySovereignToggleDefault),
+  phoneNumber: zod.string().nullish(),
+  chatwootAccountId: zod.number().nullish(),
+  chatwootInboxId: zod.number().nullish(),
 });
 
 export const GetTenantParams = zod.object({
@@ -78,6 +89,14 @@ export const GetTenantResponse = zod.object({
     .describe("Sovereign data residency region"),
   tierCode: zod.enum(["starter", "growth", "enterprise"]),
   sovereignToggle: zod.boolean().describe("Enterprise-only DE residency lock"),
+  phoneNumber: zod
+    .string()
+    .nullable()
+    .describe(
+      "E.164 number this tenant owns (used as outbound From and inbound routing key)",
+    ),
+  chatwootAccountId: zod.number().nullable(),
+  chatwootInboxId: zod.number().nullable(),
   createdAt: zod.coerce.date(),
 });
 

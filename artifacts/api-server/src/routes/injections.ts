@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { desc } from "drizzle-orm";
-import { db, injectionsTable } from "@workspace/db";
+import { desc, eq } from "drizzle-orm";
+import { db, injectionsTable, tenantsTable } from "@workspace/db";
 import {
   InjectMessageBody,
   ListInjectionsQueryParams,
@@ -20,33 +20,62 @@ router.post("/inject", async (req, res): Promise<void> => {
   const { to, body, tenantId, conductorAuthorized } = parsed.data;
   const conductorAuth = conductorAuthorized ?? true;
 
+  let tenant = null;
+  if (tenantId != null) {
+    const [row] = await db
+      .select()
+      .from(tenantsTable)
+      .where(eq(tenantsTable.id, tenantId));
+    if (!row) {
+      res.status(400).json({ error: `Tenant ${tenantId} not found` });
+      return;
+    }
+    tenant = row;
+  }
+
   req.log.info(
-    { to, tenantId, conductorAuth },
+    {
+      to,
+      tenantId: tenant?.id ?? null,
+      tenantSlug: tenant?.slug ?? null,
+      from: tenant?.phoneNumber ?? null,
+      conductorAuth,
+    },
     "SAMA Injection: received",
   );
 
-  const result = await dispatchInjection({
+  const { send, whisper } = await dispatchInjection({
     to,
     body,
-    tenantId: tenantId ?? null,
+    tenant,
     conductorAuthorized: conductorAuth,
   });
+
+  const summary =
+    whisper && whisper.status !== "stubbed"
+      ? `${send.responseSummary ?? ""} | whisper=${whisper.status} ${whisper.detail}`
+      : send.responseSummary;
 
   const [row] = await db
     .insert(injectionsTable)
     .values({
-      tenantId: tenantId ?? null,
+      tenantId: tenant?.id ?? null,
       toNumber: to,
       body,
-      status: result.status,
-      responseSummary: result.responseSummary,
+      status: send.status,
+      responseSummary: summary,
       conductorAuthorized: conductorAuth,
     })
     .returning();
 
   req.log.info(
-    { injectionId: row?.id, status: row?.status },
-    `SAMA Injection: ${result.status === "stubbed" ? "Message Sent (STUBBED)" : `Message ${result.status}`}`,
+    {
+      injectionId: row?.id,
+      status: row?.status,
+      tenantSlug: tenant?.slug ?? null,
+      whisperStatus: whisper?.status ?? null,
+    },
+    `SAMA Injection: ${send.status === "stubbed" ? "Message Sent (STUBBED)" : `Message ${send.status}`}`,
   );
 
   res.status(201).json(ListInjectionsResponseItem.parse(row));

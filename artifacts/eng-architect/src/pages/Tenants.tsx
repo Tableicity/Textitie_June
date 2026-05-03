@@ -22,6 +22,9 @@ const formSchema = z.object({
   region: z.enum(["DE", "EE", "US"]),
   tierCode: z.enum(["starter", "growth", "enterprise"]),
   sovereignToggle: z.boolean().default(false),
+  phoneNumber: z.string().optional(),
+  chatwootAccountId: z.string().optional(),
+  chatwootInboxId: z.string().optional(),
 });
 
 export default function Tenants() {
@@ -39,12 +42,30 @@ export default function Tenants() {
       region: "US",
       tierCode: "starter",
       sovereignToggle: false,
+      phoneNumber: "",
+      chatwootAccountId: "",
+      chatwootInboxId: "",
     },
   });
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
     createTenant.mutate(
-      { data: values },
+      {
+        data: {
+          slug: values.slug,
+          name: values.name,
+          region: values.region,
+          tierCode: values.tierCode,
+          sovereignToggle: values.sovereignToggle,
+          phoneNumber: values.phoneNumber?.trim() ? values.phoneNumber.trim() : null,
+          chatwootAccountId: values.chatwootAccountId?.trim()
+            ? Number(values.chatwootAccountId)
+            : null,
+          chatwootInboxId: values.chatwootInboxId?.trim()
+            ? Number(values.chatwootInboxId)
+            : null,
+        },
+      },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey() });
@@ -140,6 +161,50 @@ export default function Tenants() {
                             <SelectItem value="enterprise">Enterprise</SelectItem>
                           </SelectContent>
                         </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={form.control}
+                  name="phoneNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tenant Number (E.164)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="+15005550006" {...field} />
+                      </FormControl>
+                      <div className="text-xs text-muted-foreground">
+                        Outbound From + inbound routing key.
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="chatwootAccountId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Chatwoot Account ID</FormLabel>
+                        <FormControl>
+                          <Input placeholder="1" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="chatwootInboxId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Chatwoot Inbox ID</FormLabel>
+                        <FormControl>
+                          <Input placeholder="1" {...field} />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

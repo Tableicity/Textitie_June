@@ -291,10 +291,27 @@ components:
         sovereignToggle:
           type: boolean
           description: Enterprise-only DE residency lock
+        phoneNumber:
+          type: ["string", "null"]
+          description: E.164 number this tenant owns (used as outbound From and inbound routing key)
+        chatwootAccountId:
+          type: ["integer", "null"]
+        chatwootInboxId:
+          type: ["integer", "null"]
         createdAt:
           type: string
           format: date-time
-      required: [id, slug, name, region, tierCode, sovereignToggle, createdAt]
+      required:
+        - id
+        - slug
+        - name
+        - region
+        - tierCode
+        - sovereignToggle
+        - phoneNumber
+        - chatwootAccountId
+        - chatwootInboxId
+        - createdAt
 
     CreateTenantInput:
       type: object
@@ -314,6 +331,12 @@ components:
         sovereignToggle:
           type: boolean
           default: false
+        phoneNumber:
+          type: ["string", "null"]
+        chatwootAccountId:
+          type: ["integer", "null"]
+        chatwootInboxId:
+          type: ["integer", "null"]
       required: [slug, name, region, tierCode]
 
     InjectMessageInput:

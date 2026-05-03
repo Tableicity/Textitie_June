@@ -11,13 +11,14 @@ export class TwilioSender implements MessageSender {
 
   constructor(
     private readonly client: Twilio,
-    private readonly fromNumber: string,
+    private readonly defaultFrom: string,
   ) {}
 
   async send(input: SendInput): Promise<SendResult> {
+    const from = input.fromOverride ?? this.defaultFrom;
     try {
       const msg = await this.client.messages.create({
-        from: this.fromNumber,
+        from,
         to: input.to,
         body: input.body,
       });
@@ -25,6 +26,7 @@ export class TwilioSender implements MessageSender {
         {
           sid: msg.sid,
           status: msg.status,
+          from,
           to: input.to,
           tenantId: input.tenantId,
         },
@@ -32,13 +34,13 @@ export class TwilioSender implements MessageSender {
       );
       return {
         status: "sent",
-        responseSummary: `Twilio sid=${msg.sid} status=${msg.status}`,
+        responseSummary: `Twilio sid=${msg.sid} status=${msg.status} from=${from}`,
         externalId: msg.sid,
       };
     } catch (err) {
       const e = err as { code?: number | string; message?: string };
-      const summary = `Twilio ${e.code ?? "ERR"}: ${e.message ?? String(err)}`;
-      logger.warn({ to: input.to, err: summary }, "SAMA Injection: Twilio rejected");
+      const summary = `Twilio ${e.code ?? "ERR"}: ${e.message ?? String(err)} (from=${from})`;
+      logger.warn({ to: input.to, from, err: summary }, "SAMA Injection: Twilio rejected");
       return { status: "failed", responseSummary: summary, externalId: null };
     }
   }

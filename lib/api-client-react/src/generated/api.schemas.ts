@@ -49,6 +49,15 @@ export interface Tenant {
   tierCode: TierCode;
   /** Enterprise-only DE residency lock */
   sovereignToggle: boolean;
+  /**
+   * E.164 number this tenant owns (used as outbound From and inbound routing key)
+   * @nullable
+   */
+  phoneNumber: string | null;
+  /** @nullable */
+  chatwootAccountId: number | null;
+  /** @nullable */
+  chatwootInboxId: number | null;
   createdAt: string;
 }
 
@@ -66,6 +75,12 @@ export interface CreateTenantInput {
   region: Region;
   tierCode: TierCode;
   sovereignToggle?: boolean;
+  /** @nullable */
+  phoneNumber?: string | null;
+  /** @nullable */
+  chatwootAccountId?: number | null;
+  /** @nullable */
+  chatwootInboxId?: number | null;
 }
 
 export interface InjectMessageInput {

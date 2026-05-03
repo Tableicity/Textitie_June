@@ -29,6 +29,9 @@ router.post("/tenants", async (req, res): Promise<void> => {
       region: parsed.data.region,
       tierCode: parsed.data.tierCode,
       sovereignToggle: parsed.data.sovereignToggle ?? false,
+      phoneNumber: parsed.data.phoneNumber ?? null,
+      chatwootAccountId: parsed.data.chatwootAccountId ?? null,
+      chatwootInboxId: parsed.data.chatwootInboxId ?? null,
     })
     .returning();
   req.log.info({ tenantId: row?.id, slug: row?.slug }, "Tenant created");

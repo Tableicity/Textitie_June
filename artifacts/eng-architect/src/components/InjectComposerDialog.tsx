@@ -79,7 +79,7 @@ export function InjectComposerDialog({ trigger, defaultTenantId }: { trigger?: R
               name="tenantId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Tenant Scope (Optional)</FormLabel>
+                  <FormLabel>Send as Tenant</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
@@ -87,14 +87,17 @@ export function InjectComposerDialog({ trigger, defaultTenantId }: { trigger?: R
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="none">-- Global / No Tenant --</SelectItem>
+                      <SelectItem value="none">-- Global (default From) --</SelectItem>
                       {tenants?.map((t) => (
                         <SelectItem key={t.id} value={t.id.toString()}>
-                          {t.name} ({t.slug})
+                          {t.name} ({t.slug}){t.phoneNumber ? ` — ${t.phoneNumber}` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  <div className="text-xs text-muted-foreground">
+                    Drives the From number, plus the Chatwoot Whisper if the tenant has an inbox wired.
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
