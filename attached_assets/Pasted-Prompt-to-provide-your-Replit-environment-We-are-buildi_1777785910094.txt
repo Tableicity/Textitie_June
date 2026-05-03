@@ -1,0 +1,75 @@
+Prompt to provide your Replit environment:
+
+"We are building Project SAMA (Simple but Advanced Messaging Alternative), a sovereign, multi-tenant SaaS designed to dismantle legacy business texting platforms. This Replit environment serves as our Proof of Concept (POC) and logic-injection hub.  
++4
+
+We are using an open-source stack: Chatwoot for the Omnichannel UI, Fonoster for the programmable engine, and n8n as the workflow glue. Your role is to host the core application logic and provide 'open pipes' (Webhooks/APIs) where I, as the Conductor, can inject code to alter messaging behavior in real-time without touching the carrier layer directly."  
++3
+
+2. The Stair-Step Project Gates (Execution View)
+Share this table with Replit to define the roadmap. We move one step at a time, "locking" each gate before proceeding.  
++1
+
+Gate #	Milestone	Focus	Key Action
+Step 1	The Foundation	The MVP	
+Connect Twilio to Chatwoot to establish 2-way SMS. 
+
+Step 2	The Injection	The Replit Bridge	
+Build a webhook listener in n8n to allow Replit to "push" messages. 
+
+Step 3	Multi-Tenancy	Tiering & Auth	
+Implement Zitadel and define Starter, Growth, and Enterprise tiers. 
+
+Step 4	The Moat	EU Compliance	
+Configure data residency logic for the Germany and Estonia nodes. 
++1
+
+Step 5	Market Entry	The Diner	
+Launch 10DLC (USA) and Alphanumeric (EU) sender ID support to "eat" Textline. 
+
+3. Open Pipes: The Injection Logic
+To ensure the "pipes" are open for our code, your Replit must have a listener ready. Your engineers should initialize the following Injection Service in the Replit environment:
+
+JavaScript
+const axios = require('axios');
+
+// SAMA Injection Service: This allows us to push logic into the stream [cite: 55, 56]
+async function injectMessage(phoneNumber, messageContent) {
+  const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL; // Set in Replit Secrets [cite: 57]
+  try {
+    const response = await axios.post(N8N_WEBHOOK_URL, {
+      to: phoneNumber,
+      body: messageContent,
+      metadata: {
+        source: "Replit-App-Builder",
+        conductor_authorized: true // Authorized by you [cite: 63, 64]
+      }
+    });
+    console.log('SAMA Injection Successful:', response.data); [cite: 67]
+  } catch (error) {
+    console.error('Injection Failed:', error.message); [cite: 69]
+  }
+}
+4. Seeded Data for the UI
+To make the POC "alive," we will seed the PostgreSQL (Neon) database with the following multi-tenant structure:  
++2
+
+
+Tenants: Created with unique slugs (e.g., acme.sama.io) and assigned to regions (DE or EE).  
++1
+
+Pricing Tiers:
+
+
+Tier 1 (Starter): 1 Agent, Shared 10DLC pool.  
++2
+
+
+Tier 2 (Growth): Dedicated local number, n8n automation.  
++2
+
+
+Tier 3 (Enterprise): Custom domains, RLS isolation, and "Sovereign Toggle" for German data residency.  
++2
+
+Does Replit have the primary stack (Chatwoot/n8n) installed, or should I provide the Docker Compose file to stand it up first?
