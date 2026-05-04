@@ -7,3 +7,5 @@ export * from "./tenantUsers";
 export * from "./departments";
 export * from "./conversations";
 export * from "./conversationEvents";
+export * from "./usageRecords";
+export * from "./billingEvents";

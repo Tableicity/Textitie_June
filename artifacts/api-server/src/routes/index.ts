@@ -12,6 +12,7 @@ import conversationsRouter from "./conversations";
 import departmentsRouter from "./departments";
 import phoneNumbersRouter from "./phoneNumbers";
 import agentsRouter from "./agents";
+import billingRouter from "./billing";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(conversationsRouter);
 router.use(departmentsRouter);
 router.use(phoneNumbersRouter);
 router.use(agentsRouter);
+router.use(billingRouter);
 
 export default router;

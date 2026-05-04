@@ -5,6 +5,7 @@ import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
 import { pickAgent } from "../lib/routing";
 import type { RoutingStrategy } from "../lib/routing";
+import { recordMessageUsage } from "../lib/stripe-stub";
 
 const router = Router();
 
@@ -158,6 +159,10 @@ router.post(
         .update(conversationsTable)
         .set({ lastMessageAt: now })
         .where(eq(conversationsTable.id, conversationId));
+
+      recordMessageUsage(tenantId).catch((usageErr) => {
+        logger.warn({ err: usageErr, tenantId }, "Usage tracking failed (non-blocking)");
+      });
 
       res.status(201).json(rows[0]);
     } catch (err) {

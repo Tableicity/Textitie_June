@@ -13,6 +13,8 @@ const REQUIRED_TABLES = [
   "conversations",
   "messages",
   "conversation_events",
+  "usage_records",
+  "billing_events",
 ];
 
 export async function checkSchema(): Promise<string[]> {
