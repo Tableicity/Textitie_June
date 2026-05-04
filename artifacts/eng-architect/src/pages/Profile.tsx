@@ -30,9 +30,8 @@ interface UserRow {
 }
 
 function apiFetch(path: string, opts: RequestInit = {}) {
-  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
   const authHeader = getStoredAuthHeader();
-  return fetch(`${base}${path}`, {
+  return fetch(path, {
     ...opts,
     headers: {
       ...(opts.headers || {}),

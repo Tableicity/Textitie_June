@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/"
+previewPath = "/admin/"
 title = "SAMA Control Plane"
 version = "1.0.0"
 id = "artifacts/eng-architect"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/" ]
+paths = [ "/admin/" ]
 localPort = 20876
 
 [services.development]
@@ -28,4 +28,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "20876"
-BASE_PATH = "/"
+BASE_PATH = "/admin/"

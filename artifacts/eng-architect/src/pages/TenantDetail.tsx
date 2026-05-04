@@ -115,11 +115,10 @@ export default function TenantDetail() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const base = import.meta.env.BASE_URL.replace(/\/$/, "");
       const authHeader = getStoredAuthHeader();
       const headers: Record<string, string> = {};
       if (authHeader) headers["Authorization"] = authHeader;
-      const resp = await fetch(`${base}/api/tenants/${tenant.id}/knowledge-upload`, {
+      const resp = await fetch(`/api/tenants/${tenant.id}/knowledge-upload`, {
         method: "POST",
         body: formData,
         headers,

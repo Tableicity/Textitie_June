@@ -37,8 +37,7 @@ export async function loginWithEmail(
   password: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-    const resp = await fetch(`${base}/api/auth/login`, {
+    const resp = await fetch("/api/auth/login", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
