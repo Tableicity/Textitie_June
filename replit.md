@@ -89,6 +89,13 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 - **Schema sync**: The API server's production build step runs `drizzle-kit push --force` against the production `DATABASE_URL` before compiling. This ensures the production database schema matches the Drizzle schema definitions automatically on every publish.
 - **External database**: The project uses an external PostgreSQL database via `DATABASE_URL` (not Replit's managed PostgreSQL). Dev and production have separate `DATABASE_URL` secrets pointing to their respective databases.
 
+## Users & Super User
+
+- `users` table: `lib/db/src/schema/users.ts` — id, email, password_hash (scrypt), role, created_at.
+- Super user `abc17@gmail.com` (role: `superuser`) seeded via `scripts/src/seed-superuser.ts`.
+- Seed runs automatically during production build (after schema push, before API server compile).
+- Password hashed with Node.js `crypto.scrypt` (16-byte random salt + 64-byte key, stored as `salt:hash`).
+
 ## Required secrets
 
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SAMA_FROM_NUMBER` — live Twilio sender.
