@@ -7,6 +7,9 @@ const REQUIRED_TABLES = [
   "injections",
   "webhook_events",
   "users",
+  "tenant_users",
+  "conversations",
+  "messages",
 ];
 
 export async function checkSchema(): Promise<string[]> {

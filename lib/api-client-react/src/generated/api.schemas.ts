@@ -215,6 +215,77 @@ export interface ControlPlaneStats {
   tenantsByTier: ControlPlaneStatsTenantsByTierItem[];
 }
 
+export interface TenantLoginInput {
+  email: string;
+  password: string;
+}
+
+export interface TenantUserInfo {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  tenantId: number;
+  tenantSlug: string;
+  tenantName: string;
+}
+
+export interface TenantLoginResult {
+  token: string;
+  user: TenantUserInfo;
+}
+
+export interface TenantMeResult {
+  user: TenantUserInfo;
+}
+
+export type ConversationStatus =
+  (typeof ConversationStatus)[keyof typeof ConversationStatus];
+
+export const ConversationStatus = {
+  open: "open",
+  closed: "closed",
+  snoozed: "snoozed",
+} as const;
+
+export interface Conversation {
+  id: number;
+  tenantId: number;
+  contactPhone: string;
+  /** @nullable */
+  contactName: string | null;
+  status: ConversationStatus;
+  /** @nullable */
+  assignedUserId: number | null;
+  /** @nullable */
+  lastMessageAt: string | null;
+  createdAt: string;
+}
+
+export type MessageDirection =
+  (typeof MessageDirection)[keyof typeof MessageDirection];
+
+export const MessageDirection = {
+  inbound: "inbound",
+  outbound: "outbound",
+} as const;
+
+export interface Message {
+  id: number;
+  conversationId: number;
+  direction: MessageDirection;
+  body: string;
+  /** @nullable */
+  senderName: string | null;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface SendMessageInput {
+  /** @minLength 1 */
+  body: string;
+}
+
 export type ListInjectionsParams = {
   /**
    * @minimum 1

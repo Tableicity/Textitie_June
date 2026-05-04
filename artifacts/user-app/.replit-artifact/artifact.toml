@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/app/"
+title = "SAMA Messaging"
+version = "1.0.0"
+id = "artifacts/user-app"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/app/" ]
+localPort = 24899
+
+[services.development]
+run = "pnpm --filter @workspace/user-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/user-app", "run", "build" ]
+publicDir = "artifacts/user-app/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24899"
+BASE_PATH = "/app/"

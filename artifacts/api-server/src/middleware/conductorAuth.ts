@@ -10,7 +10,9 @@ export const conductorAuth: RequestHandler = (req, res, next) => {
   if (
     req.path === "/healthz" ||
     req.path.startsWith("/webhooks/") ||
-    req.path === "/auth/login"
+    req.path === "/auth/login" ||
+    req.path.startsWith("/tenant-auth/") ||
+    req.path.startsWith("/conversations")
   ) {
     next();
     return;
@@ -21,7 +23,7 @@ export const conductorAuth: RequestHandler = (req, res, next) => {
   if (header.startsWith("Bearer ")) {
     const token = header.slice(7);
     const payload = verifyToken(token);
-    if (payload) {
+    if (payload && payload.scope !== "tenant") {
       next();
       return;
     }

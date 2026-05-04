@@ -1,4 +1,4 @@
-# Project SAMA — Control Plane (Gate 5)
+# Project SAMA — Control Plane (Gate 5) + User Messaging (Gate 1)
 
 Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative). Master Conductor oversees tenants, fires injections into the SAMA pipe, watches inbound webhooks. Live integrations: Twilio direct sender, Chatwoot sovereign bridge (textitie.com), AI Student Whisperer (gpt-4o-mini).
 
@@ -6,9 +6,10 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 
 - **Monorepo**: pnpm workspace.
 - **Contract-first**: `lib/api-spec/openapi.yaml` → orval codegen → `@workspace/api-client-react` (React Query hooks) + `@workspace/api-zod` (zod schemas).
-- **DB**: Drizzle (Postgres) — schemas in `lib/db/src/schema/{tenants,tiers,injections,webhookEvents}.ts`.
+- **DB**: Drizzle (Postgres) — schemas in `lib/db/src/schema/{tenants,tiers,injections,webhookEvents,tenantUsers,conversations,messages}.ts`.
 - **API**: `artifacts/api-server` (Express, port 8080, mounted at `/api`).
-- **UI**: `artifacts/eng-architect` (React + Vite + wouter + shadcn, mounted at `/`).
+- **Admin UI**: `artifacts/eng-architect` (React + Vite + wouter + shadcn, mounted at `/`).
+- **User UI**: `artifacts/user-app` (React + Vite + wouter + shadcn, mounted at `/app`).
 
 ## API surface (all under `/api`)
 
@@ -35,7 +36,8 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 ## Conductor Auth (HTTP Basic)
 
 `artifacts/api-server/src/middleware/conductorAuth.ts` gates `/api/*` with HTTP Basic Auth.
-- Bypassed for `/api/healthz` and `/api/webhooks/*` (carriers can't send Basic Auth).
+- Bypassed for `/api/healthz`, `/api/webhooks/*`, `/api/tenant-auth/*`, and `/api/conversations*` (tenant-scoped routes use their own auth).
+- Bearer tokens with `scope: "tenant"` are explicitly rejected by conductorAuth to prevent tenant→admin privilege escalation.
 - Enforced when `CONDUCTOR_PASSWORD` is set; logs WARN and stays open if unset.
 - Username: `CONDUCTOR_USERNAME` (default `conductor`).
 - Constant-time password compare via `node:crypto.timingSafeEqual`.
@@ -102,6 +104,35 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 - Sidebar: "User Management" and "Sign Out" buttons pinned to the bottom of the left nav.
 - Password hashed with Node.js `crypto.scrypt` (16-byte random salt + 64-byte key, stored as `salt:hash`).
 - Super user seed reads from `SUPERUSER_EMAIL` + `SUPERUSER_PASSWORD` env vars. Skips silently if not set or if users table is missing.
+
+## SAMA Messaging — User-Facing App (Gate 1)
+
+`artifacts/user-app` — Textline-style messaging inbox for tenant customer agents. Mounted at `/app`.
+
+### Tenant Auth
+- `tenant_users` table: `lib/db/src/schema/tenantUsers.ts` — id, tenant_id (FK→tenants), email (unique), password_hash (scrypt), name, role (agent|admin), active, created_at.
+- `POST /api/tenant-auth/login` — email+password login, returns JWT with `scope: "tenant"` (24h TTL).
+- `GET /api/tenant-auth/me` — returns current tenant user info from token.
+- `requireTenantAuth` middleware (`artifacts/api-server/src/middleware/tenantAuth.ts`) validates tenant JWT and attaches `req.tenantUser`.
+- Test credentials: `agent@acme.test` / `tenant123` (tenant_id=1, ACME Corp).
+
+### Conversations & Messages
+- `conversations` table: `lib/db/src/schema/conversations.ts` — tenant-scoped, with contactPhone, contactName, status (open/closed), assignedUserId, lastMessageAt.
+- `messages` table: same file — conversation_id (FK→conversations), direction (inbound/outbound), body, channel, externalId, createdAt.
+- `GET /api/conversations` — list conversations for the authenticated tenant.
+- `GET /api/conversations/:id` — get single conversation (tenant-scoped).
+- `GET /api/conversations/:id/messages` — list messages in a conversation.
+- `POST /api/conversations/:id/messages` — send a message (creates outbound message record).
+
+### User UI Pages
+- `/app/login` — tenant login page (blue theme, "SAMA Messaging" branding).
+- `/app/` — conversation inbox (2-panel: conversation list + message thread).
+- `/app/settings` — placeholder "Coming Soon" settings page.
+- AppShell: auth guard (redirects to login if no token or 401), dark sidebar with nav icons (inbox, settings, logout).
+- Auth tokens stored in `sessionStorage` under key `sama_tenant_token`.
+
+### OpenAPI Naming Convention
+- Avoid `*Response` suffix on schema names — Orval generates both Zod consts and TS interfaces with same name, causing export collisions in `lib/api-zod`. Use `*Result` instead.
 
 ## Required secrets
 

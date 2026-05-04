@@ -22,6 +22,10 @@ tags:
     description: 10DLC and A2P registration compliance monitoring
   - name: stats
     description: Control plane summary stats
+  - name: tenant-auth
+    description: Tenant user authentication
+  - name: conversations
+    description: Tenant messaging inbox
 paths:
   /healthz:
     get:
@@ -285,6 +289,152 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ControlPlaneStats"
+
+  /tenant-auth/login:
+    post:
+      operationId: tenantLogin
+      tags: [tenant-auth]
+      summary: Tenant user login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantLoginInput"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantLoginResult"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenant-auth/me:
+    get:
+      operationId: tenantMe
+      tags: [tenant-auth]
+      summary: Get current tenant user
+      responses:
+        "200":
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantMeResult"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [conversations]
+      summary: List conversations for the tenant
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+
+  /conversations/{id}:
+    get:
+      operationId: getConversation
+      tags: [conversations]
+      summary: Get a single conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /conversations/{id}/messages:
+    get:
+      operationId: listMessages
+      tags: [conversations]
+      summary: List messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Messages in the conversation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: sendMessage
+      tags: [conversations]
+      summary: Send a message in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageInput"
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
 components:
   schemas:
@@ -575,3 +725,114 @@ components:
         - injectionsLast24h
         - tenantsByRegion
         - tenantsByTier
+
+    TenantLoginInput:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+
+    TenantUserInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        tenantId:
+          type: integer
+        tenantSlug:
+          type: string
+        tenantName:
+          type: string
+      required: [id, email, name, role, tenantId, tenantSlug, tenantName]
+
+    TenantLoginResult:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/TenantUserInfo"
+      required: [token, user]
+
+    TenantMeResult:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/TenantUserInfo"
+      required: [user]
+
+    ConversationStatus:
+      type: string
+      enum: [open, closed, snoozed]
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        contactPhone:
+          type: string
+        contactName:
+          type: ["string", "null"]
+        status:
+          $ref: "#/components/schemas/ConversationStatus"
+        assignedUserId:
+          type: ["integer", "null"]
+        lastMessageAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenantId
+        - contactPhone
+        - contactName
+        - status
+        - assignedUserId
+        - lastMessageAt
+        - createdAt
+
+    MessageDirection:
+      type: string
+      enum: [inbound, outbound]
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        direction:
+          $ref: "#/components/schemas/MessageDirection"
+        body:
+          type: string
+        senderName:
+          type: ["string", "null"]
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, conversationId, direction, body, senderName, read, createdAt]
+
+    SendMessageInput:
+      type: object
+      properties:
+        body:
+          type: string
+          minLength: 1
+      required: [body]

@@ -310,3 +310,103 @@ export const GetStatsResponse = zod.object({
     }),
   ),
 });
+
+/**
+ * @summary Tenant user login
+ */
+export const TenantLoginBody = zod.object({
+  email: zod.string(),
+  password: zod.string(),
+});
+
+export const TenantLoginResponse = zod.object({
+  token: zod.string(),
+  user: zod.object({
+    id: zod.number(),
+    email: zod.string(),
+    name: zod.string(),
+    role: zod.string(),
+    tenantId: zod.number(),
+    tenantSlug: zod.string(),
+    tenantName: zod.string(),
+  }),
+});
+
+/**
+ * @summary Get current tenant user
+ */
+export const TenantMeResponse = zod.object({
+  user: zod.object({
+    id: zod.number(),
+    email: zod.string(),
+    name: zod.string(),
+    role: zod.string(),
+    tenantId: zod.number(),
+    tenantSlug: zod.string(),
+    tenantName: zod.string(),
+  }),
+});
+
+/**
+ * @summary List conversations for the tenant
+ */
+export const ListConversationsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  contactPhone: zod.string(),
+  contactName: zod.string().nullable(),
+  status: zod.enum(["open", "closed", "snoozed"]),
+  assignedUserId: zod.number().nullable(),
+  lastMessageAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+});
+export const ListConversationsResponse = zod.array(
+  ListConversationsResponseItem,
+);
+
+/**
+ * @summary Get a single conversation
+ */
+export const GetConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetConversationResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  contactPhone: zod.string(),
+  contactName: zod.string().nullable(),
+  status: zod.enum(["open", "closed", "snoozed"]),
+  assignedUserId: zod.number().nullable(),
+  lastMessageAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List messages in a conversation
+ */
+export const ListMessagesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListMessagesResponseItem = zod.object({
+  id: zod.number(),
+  conversationId: zod.number(),
+  direction: zod.enum(["inbound", "outbound"]),
+  body: zod.string(),
+  senderName: zod.string().nullable(),
+  read: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const ListMessagesResponse = zod.array(ListMessagesResponseItem);
+
+/**
+ * @summary Send a message in a conversation
+ */
+export const SendMessageParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SendMessageBody = zod.object({
+  body: zod.string().min(1),
+});
