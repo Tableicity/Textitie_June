@@ -4,14 +4,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Lock } from "lucide-react";
-import { storeAuthHeader, validateCredentials } from "@/lib/auth";
+import { loginWithEmail } from "@/lib/auth";
 
 interface LoginProps {
   onSuccess: () => void;
 }
 
 export default function Login({ onSuccess }: LoginProps) {
-  const [username, setUsername] = useState("conductor");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,15 +21,12 @@ export default function Login({ onSuccess }: LoginProps) {
     setError("");
     setLoading(true);
     try {
-      const valid = await validateCredentials(username, password);
-      if (valid) {
-        storeAuthHeader(username, password);
+      const result = await loginWithEmail(email, password);
+      if (result.ok) {
         onSuccess();
       } else {
-        setError("Invalid credentials");
+        setError(result.error || "Invalid credentials");
       }
-    } catch {
-      setError("Connection error");
     } finally {
       setLoading(false);
     }
@@ -43,17 +40,20 @@ export default function Login({ onSuccess }: LoginProps) {
             <Lock className="text-primary-foreground" size={24} />
           </div>
           <CardTitle className="text-2xl">SAMA Control Plane</CardTitle>
-          <p className="text-sm text-muted-foreground">Conductor authentication required</p>
+          <p className="text-sm text-muted-foreground">Sign in with your account</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                autoFocus
+                placeholder="you@example.com"
               />
             </div>
             <div className="space-y-2">
@@ -64,14 +64,13 @@ export default function Login({ onSuccess }: LoginProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
-                autoFocus
               />
             </div>
             {error && (
               <p className="text-sm text-destructive">{error}</p>
             )}
-            <Button type="submit" className="w-full" disabled={loading || !password}>
-              {loading ? "Authenticating..." : "Sign In"}
+            <Button type="submit" className="w-full" disabled={loading || !email || !password}>
+              {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
         </CardContent>

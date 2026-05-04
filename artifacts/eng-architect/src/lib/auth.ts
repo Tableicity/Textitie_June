@@ -1,15 +1,18 @@
 import { setAuthHeaderGetter } from "@workspace/api-client-react";
 
-const STORAGE_KEY = "sama_conductor_auth";
+const STORAGE_KEY = "sama_auth_token";
 
 export function getStoredAuthHeader(): string | null {
-  return sessionStorage.getItem(STORAGE_KEY);
+  const token = sessionStorage.getItem(STORAGE_KEY);
+  return token ? `Bearer ${token}` : null;
 }
 
-export function storeAuthHeader(username: string, password: string): void {
-  const header = `Basic ${btoa(`${username}:${password}`)}`;
-  sessionStorage.setItem(STORAGE_KEY, header);
-  setAuthHeaderGetter(() => sessionStorage.getItem(STORAGE_KEY));
+export function storeToken(token: string): void {
+  sessionStorage.setItem(STORAGE_KEY, token);
+  setAuthHeaderGetter(() => {
+    const t = sessionStorage.getItem(STORAGE_KEY);
+    return t ? `Bearer ${t}` : null;
+  });
 }
 
 export function clearAuth(): void {
@@ -18,27 +21,41 @@ export function clearAuth(): void {
 }
 
 export function initAuth(): boolean {
-  const stored = getStoredAuthHeader();
-  if (stored) {
-    setAuthHeaderGetter(() => sessionStorage.getItem(STORAGE_KEY));
+  const token = sessionStorage.getItem(STORAGE_KEY);
+  if (token) {
+    setAuthHeaderGetter(() => {
+      const t = sessionStorage.getItem(STORAGE_KEY);
+      return t ? `Bearer ${t}` : null;
+    });
     return true;
   }
   return false;
 }
 
-export async function validateCredentials(username: string, password: string): Promise<boolean> {
-  const header = `Basic ${btoa(`${username}:${password}`)}`;
+export async function loginWithEmail(
+  email: string,
+  password: string,
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-    const resp = await fetch(`${base}/api/tenants`, {
+    const resp = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
       headers: {
-        Authorization: header,
-        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/json",
         Accept: "application/json",
       },
+      body: JSON.stringify({ email, password }),
     });
-    return resp.ok;
+
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      return { ok: false, error: data.error || "Invalid credentials" };
+    }
+
+    const data = await resp.json();
+    storeToken(data.token);
+    return { ok: true };
   } catch {
-    return false;
+    return { ok: false, error: "Connection error" };
   }
 }
