@@ -6,3 +6,9 @@ id = "qe5yI8S6pH_weRXAM3BRm"
 uri = "file://John/Database_URL_work.md"
 type = "text"
 title = "DATABASE_URL Separation Plan"
+
+[[outputs]]
+id = "sLF2zRLk9kNCzsRAL3D-N"
+uri = "file://John/Textline.md"
+type = "text"
+title = "Textline Feature Analysis — SAMA Messaging Roadmap"
