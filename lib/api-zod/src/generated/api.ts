@@ -350,9 +350,17 @@ export const TenantMeResponse = zod.object({
 /**
  * @summary List conversations for the tenant
  */
+export const ListConversationsQueryParams = zod.object({
+  departmentId: zod.coerce
+    .number()
+    .optional()
+    .describe("Filter by department ID. Pass 0 for unassigned conversations."),
+});
+
 export const ListConversationsResponseItem = zod.object({
   id: zod.number(),
   tenantId: zod.number(),
+  departmentId: zod.number().nullable(),
   contactPhone: zod.string(),
   contactName: zod.string().nullable(),
   status: zod.enum(["open", "closed", "snoozed"]),
@@ -374,6 +382,7 @@ export const GetConversationParams = zod.object({
 export const GetConversationResponse = zod.object({
   id: zod.number(),
   tenantId: zod.number(),
+  departmentId: zod.number().nullable(),
   contactPhone: zod.string(),
   contactName: zod.string().nullable(),
   status: zod.enum(["open", "closed", "snoozed"]),
@@ -409,4 +418,183 @@ export const SendMessageParams = zod.object({
 
 export const SendMessageBody = zod.object({
   body: zod.string().min(1),
+});
+
+/**
+ * @summary List departments for the current tenant
+ */
+export const ListDepartmentsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  phoneNumber: zod.string().nullable(),
+  twilioSid: zod.string().nullable(),
+  description: zod.string().nullable(),
+  createdAt: zod.coerce.date(),
+});
+export const ListDepartmentsResponse = zod.array(ListDepartmentsResponseItem);
+
+/**
+ * @summary Create a new department
+ */
+
+export const CreateDepartmentBody = zod.object({
+  name: zod.string().min(1),
+  description: zod.string().optional(),
+});
+
+/**
+ * @summary Get a department by ID
+ */
+export const GetDepartmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetDepartmentResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  phoneNumber: zod.string().nullable(),
+  twilioSid: zod.string().nullable(),
+  description: zod.string().nullable(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update a department
+ */
+export const UpdateDepartmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateDepartmentBody = zod.object({
+  name: zod.string().optional(),
+  description: zod.string().optional(),
+});
+
+export const UpdateDepartmentResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  phoneNumber: zod.string().nullable(),
+  twilioSid: zod.string().nullable(),
+  description: zod.string().nullable(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a department
+ */
+export const DeleteDepartmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteDepartmentResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List members of a department
+ */
+export const ListDepartmentMembersParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListDepartmentMembersResponseItem = zod.object({
+  id: zod.number(),
+  tenantUserId: zod.number(),
+  name: zod.string(),
+  email: zod.string(),
+  role: zod.string(),
+  createdAt: zod.coerce.date(),
+});
+export const ListDepartmentMembersResponse = zod.array(
+  ListDepartmentMembersResponseItem,
+);
+
+/**
+ * @summary Add a member to a department
+ */
+export const AddDepartmentMemberParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AddDepartmentMemberBody = zod.object({
+  tenantUserId: zod.number(),
+});
+
+/**
+ * @summary Remove a member from a department
+ */
+export const RemoveDepartmentMemberParams = zod.object({
+  id: zod.coerce.number(),
+  userId: zod.coerce.number(),
+});
+
+export const RemoveDepartmentMemberResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary Search available phone numbers from Twilio
+ */
+export const searchAvailableNumbersQueryCountryDefault = `US`;
+export const searchAvailableNumbersQueryLimitDefault = 20;
+
+export const SearchAvailableNumbersQueryParams = zod.object({
+  country: zod.coerce
+    .string()
+    .default(searchAvailableNumbersQueryCountryDefault),
+  areaCode: zod.coerce.string().optional(),
+  contains: zod.coerce.string().optional(),
+  limit: zod.coerce.number().default(searchAvailableNumbersQueryLimitDefault),
+});
+
+export const SearchAvailableNumbersResponseItem = zod.object({
+  phoneNumber: zod.string(),
+  friendlyName: zod.string(),
+  locality: zod.string(),
+  region: zod.string(),
+  isoCountry: zod.string(),
+});
+export const SearchAvailableNumbersResponse = zod.array(
+  SearchAvailableNumbersResponseItem,
+);
+
+/**
+ * @summary Purchase a phone number from Twilio
+ */
+export const PurchasePhoneNumberBody = zod.object({
+  phoneNumber: zod.string(),
+  departmentId: zod.number().optional(),
+});
+
+/**
+ * @summary List phone numbers assigned to tenant departments
+ */
+export const ListPhoneNumbersResponseItem = zod.object({
+  departmentId: zod.number(),
+  departmentName: zod.string(),
+  phoneNumber: zod.string(),
+  twilioSid: zod.string().nullable(),
+});
+export const ListPhoneNumbersResponse = zod.array(ListPhoneNumbersResponseItem);
+
+/**
+ * @summary Assign a phone number to a department
+ */
+export const AssignPhoneNumberBody = zod.object({
+  phoneNumber: zod.string(),
+  twilioSid: zod.string().optional(),
+  departmentId: zod.number(),
+});
+
+export const AssignPhoneNumberResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  phoneNumber: zod.string().nullable(),
+  twilioSid: zod.string().nullable(),
+  description: zod.string().nullable(),
+  createdAt: zod.coerce.date(),
 });

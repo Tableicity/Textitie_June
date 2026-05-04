@@ -1,25 +1,40 @@
-import { useListConversations, useGetConversation, useListMessages, useSendMessage, getListMessagesQueryKey, getListConversationsQueryKey, getGetConversationQueryKey } from "@workspace/api-client-react";
-import { useState, useRef, useEffect } from "react";
+import { useListConversations, useGetConversation, useListMessages, useSendMessage, useListDepartments, getListMessagesQueryKey, getListConversationsQueryKey, getGetConversationQueryKey } from "@workspace/api-client-react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { format } from "date-fns";
-import { Search, Send, Clock, User, Phone, CheckCircle2, MessageSquare } from "lucide-react";
+import { Search, Send, Clock, User, Phone, CheckCircle2, MessageSquare, Building2, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function Inbox() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [composeText, setComposeText] = useState("");
+  const [deptFilter, setDeptFilter] = useState<string>("all");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: conversations, isLoading: loadingConversations } = useListConversations({
-    query: {
-      queryKey: getListConversationsQueryKey(),
-      refetchInterval: 10000,
+  const { data: departments } = useListDepartments();
+
+  const deptMap = useMemo(() => {
+    const map = new Map<number, string>();
+    departments?.forEach(d => map.set(d.id, d.name));
+    return map;
+  }, [departments]);
+
+  const filterParams = deptFilter === "all" ? undefined : { departmentId: Number(deptFilter) };
+
+  const { data: conversations, isLoading: loadingConversations } = useListConversations(
+    filterParams,
+    {
+      query: {
+        queryKey: getListConversationsQueryKey(filterParams),
+        refetchInterval: 10000,
+      }
     }
-  });
+  );
 
   const { data: selectedConv, isLoading: loadingConv } = useGetConversation(
     selectedId as number,
@@ -69,7 +84,7 @@ export default function Inbox() {
     <div className="flex h-full bg-white divide-x divide-slate-200">
       {/* Left Panel: Conversation List */}
       <div className="w-80 flex flex-col bg-slate-50 flex-shrink-0">
-        <div className="p-4 border-b border-slate-200 bg-white">
+        <div className="p-4 border-b border-slate-200 bg-white space-y-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input 
@@ -77,6 +92,23 @@ export default function Inbox() {
               className="pl-9 bg-slate-50 border-slate-200 focus-visible:ring-blue-500"
             />
           </div>
+          {departments && departments.length > 0 && (
+            <Select value={deptFilter} onValueChange={(v) => { setDeptFilter(v); setSelectedId(null); }}>
+              <SelectTrigger className="h-8 text-xs bg-slate-50 border-slate-200">
+                <div className="flex items-center gap-1.5">
+                  <Filter className="w-3 h-3 text-slate-400" />
+                  <SelectValue placeholder="All Departments" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                <SelectItem value="0">Unassigned</SelectItem>
+                {departments.map(d => (
+                  <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         
         <ScrollArea className="flex-1">
@@ -124,6 +156,12 @@ export default function Inbox() {
                       <CheckCircle2 className="w-3 h-3 text-slate-400" />
                     )}
                   </div>
+                  {conv.departmentId && deptMap.get(conv.departmentId) && (
+                    <div className="mt-1.5 flex items-center gap-1">
+                      <Building2 className="w-3 h-3 text-slate-400" />
+                      <span className="text-[10px] font-medium text-slate-400">{deptMap.get(conv.departmentId)}</span>
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
@@ -150,6 +188,15 @@ export default function Inbox() {
                     {selectedConv?.contactPhone}
                     <span className="w-1 h-1 rounded-full bg-slate-300 mx-1"></span>
                     <span className="capitalize">{selectedConv?.status}</span>
+                    {selectedConv?.departmentId && deptMap.get(selectedConv.departmentId) && (
+                      <>
+                        <span className="w-1 h-1 rounded-full bg-slate-300 mx-1"></span>
+                        <span className="flex items-center gap-1">
+                          <Building2 className="w-3 h-3" />
+                          {deptMap.get(selectedConv.departmentId)}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

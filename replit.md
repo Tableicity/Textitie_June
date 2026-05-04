@@ -6,7 +6,7 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 
 - **Monorepo**: pnpm workspace.
 - **Contract-first**: `lib/api-spec/openapi.yaml` → orval codegen → `@workspace/api-client-react` (React Query hooks) + `@workspace/api-zod` (zod schemas).
-- **DB**: Drizzle (Postgres) — schemas in `lib/db/src/schema/{tenants,tiers,injections,webhookEvents,tenantUsers,conversations,messages}.ts`.
+- **DB**: Drizzle (Postgres) — schemas in `lib/db/src/schema/{tenants,tiers,injections,webhookEvents,tenantUsers,conversations,messages,departments}.ts`.
 - **API**: `artifacts/api-server` (Express, port 8080, mounted at `/api`).
 - **Admin UI**: `artifacts/eng-architect` (React + Vite + wouter + shadcn, mounted at `/`).
 - **User UI**: `artifacts/user-app` (React + Vite + wouter + shadcn, mounted at `/app`).
@@ -119,17 +119,36 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 ### Conversations & Messages
 - `conversations` table: `lib/db/src/schema/conversations.ts` — tenant-scoped, with contactPhone, contactName, status (open/closed), assignedUserId, lastMessageAt.
 - `messages` table: same file — conversation_id (FK→conversations), direction (inbound/outbound), body, channel, externalId, createdAt.
-- `GET /api/conversations` — list conversations for the authenticated tenant.
+- `GET /api/conversations?departmentId=` — list conversations for the authenticated tenant, optionally filtered by department (0 = unassigned).
 - `GET /api/conversations/:id` — get single conversation (tenant-scoped).
 - `GET /api/conversations/:id/messages` — list messages in a conversation.
 - `POST /api/conversations/:id/messages` — send a message (creates outbound message record).
+- `GET /api/departments` — list departments for the tenant.
+- `POST /api/departments` — create a department (name, description).
+- `GET /api/departments/:id` — get a single department.
+- `PATCH /api/departments/:id` — update department name/description.
+- `DELETE /api/departments/:id` — delete a department (conversations are unlinked via ON DELETE SET NULL).
+- `GET /api/departments/:id/members` — list members of a department (joined with tenant_users).
+- `POST /api/departments/:id/members` — add a tenant user to a department.
+- `DELETE /api/departments/:id/members/:userId` — remove a member from a department.
+- `GET /api/phone-numbers` — list phone numbers assigned to the tenant's departments.
+- `GET /api/phone-numbers/search?country=&areaCode=` — search available Twilio numbers.
+- `POST /api/phone-numbers/purchase` — purchase a Twilio number and optionally assign to a department.
+- `POST /api/phone-numbers/assign` — assign/reassign a phone number to a department.
 
 ### User UI Pages
 - `/app/login` — tenant login page (blue theme, "SAMA Messaging" branding).
 - `/app/` — conversation inbox (2-panel: conversation list + message thread).
-- `/app/settings` — placeholder "Coming Soon" settings page.
+- `/app/settings` — full workspace settings with tabbed UI: Departments (CRUD), Phone Numbers (search/purchase/assign Twilio numbers), Team (department member management).
 - AppShell: auth guard (redirects to login if no token or 401), dark sidebar with nav icons (inbox, settings, logout).
 - Auth tokens stored in `sessionStorage` under key `sama_tenant_token`.
+
+### Departments & Phone Numbers (Phase 2)
+- `departments` table: `lib/db/src/schema/departments.ts` — id, tenant_id, name, phone_number, description, created_at. Tenant-scoped.
+- `department_members` join table: same file — department_id, tenant_user_id (unique composite), created_at.
+- `conversations.departmentId` nullable FK → `departments.id` with `ON DELETE SET NULL`.
+- Inbox has department filter dropdown (All / Unassigned / per-department) and shows department badge on conversations.
+- conductorAuth bypasses `/departments` and `/phone-numbers` paths (these use `requireTenantAuth` instead).
 
 ### OpenAPI Naming Convention
 - Avoid `*Response` suffix on schema names — Orval generates both Zod consts and TS interfaces with same name, causing export collisions in `lib/api-zod`. Use `*Result` instead.

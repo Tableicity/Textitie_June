@@ -17,23 +17,37 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AddDepartmentMemberInput,
   ApiError,
+  AssignNumberInput,
+  AvailableNumberItem,
   ComplianceReport,
   ControlPlaneStats,
   Conversation,
+  CreateDepartmentInput,
   CreateTenantInput,
+  DepartmentItem,
+  DepartmentMemberItem,
+  DepartmentMemberRecord,
   HealthStatus,
   InjectMessageInput,
   InjectionLog,
+  ListConversationsParams,
   ListInjectionsParams,
   ListWebhookEventsParams,
   Message,
+  PurchaseNumberInput,
+  PurchasedNumberResult,
+  SearchAvailableNumbersParams,
   SendMessageInput,
+  SuccessResult,
   Tenant,
   TenantLoginInput,
   TenantLoginResult,
   TenantMeResult,
+  TenantPhoneNumberItem,
   Tier,
+  UpdateDepartmentInput,
   UpdateTenantInput,
   WebhookEvent,
   WebhookPayload,
@@ -1187,41 +1201,60 @@ export function useTenantMe<
 /**
  * @summary List conversations for the tenant
  */
-export const getListConversationsUrl = () => {
-  return `/api/conversations`;
+export const getListConversationsUrl = (params?: ListConversationsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/conversations?${stringifiedParams}`
+    : `/api/conversations`;
 };
 
 export const listConversations = async (
+  params?: ListConversationsParams,
   options?: RequestInit,
 ): Promise<Conversation[]> => {
-  return customFetch<Conversation[]>(getListConversationsUrl(), {
+  return customFetch<Conversation[]>(getListConversationsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListConversationsQueryKey = () => {
-  return [`/api/conversations`] as const;
+export const getListConversationsQueryKey = (
+  params?: ListConversationsParams,
+) => {
+  return [`/api/conversations`, ...(params ? [params] : [])] as const;
 };
 
 export const getListConversationsQueryOptions = <
   TData = Awaited<ReturnType<typeof listConversations>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listConversations>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListConversationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listConversations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListConversationsQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getListConversationsQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof listConversations>>
-  > = ({ signal }) => listConversations({ signal, ...requestOptions });
+  > = ({ signal }) => listConversations(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listConversations>>,
@@ -1242,15 +1275,18 @@ export type ListConversationsQueryError = ErrorType<unknown>;
 export function useListConversations<
   TData = Awaited<ReturnType<typeof listConversations>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listConversations>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListConversationsQueryOptions(options);
+>(
+  params?: ListConversationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listConversations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListConversationsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -1518,4 +1554,1034 @@ export const useSendMessage = <
   TContext
 > => {
   return useMutation(getSendMessageMutationOptions(options));
+};
+
+/**
+ * @summary List departments for the current tenant
+ */
+export const getListDepartmentsUrl = () => {
+  return `/api/departments`;
+};
+
+export const listDepartments = async (
+  options?: RequestInit,
+): Promise<DepartmentItem[]> => {
+  return customFetch<DepartmentItem[]>(getListDepartmentsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDepartmentsQueryKey = () => {
+  return [`/api/departments`] as const;
+};
+
+export const getListDepartmentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDepartments>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDepartments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDepartmentsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listDepartments>>> = ({
+    signal,
+  }) => listDepartments({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDepartments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDepartmentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDepartments>>
+>;
+export type ListDepartmentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List departments for the current tenant
+ */
+
+export function useListDepartments<
+  TData = Awaited<ReturnType<typeof listDepartments>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDepartments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDepartmentsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new department
+ */
+export const getCreateDepartmentUrl = () => {
+  return `/api/departments`;
+};
+
+export const createDepartment = async (
+  createDepartmentInput: CreateDepartmentInput,
+  options?: RequestInit,
+): Promise<DepartmentItem> => {
+  return customFetch<DepartmentItem>(getCreateDepartmentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createDepartmentInput),
+  });
+};
+
+export const getCreateDepartmentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDepartment>>,
+    TError,
+    { data: BodyType<CreateDepartmentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createDepartment>>,
+  TError,
+  { data: BodyType<CreateDepartmentInput> },
+  TContext
+> => {
+  const mutationKey = ["createDepartment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createDepartment>>,
+    { data: BodyType<CreateDepartmentInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createDepartment(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateDepartmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createDepartment>>
+>;
+export type CreateDepartmentMutationBody = BodyType<CreateDepartmentInput>;
+export type CreateDepartmentMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a new department
+ */
+export const useCreateDepartment = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDepartment>>,
+    TError,
+    { data: BodyType<CreateDepartmentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createDepartment>>,
+  TError,
+  { data: BodyType<CreateDepartmentInput> },
+  TContext
+> => {
+  return useMutation(getCreateDepartmentMutationOptions(options));
+};
+
+/**
+ * @summary Get a department by ID
+ */
+export const getGetDepartmentUrl = (id: number) => {
+  return `/api/departments/${id}`;
+};
+
+export const getDepartment = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DepartmentItem> => {
+  return customFetch<DepartmentItem>(getGetDepartmentUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDepartmentQueryKey = (id: number) => {
+  return [`/api/departments/${id}`] as const;
+};
+
+export const getGetDepartmentQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDepartment>>,
+  TError = ErrorType<ApiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDepartment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDepartmentQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDepartment>>> = ({
+    signal,
+  }) => getDepartment(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDepartment>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDepartmentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDepartment>>
+>;
+export type GetDepartmentQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Get a department by ID
+ */
+
+export function useGetDepartment<
+  TData = Awaited<ReturnType<typeof getDepartment>>,
+  TError = ErrorType<ApiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDepartment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDepartmentQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update a department
+ */
+export const getUpdateDepartmentUrl = (id: number) => {
+  return `/api/departments/${id}`;
+};
+
+export const updateDepartment = async (
+  id: number,
+  updateDepartmentInput: UpdateDepartmentInput,
+  options?: RequestInit,
+): Promise<DepartmentItem> => {
+  return customFetch<DepartmentItem>(getUpdateDepartmentUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateDepartmentInput),
+  });
+};
+
+export const getUpdateDepartmentMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDepartment>>,
+    TError,
+    { id: number; data: BodyType<UpdateDepartmentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDepartment>>,
+  TError,
+  { id: number; data: BodyType<UpdateDepartmentInput> },
+  TContext
+> => {
+  const mutationKey = ["updateDepartment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDepartment>>,
+    { id: number; data: BodyType<UpdateDepartmentInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateDepartment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDepartmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDepartment>>
+>;
+export type UpdateDepartmentMutationBody = BodyType<UpdateDepartmentInput>;
+export type UpdateDepartmentMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Update a department
+ */
+export const useUpdateDepartment = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDepartment>>,
+    TError,
+    { id: number; data: BodyType<UpdateDepartmentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDepartment>>,
+  TError,
+  { id: number; data: BodyType<UpdateDepartmentInput> },
+  TContext
+> => {
+  return useMutation(getUpdateDepartmentMutationOptions(options));
+};
+
+/**
+ * @summary Delete a department
+ */
+export const getDeleteDepartmentUrl = (id: number) => {
+  return `/api/departments/${id}`;
+};
+
+export const deleteDepartment = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SuccessResult> => {
+  return customFetch<SuccessResult>(getDeleteDepartmentUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteDepartmentMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDepartment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDepartment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteDepartment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDepartment>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteDepartment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteDepartmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDepartment>>
+>;
+
+export type DeleteDepartmentMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete a department
+ */
+export const useDeleteDepartment = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDepartment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDepartment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteDepartmentMutationOptions(options));
+};
+
+/**
+ * @summary List members of a department
+ */
+export const getListDepartmentMembersUrl = (id: number) => {
+  return `/api/departments/${id}/members`;
+};
+
+export const listDepartmentMembers = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DepartmentMemberItem[]> => {
+  return customFetch<DepartmentMemberItem[]>(getListDepartmentMembersUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDepartmentMembersQueryKey = (id: number) => {
+  return [`/api/departments/${id}/members`] as const;
+};
+
+export const getListDepartmentMembersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDepartmentMembers>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDepartmentMembers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListDepartmentMembersQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listDepartmentMembers>>
+  > = ({ signal }) => listDepartmentMembers(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDepartmentMembers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDepartmentMembersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDepartmentMembers>>
+>;
+export type ListDepartmentMembersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List members of a department
+ */
+
+export function useListDepartmentMembers<
+  TData = Awaited<ReturnType<typeof listDepartmentMembers>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDepartmentMembers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDepartmentMembersQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a member to a department
+ */
+export const getAddDepartmentMemberUrl = (id: number) => {
+  return `/api/departments/${id}/members`;
+};
+
+export const addDepartmentMember = async (
+  id: number,
+  addDepartmentMemberInput: AddDepartmentMemberInput,
+  options?: RequestInit,
+): Promise<DepartmentMemberRecord> => {
+  return customFetch<DepartmentMemberRecord>(getAddDepartmentMemberUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(addDepartmentMemberInput),
+  });
+};
+
+export const getAddDepartmentMemberMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addDepartmentMember>>,
+    TError,
+    { id: number; data: BodyType<AddDepartmentMemberInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addDepartmentMember>>,
+  TError,
+  { id: number; data: BodyType<AddDepartmentMemberInput> },
+  TContext
+> => {
+  const mutationKey = ["addDepartmentMember"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addDepartmentMember>>,
+    { id: number; data: BodyType<AddDepartmentMemberInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return addDepartmentMember(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddDepartmentMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addDepartmentMember>>
+>;
+export type AddDepartmentMemberMutationBody =
+  BodyType<AddDepartmentMemberInput>;
+export type AddDepartmentMemberMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a member to a department
+ */
+export const useAddDepartmentMember = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addDepartmentMember>>,
+    TError,
+    { id: number; data: BodyType<AddDepartmentMemberInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addDepartmentMember>>,
+  TError,
+  { id: number; data: BodyType<AddDepartmentMemberInput> },
+  TContext
+> => {
+  return useMutation(getAddDepartmentMemberMutationOptions(options));
+};
+
+/**
+ * @summary Remove a member from a department
+ */
+export const getRemoveDepartmentMemberUrl = (id: number, userId: number) => {
+  return `/api/departments/${id}/members/${userId}`;
+};
+
+export const removeDepartmentMember = async (
+  id: number,
+  userId: number,
+  options?: RequestInit,
+): Promise<SuccessResult> => {
+  return customFetch<SuccessResult>(getRemoveDepartmentMemberUrl(id, userId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getRemoveDepartmentMemberMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeDepartmentMember>>,
+    TError,
+    { id: number; userId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeDepartmentMember>>,
+  TError,
+  { id: number; userId: number },
+  TContext
+> => {
+  const mutationKey = ["removeDepartmentMember"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeDepartmentMember>>,
+    { id: number; userId: number }
+  > = (props) => {
+    const { id, userId } = props ?? {};
+
+    return removeDepartmentMember(id, userId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveDepartmentMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeDepartmentMember>>
+>;
+
+export type RemoveDepartmentMemberMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove a member from a department
+ */
+export const useRemoveDepartmentMember = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeDepartmentMember>>,
+    TError,
+    { id: number; userId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeDepartmentMember>>,
+  TError,
+  { id: number; userId: number },
+  TContext
+> => {
+  return useMutation(getRemoveDepartmentMemberMutationOptions(options));
+};
+
+/**
+ * @summary Search available phone numbers from Twilio
+ */
+export const getSearchAvailableNumbersUrl = (
+  params?: SearchAvailableNumbersParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/phone-numbers/available?${stringifiedParams}`
+    : `/api/phone-numbers/available`;
+};
+
+export const searchAvailableNumbers = async (
+  params?: SearchAvailableNumbersParams,
+  options?: RequestInit,
+): Promise<AvailableNumberItem[]> => {
+  return customFetch<AvailableNumberItem[]>(
+    getSearchAvailableNumbersUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getSearchAvailableNumbersQueryKey = (
+  params?: SearchAvailableNumbersParams,
+) => {
+  return [`/api/phone-numbers/available`, ...(params ? [params] : [])] as const;
+};
+
+export const getSearchAvailableNumbersQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchAvailableNumbers>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: SearchAvailableNumbersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchAvailableNumbers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getSearchAvailableNumbersQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof searchAvailableNumbers>>
+  > = ({ signal }) =>
+    searchAvailableNumbers(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchAvailableNumbers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type SearchAvailableNumbersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchAvailableNumbers>>
+>;
+export type SearchAvailableNumbersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Search available phone numbers from Twilio
+ */
+
+export function useSearchAvailableNumbers<
+  TData = Awaited<ReturnType<typeof searchAvailableNumbers>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: SearchAvailableNumbersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchAvailableNumbers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getSearchAvailableNumbersQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Purchase a phone number from Twilio
+ */
+export const getPurchasePhoneNumberUrl = () => {
+  return `/api/phone-numbers/purchase`;
+};
+
+export const purchasePhoneNumber = async (
+  purchaseNumberInput: PurchaseNumberInput,
+  options?: RequestInit,
+): Promise<PurchasedNumberResult> => {
+  return customFetch<PurchasedNumberResult>(getPurchasePhoneNumberUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(purchaseNumberInput),
+  });
+};
+
+export const getPurchasePhoneNumberMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof purchasePhoneNumber>>,
+    TError,
+    { data: BodyType<PurchaseNumberInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof purchasePhoneNumber>>,
+  TError,
+  { data: BodyType<PurchaseNumberInput> },
+  TContext
+> => {
+  const mutationKey = ["purchasePhoneNumber"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof purchasePhoneNumber>>,
+    { data: BodyType<PurchaseNumberInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return purchasePhoneNumber(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PurchasePhoneNumberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof purchasePhoneNumber>>
+>;
+export type PurchasePhoneNumberMutationBody = BodyType<PurchaseNumberInput>;
+export type PurchasePhoneNumberMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Purchase a phone number from Twilio
+ */
+export const usePurchasePhoneNumber = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof purchasePhoneNumber>>,
+    TError,
+    { data: BodyType<PurchaseNumberInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof purchasePhoneNumber>>,
+  TError,
+  { data: BodyType<PurchaseNumberInput> },
+  TContext
+> => {
+  return useMutation(getPurchasePhoneNumberMutationOptions(options));
+};
+
+/**
+ * @summary List phone numbers assigned to tenant departments
+ */
+export const getListPhoneNumbersUrl = () => {
+  return `/api/phone-numbers`;
+};
+
+export const listPhoneNumbers = async (
+  options?: RequestInit,
+): Promise<TenantPhoneNumberItem[]> => {
+  return customFetch<TenantPhoneNumberItem[]>(getListPhoneNumbersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPhoneNumbersQueryKey = () => {
+  return [`/api/phone-numbers`] as const;
+};
+
+export const getListPhoneNumbersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPhoneNumbers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPhoneNumbers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPhoneNumbersQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPhoneNumbers>>
+  > = ({ signal }) => listPhoneNumbers({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPhoneNumbers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPhoneNumbersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPhoneNumbers>>
+>;
+export type ListPhoneNumbersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List phone numbers assigned to tenant departments
+ */
+
+export function useListPhoneNumbers<
+  TData = Awaited<ReturnType<typeof listPhoneNumbers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPhoneNumbers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPhoneNumbersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Assign a phone number to a department
+ */
+export const getAssignPhoneNumberUrl = () => {
+  return `/api/phone-numbers/assign`;
+};
+
+export const assignPhoneNumber = async (
+  assignNumberInput: AssignNumberInput,
+  options?: RequestInit,
+): Promise<DepartmentItem> => {
+  return customFetch<DepartmentItem>(getAssignPhoneNumberUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(assignNumberInput),
+  });
+};
+
+export const getAssignPhoneNumberMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof assignPhoneNumber>>,
+    TError,
+    { data: BodyType<AssignNumberInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof assignPhoneNumber>>,
+  TError,
+  { data: BodyType<AssignNumberInput> },
+  TContext
+> => {
+  const mutationKey = ["assignPhoneNumber"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof assignPhoneNumber>>,
+    { data: BodyType<AssignNumberInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return assignPhoneNumber(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AssignPhoneNumberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof assignPhoneNumber>>
+>;
+export type AssignPhoneNumberMutationBody = BodyType<AssignNumberInput>;
+export type AssignPhoneNumberMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Assign a phone number to a department
+ */
+export const useAssignPhoneNumber = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof assignPhoneNumber>>,
+    TError,
+    { data: BodyType<AssignNumberInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof assignPhoneNumber>>,
+  TError,
+  { data: BodyType<AssignNumberInput> },
+  TContext
+> => {
+  return useMutation(getAssignPhoneNumberMutationOptions(options));
 };

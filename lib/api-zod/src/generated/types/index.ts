@@ -6,7 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./addDepartmentMemberInput";
 export * from "./apiError";
+export * from "./assignNumberInput";
+export * from "./availableNumberItem";
 export * from "./complianceItem";
 export * from "./complianceReport";
 export * from "./controlPlaneStats";
@@ -14,25 +17,36 @@ export * from "./controlPlaneStatsTenantsByRegionItem";
 export * from "./controlPlaneStatsTenantsByTierItem";
 export * from "./conversation";
 export * from "./conversationStatus";
+export * from "./createDepartmentInput";
 export * from "./createTenantInput";
+export * from "./departmentItem";
+export * from "./departmentMemberItem";
+export * from "./departmentMemberRecord";
 export * from "./healthStatus";
 export * from "./injectionLog";
 export * from "./injectionStatus";
 export * from "./injectMessageInput";
+export * from "./listConversationsParams";
 export * from "./listInjectionsParams";
 export * from "./listWebhookEventsParams";
 export * from "./message";
 export * from "./messageDirection";
+export * from "./purchasedNumberResult";
+export * from "./purchaseNumberInput";
 export * from "./region";
+export * from "./searchAvailableNumbersParams";
 export * from "./sendMessageInput";
+export * from "./successResult";
 export * from "./tenant";
 export * from "./tenantLoginInput";
 export * from "./tenantLoginResult";
 export * from "./tenantMeResult";
 export * from "./tenantNumberStatus";
+export * from "./tenantPhoneNumberItem";
 export * from "./tenantUserInfo";
 export * from "./tier";
 export * from "./tierCode";
+export * from "./updateDepartmentInput";
 export * from "./updateTenantInput";
 export * from "./webhookEvent";
 export * from "./webhookEventPayload";

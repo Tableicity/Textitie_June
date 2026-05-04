@@ -251,6 +251,8 @@ export const ConversationStatus = {
 export interface Conversation {
   id: number;
   tenantId: number;
+  /** @nullable */
+  departmentId: number | null;
   contactPhone: string;
   /** @nullable */
   contactName: string | null;
@@ -286,6 +288,89 @@ export interface SendMessageInput {
   body: string;
 }
 
+export interface DepartmentItem {
+  id: number;
+  tenantId: number;
+  name: string;
+  /** @nullable */
+  phoneNumber: string | null;
+  /** @nullable */
+  twilioSid: string | null;
+  /** @nullable */
+  description: string | null;
+  createdAt: string;
+}
+
+export interface CreateDepartmentInput {
+  /** @minLength 1 */
+  name: string;
+  description?: string;
+}
+
+export interface UpdateDepartmentInput {
+  name?: string;
+  description?: string;
+}
+
+export interface DepartmentMemberItem {
+  id: number;
+  tenantUserId: number;
+  name: string;
+  email: string;
+  role: string;
+  createdAt: string;
+}
+
+export interface DepartmentMemberRecord {
+  id: number;
+  departmentId: number;
+  tenantUserId: number;
+  createdAt: string;
+}
+
+export interface AddDepartmentMemberInput {
+  tenantUserId: number;
+}
+
+export interface SuccessResult {
+  success: boolean;
+}
+
+export interface AvailableNumberItem {
+  phoneNumber: string;
+  friendlyName: string;
+  locality: string;
+  region: string;
+  isoCountry: string;
+}
+
+export interface PurchaseNumberInput {
+  phoneNumber: string;
+  departmentId?: number;
+}
+
+export interface PurchasedNumberResult {
+  sid: string;
+  phoneNumber: string;
+  friendlyName: string;
+  /** @nullable */
+  departmentId: number | null;
+}
+
+export interface TenantPhoneNumberItem {
+  departmentId: number;
+  departmentName: string;
+  phoneNumber: string;
+  /** @nullable */
+  twilioSid: string | null;
+}
+
+export interface AssignNumberInput {
+  phoneNumber: string;
+  twilioSid?: string;
+  departmentId: number;
+}
+
 export type ListInjectionsParams = {
   /**
    * @minimum 1
@@ -299,5 +384,19 @@ export type ListWebhookEventsParams = {
    * @minimum 1
    * @maximum 200
    */
+  limit?: number;
+};
+
+export type ListConversationsParams = {
+  /**
+   * Filter by department ID. Pass 0 for unassigned conversations.
+   */
+  departmentId?: number;
+};
+
+export type SearchAvailableNumbersParams = {
+  country?: string;
+  areaCode?: string;
+  contains?: string;
   limit?: number;
 };

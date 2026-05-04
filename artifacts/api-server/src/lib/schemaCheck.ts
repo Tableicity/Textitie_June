@@ -8,6 +8,8 @@ const REQUIRED_TABLES = [
   "webhook_events",
   "users",
   "tenant_users",
+  "departments",
+  "department_members",
   "conversations",
   "messages",
 ];

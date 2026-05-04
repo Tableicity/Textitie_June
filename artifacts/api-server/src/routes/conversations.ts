@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, conversationsTable, messagesTable } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { db, conversationsTable, messagesTable, departmentsTable } from "@workspace/db";
+import { eq, and, desc, isNull } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
 
@@ -8,12 +8,32 @@ const router = Router();
 
 router.get("/conversations", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
+  const departmentId = req.query.departmentId ? Number(req.query.departmentId) : undefined;
 
   try {
+    const conditions = [eq(conversationsTable.tenantId, tenantId)];
+    if (departmentId !== undefined) {
+      if (departmentId === 0) {
+        conditions.push(isNull(conversationsTable.departmentId));
+      } else {
+        conditions.push(eq(conversationsTable.departmentId, departmentId));
+      }
+    }
+
     const rows = await db
-      .select()
+      .select({
+        id: conversationsTable.id,
+        tenantId: conversationsTable.tenantId,
+        departmentId: conversationsTable.departmentId,
+        contactPhone: conversationsTable.contactPhone,
+        contactName: conversationsTable.contactName,
+        status: conversationsTable.status,
+        assignedUserId: conversationsTable.assignedUserId,
+        lastMessageAt: conversationsTable.lastMessageAt,
+        createdAt: conversationsTable.createdAt,
+      })
       .from(conversationsTable)
-      .where(eq(conversationsTable.tenantId, tenantId))
+      .where(and(...conditions))
       .orderBy(desc(conversationsTable.lastMessageAt));
 
     res.json(rows);

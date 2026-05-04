@@ -1,11 +1,14 @@
 import { pgTable, serial, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
 import { tenantsTable } from "./tenants";
+import { departmentsTable } from "./departments";
 
 export const conversationsTable = pgTable("conversations", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id")
     .notNull()
     .references(() => tenantsTable.id),
+  departmentId: integer("department_id")
+    .references(() => departmentsTable.id, { onDelete: "set null" }),
   contactPhone: text("contact_phone").notNull(),
   contactName: text("contact_name"),
   status: text("status").notNull().default("open"),

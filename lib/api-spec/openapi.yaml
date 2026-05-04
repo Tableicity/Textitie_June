@@ -26,6 +26,10 @@ tags:
     description: Tenant user authentication
   - name: conversations
     description: Tenant messaging inbox
+  - name: departments
+    description: Department management
+  - name: phone-numbers
+    description: Phone number provisioning
 paths:
   /healthz:
     get:
@@ -339,6 +343,13 @@ paths:
       operationId: listConversations
       tags: [conversations]
       summary: List conversations for the tenant
+      parameters:
+        - name: departmentId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filter by department ID. Pass 0 for unassigned conversations.
       responses:
         "200":
           description: List of conversations
@@ -435,6 +446,270 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+
+  /departments:
+    get:
+      operationId: listDepartments
+      tags: [departments]
+      summary: List departments for the current tenant
+      responses:
+        "200":
+          description: List of departments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DepartmentItem"
+    post:
+      operationId: createDepartment
+      tags: [departments]
+      summary: Create a new department
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDepartmentInput"
+      responses:
+        "201":
+          description: Department created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentItem"
+
+  /departments/{id}:
+    get:
+      operationId: getDepartment
+      tags: [departments]
+      summary: Get a department by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Department details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateDepartment
+      tags: [departments]
+      summary: Update a department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDepartmentInput"
+      responses:
+        "200":
+          description: Department updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteDepartment
+      tags: [departments]
+      summary: Delete a department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /departments/{id}/members:
+    get:
+      operationId: listDepartmentMembers
+      tags: [departments]
+      summary: List members of a department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DepartmentMemberItem"
+    post:
+      operationId: addDepartmentMember
+      tags: [departments]
+      summary: Add a member to a department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddDepartmentMemberInput"
+      responses:
+        "201":
+          description: Member added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentMemberRecord"
+
+  /departments/{id}/members/{userId}:
+    delete:
+      operationId: removeDepartmentMember
+      tags: [departments]
+      summary: Remove a member from a department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Member removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /phone-numbers/available:
+    get:
+      operationId: searchAvailableNumbers
+      tags: [phone-numbers]
+      summary: Search available phone numbers from Twilio
+      parameters:
+        - name: country
+          in: query
+          schema:
+            type: string
+            default: US
+        - name: areaCode
+          in: query
+          schema:
+            type: string
+        - name: contains
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Available numbers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AvailableNumberItem"
+
+  /phone-numbers/purchase:
+    post:
+      operationId: purchasePhoneNumber
+      tags: [phone-numbers]
+      summary: Purchase a phone number from Twilio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PurchaseNumberInput"
+      responses:
+        "201":
+          description: Number purchased
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchasedNumberResult"
+
+  /phone-numbers:
+    get:
+      operationId: listPhoneNumbers
+      tags: [phone-numbers]
+      summary: List phone numbers assigned to tenant departments
+      responses:
+        "200":
+          description: Phone numbers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TenantPhoneNumberItem"
+
+  /phone-numbers/assign:
+    post:
+      operationId: assignPhoneNumber
+      tags: [phone-numbers]
+      summary: Assign a phone number to a department
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignNumberInput"
+      responses:
+        "200":
+          description: Number assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentItem"
 
 components:
   schemas:
@@ -781,6 +1056,8 @@ components:
           type: integer
         tenantId:
           type: integer
+        departmentId:
+          type: ["integer", "null"]
         contactPhone:
           type: string
         contactName:
@@ -798,6 +1075,7 @@ components:
       required:
         - id
         - tenantId
+        - departmentId
         - contactPhone
         - contactName
         - status
@@ -836,3 +1114,148 @@ components:
           type: string
           minLength: 1
       required: [body]
+
+    DepartmentItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        name:
+          type: string
+        phoneNumber:
+          type: ["string", "null"]
+        twilioSid:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, tenantId, name, phoneNumber, twilioSid, description, createdAt]
+
+    CreateDepartmentInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+      required: [name]
+
+    UpdateDepartmentInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    DepartmentMemberItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantUserId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, tenantUserId, name, email, role, createdAt]
+
+    DepartmentMemberRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        departmentId:
+          type: integer
+        tenantUserId:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, departmentId, tenantUserId, createdAt]
+
+    AddDepartmentMemberInput:
+      type: object
+      properties:
+        tenantUserId:
+          type: integer
+      required: [tenantUserId]
+
+    SuccessResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required: [success]
+
+    AvailableNumberItem:
+      type: object
+      properties:
+        phoneNumber:
+          type: string
+        friendlyName:
+          type: string
+        locality:
+          type: string
+        region:
+          type: string
+        isoCountry:
+          type: string
+      required: [phoneNumber, friendlyName, locality, region, isoCountry]
+
+    PurchaseNumberInput:
+      type: object
+      properties:
+        phoneNumber:
+          type: string
+        departmentId:
+          type: integer
+      required: [phoneNumber]
+
+    PurchasedNumberResult:
+      type: object
+      properties:
+        sid:
+          type: string
+        phoneNumber:
+          type: string
+        friendlyName:
+          type: string
+        departmentId:
+          type: ["integer", "null"]
+      required: [sid, phoneNumber, friendlyName, departmentId]
+
+    TenantPhoneNumberItem:
+      type: object
+      properties:
+        departmentId:
+          type: integer
+        departmentName:
+          type: string
+        phoneNumber:
+          type: string
+        twilioSid:
+          type: ["string", "null"]
+      required: [departmentId, departmentName, phoneNumber, twilioSid]
+
+    AssignNumberInput:
+      type: object
+      properties:
+        phoneNumber:
+          type: string
+        twilioSid:
+          type: string
+        departmentId:
+          type: integer
+      required: [phoneNumber, departmentId]

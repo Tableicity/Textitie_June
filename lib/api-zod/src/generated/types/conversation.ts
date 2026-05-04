@@ -10,6 +10,8 @@ import type { ConversationStatus } from "./conversationStatus";
 export interface Conversation {
   id: number;
   tenantId: number;
+  /** @nullable */
+  departmentId: number | null;
   contactPhone: string;
   /** @nullable */
   contactName: string | null;

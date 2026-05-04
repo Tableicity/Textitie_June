@@ -9,6 +9,8 @@ import webhooksRouter from "./webhooks";
 import statsRouter from "./stats";
 import complianceRouter from "./compliance";
 import conversationsRouter from "./conversations";
+import departmentsRouter from "./departments";
+import phoneNumbersRouter from "./phoneNumbers";
 
 const router: IRouter = Router();
 
@@ -22,5 +24,7 @@ router.use(webhooksRouter);
 router.use(statsRouter);
 router.use(complianceRouter);
 router.use(conversationsRouter);
+router.use(departmentsRouter);
+router.use(phoneNumbersRouter);
 
 export default router;
