@@ -29,13 +29,14 @@ const TIER_PRICING = [
   {
     code: "enterprise",
     name: "Enterprise",
-    description: "Custom domains, RLS isolation, Sovereign Toggle for German residency.",
-    features: ["Custom domains", "Row-level tenant isolation", "Sovereign Toggle (DE residency)", "SLA + dedicated CSM"],
+    description: "Custom domains, RLS isolation, Sovereign Toggle for German residency, HIPAA eligibility.",
+    features: ["Custom domains", "Row-level tenant isolation", "Sovereign Toggle (DE residency)", "SLA + dedicated CSM", "HIPAA-eligible (BAA)"],
     monthlyPriceCents: 19900,
     includedCredits: 0,
     trialDays: 14,
     maxAgents: 0,
     maxPhoneNumbers: 0,
+    hipaaEligible: true,
   },
 ];
 
@@ -139,21 +140,15 @@ async function seedTiers(): Promise<void> {
     if (existing.length === 0) {
       await db.insert(tiersTable).values(tier);
       logger.info({ code: tier.code }, "Tier seeded");
-    } else if (existing[0].monthlyPriceCents === 0) {
+    } else {
       await db
         .update(tiersTable)
         .set({
-          name: tier.name,
           description: tier.description,
           features: tier.features,
-          monthlyPriceCents: tier.monthlyPriceCents,
-          includedCredits: tier.includedCredits,
-          trialDays: tier.trialDays,
-          maxAgents: tier.maxAgents,
-          maxPhoneNumbers: tier.maxPhoneNumbers,
+          hipaaEligible: tier.hipaaEligible ?? false,
         })
         .where(eq(tiersTable.code, tier.code));
-      logger.info({ code: tier.code }, "Tier pricing updated");
     }
   }
 }

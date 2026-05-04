@@ -3,6 +3,17 @@ import { db, contactsTable, conversationsTable } from "@workspace/db";
 import { and, eq, desc, sql, ilike, or } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
+import { recordAudit } from "../lib/audit";
+import { enqueueSync } from "../lib/integrations/syncWorker";
+
+function splitName(name: string | null): { firstName: string | null; lastName: string | null } {
+  if (!name) return { firstName: null, lastName: null };
+  const parts = name.split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] ?? null,
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : null,
+  };
+}
 
 const router = Router();
 
@@ -118,7 +129,29 @@ router.post("/contacts", requireTenantAuth, async (req, res) => {
         tags: cleanTags,
       })
       .returning();
-    res.status(201).json(rows[0]);
+    const created = rows[0];
+    await recordAudit(req, {
+      action: "contact.created",
+      entityType: "contact",
+      entityId: created.id,
+      after: { phone: created.phone, name: created.name, tags: created.tags },
+    });
+    const { firstName, lastName } = splitName(created.name);
+    await enqueueSync({
+      tenantId,
+      provider: "hubspot",
+      entityType: "contact",
+      entityId: created.id,
+      op: "upsert",
+      payload: {
+        phone: created.phone,
+        email: created.email,
+        firstName,
+        lastName,
+        tags: created.tags ?? [],
+      },
+    });
+    res.status(201).json(created);
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
     if (code === "23505") {
@@ -144,6 +177,11 @@ router.patch("/contacts/:id", requireTenantAuth, async (req, res) => {
       : null;
   }
   try {
+    const before = await db
+      .select()
+      .from(contactsTable)
+      .where(and(eq(contactsTable.id, id), eq(contactsTable.tenantId, tenantId)))
+      .limit(1);
     const rows = await db
       .update(contactsTable)
       .set(patch)
@@ -153,7 +191,30 @@ router.patch("/contacts/:id", requireTenantAuth, async (req, res) => {
       res.status(404).json({ error: "Contact not found" });
       return;
     }
-    res.json(rows[0]);
+    const updated = rows[0];
+    await recordAudit(req, {
+      action: "contact.updated",
+      entityType: "contact",
+      entityId: id,
+      before: before[0],
+      after: updated,
+    });
+    const { firstName, lastName } = splitName(updated.name);
+    await enqueueSync({
+      tenantId,
+      provider: "hubspot",
+      entityType: "contact",
+      entityId: id,
+      op: "upsert",
+      payload: {
+        phone: updated.phone,
+        email: updated.email,
+        firstName,
+        lastName,
+        tags: updated.tags ?? [],
+      },
+    });
+    res.json(updated);
   } catch (err) {
     logger.error({ err }, "Update contact error");
     res.status(500).json({ error: "Internal server error" });
@@ -167,11 +228,17 @@ router.delete("/contacts/:id", requireTenantAuth, async (req, res) => {
     const rows = await db
       .delete(contactsTable)
       .where(and(eq(contactsTable.id, id), eq(contactsTable.tenantId, tenantId)))
-      .returning({ id: contactsTable.id });
+      .returning();
     if (rows.length === 0) {
       res.status(404).json({ error: "Contact not found" });
       return;
     }
+    await recordAudit(req, {
+      action: "contact.deleted",
+      entityType: "contact",
+      entityId: id,
+      before: rows[0],
+    });
     res.json({ success: true });
   } catch (err) {
     logger.error({ err }, "Delete contact error");

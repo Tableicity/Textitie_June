@@ -5,6 +5,7 @@ import { seedSuperuser } from "./lib/seedSuperuser";
 import { seedTenantUsers } from "./lib/seedTenantUsers";
 import { seedDemoData } from "./lib/seedData";
 import { startTimerEngine } from "./lib/timerEngine";
+import { bootstrapHipaaState } from "./lib/hipaaBootstrap";
 
 const rawPort = process.env["PORT"];
 
@@ -31,6 +32,7 @@ app.listen(port, (err) => {
     await seedSuperuser(missing);
     await seedTenantUsers(missing);
     await seedDemoData(missing);
+    await bootstrapHipaaState();
     if (!missing.includes("automation_rules")) {
       startTimerEngine();
     }

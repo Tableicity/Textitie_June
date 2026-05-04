@@ -20,6 +20,10 @@ import analyticsRouter from "./analytics";
 import dispositionsRouter from "./dispositions";
 import contactsRouter from "./contacts";
 import remindersRouter from "./reminders";
+import auditLogsRouter from "./auditLogs";
+import optInsRouter from "./optIns";
+import integrationsRouter from "./integrations";
+import tenantSettingsRouter from "./tenantSettings";
 
 const router: IRouter = Router();
 
@@ -44,5 +48,9 @@ router.use(analyticsRouter);
 router.use(dispositionsRouter);
 router.use(contactsRouter);
 router.use(remindersRouter);
+router.use(auditLogsRouter);
+router.use(optInsRouter);
+router.use(integrationsRouter);
+router.use(tenantSettingsRouter);
 
 export default router;

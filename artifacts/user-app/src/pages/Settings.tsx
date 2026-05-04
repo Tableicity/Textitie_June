@@ -49,6 +49,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import AuditLogSection from "@/components/settings/AuditLogSection";
+import ComplianceSection from "@/components/settings/ComplianceSection";
+import IntegrationsSection from "@/components/settings/IntegrationsSection";
+import { ScrollText, Shield, Plug } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -91,6 +95,18 @@ export default function Settings() {
                 <Tag className="w-4 h-4" />
                 Dispositions
               </TabsTrigger>
+              <TabsTrigger value="compliance" className="flex items-center gap-2" data-testid="tab-compliance">
+                <Shield className="w-4 h-4" />
+                Compliance
+              </TabsTrigger>
+              <TabsTrigger value="integrations" className="flex items-center gap-2" data-testid="tab-integrations">
+                <Plug className="w-4 h-4" />
+                Integrations
+              </TabsTrigger>
+              <TabsTrigger value="audit-log" className="flex items-center gap-2" data-testid="tab-audit-log">
+                <ScrollText className="w-4 h-4" />
+                Audit Log
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="departments">
@@ -107,6 +123,18 @@ export default function Settings() {
 
             <TabsContent value="dispositions">
               <DispositionsSection />
+            </TabsContent>
+
+            <TabsContent value="compliance">
+              <ComplianceSection />
+            </TabsContent>
+
+            <TabsContent value="integrations">
+              <IntegrationsSection />
+            </TabsContent>
+
+            <TabsContent value="audit-log">
+              <AuditLogSection />
             </TabsContent>
           </Tabs>
         </div>

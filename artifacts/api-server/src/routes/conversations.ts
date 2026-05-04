@@ -6,6 +6,9 @@ import { requireTenantAuth } from "../middleware/tenantAuth";
 import { pickAgent } from "../lib/routing";
 import type { RoutingStrategy } from "../lib/routing";
 import { recordMessageUsage } from "../lib/stripe-stub";
+import { checkOutboundCompliance } from "../lib/compliance";
+import { recordAudit } from "../lib/audit";
+import { enqueueSync } from "../lib/integrations/syncWorker";
 
 const router = Router();
 
@@ -260,7 +263,38 @@ router.patch("/conversations/:id", requireTenantAuth, async (req, res) => {
           resolutionNote: patch.resolutionNote ?? conv[0].resolutionNote ?? null,
         }),
       });
+
+      let dispLabel: string | null = null;
+      const dispId = patch.dispositionId ?? conv[0].dispositionId ?? null;
+      if (dispId) {
+        const d = await db
+          .select({ label: dispositionsTable.label })
+          .from(dispositionsTable)
+          .where(eq(dispositionsTable.id, dispId as number))
+          .limit(1);
+        dispLabel = d[0]?.label ?? null;
+      }
+      await enqueueSync({
+        tenantId,
+        provider: "hubspot",
+        entityType: "conversation",
+        entityId: id,
+        op: "log_activity",
+        payload: {
+          externalContactId: `phone:${conv[0].contactPhone}`,
+          body: `Conversation #${id} resolved. Disposition: ${dispLabel ?? "n/a"}. Note: ${patch.resolutionNote ?? conv[0].resolutionNote ?? ""}`,
+          metadata: { conversationId: id, disposition: dispLabel },
+        },
+      });
     }
+
+    await recordAudit(req, {
+      action: status === "closed" ? "conversation.resolved" : "conversation.updated",
+      entityType: "conversation",
+      entityId: id,
+      before: { status: conv[0].status, dispositionId: conv[0].dispositionId, resolutionNote: conv[0].resolutionNote },
+      after: { status: updated[0].status, dispositionId: updated[0].dispositionId, resolutionNote: updated[0].resolutionNote },
+    });
 
     res.json(updated[0]);
   } catch (err) {
@@ -284,7 +318,10 @@ router.post(
 
     try {
       const convRows = await db
-        .select({ id: conversationsTable.id })
+        .select({
+          id: conversationsTable.id,
+          contactPhone: conversationsTable.contactPhone,
+        })
         .from(conversationsTable)
         .where(
           and(
@@ -296,6 +333,12 @@ router.post(
 
       if (convRows.length === 0) {
         res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
+
+      const compliance = await checkOutboundCompliance(tenantId, convRows[0].contactPhone);
+      if (!compliance.ok) {
+        res.status(422).json({ error: compliance.message, reason: compliance.reason });
         return;
       }
 

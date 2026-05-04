@@ -4,6 +4,7 @@ import { pool } from "@workspace/db";
 import { logger } from "./logger";
 import { activateScheduledCampaign } from "./campaignEngine";
 import { processDueReminders } from "../routes/reminders";
+import { processCrmSyncQueue } from "./integrations/syncWorker";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -31,6 +32,14 @@ async function runTimerCycle(): Promise<void> {
   const fired = await processDueReminders();
   if (fired > 0) {
     logger.info({ count: fired }, "Reminders fired");
+  }
+  try {
+    const synced = await processCrmSyncQueue();
+    if (synced > 0) {
+      logger.info({ count: synced }, "CRM sync items processed");
+    }
+  } catch (err) {
+    logger.error({ err }, "processCrmSyncQueue failed");
   }
 }
 

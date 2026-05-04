@@ -3,6 +3,7 @@ import { Link, useLocation, Redirect } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users } from "lucide-react";
 import ReminderBell from "@/components/ReminderBell";
+import HipaaBanner from "@/components/HipaaBanner";
 import {
   useTenantMe,
   useSetAgentStatus,
@@ -222,8 +223,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       {/* Main Content Area */}
-      <main className="flex-1 bg-white text-slate-900 rounded-tl-2xl overflow-hidden shadow-2xl z-10 border-l border-t border-slate-200">
-        {children}
+      <main className="flex-1 bg-white text-slate-900 rounded-tl-2xl overflow-hidden shadow-2xl z-10 border-l border-t border-slate-200 flex flex-col">
+        <HipaaBanner />
+        <div className="flex-1 overflow-hidden">{children}</div>
       </main>
     </div>
   );
