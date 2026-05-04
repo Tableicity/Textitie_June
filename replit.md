@@ -6,7 +6,7 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 
 - **Monorepo**: pnpm workspace.
 - **Contract-first**: `lib/api-spec/openapi.yaml` → orval codegen → `@workspace/api-client-react` (React Query hooks) + `@workspace/api-zod` (zod schemas).
-- **DB**: Drizzle (Postgres) — schemas in `lib/db/src/schema/{tenants,tiers,injections,webhookEvents,tenantUsers,conversations,messages,departments}.ts`.
+- **DB**: Drizzle (Postgres) — schemas in `lib/db/src/schema/{tenants,tiers,injections,webhookEvents,users,tenantUsers,conversations,departments,conversationEvents}.ts`. Messages table is in `conversations.ts`.
 - **API**: `artifacts/api-server` (Express, port 8080, mounted at `/api`).
 - **Admin UI**: `artifacts/eng-architect` (React + Vite + wouter + shadcn, mounted at `/`).
 - **User UI**: `artifacts/user-app` (React + Vite + wouter + shadcn, mounted at `/app`).
@@ -36,7 +36,7 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 ## Conductor Auth (HTTP Basic)
 
 `artifacts/api-server/src/middleware/conductorAuth.ts` gates `/api/*` with HTTP Basic Auth.
-- Bypassed for `/api/healthz`, `/api/webhooks/*`, `/api/tenant-auth/*`, and `/api/conversations*` (tenant-scoped routes use their own auth).
+- Bypassed for `/api/healthz`, `/api/webhooks/*`, `/api/auth/login`, `/api/tenant-auth/*`, `/api/conversations*`, `/api/departments*`, `/api/phone-numbers*`, `/api/agents*` (tenant-scoped routes use their own auth).
 - Bearer tokens with `scope: "tenant"` are explicitly rejected by conductorAuth to prevent tenant→admin privilege escalation.
 - Enforced when `CONDUCTOR_PASSWORD` is set; logs WARN and stays open if unset.
 - Username: `CONDUCTOR_USERNAME` (default `conductor`).
@@ -117,9 +117,9 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 - Test credentials: `abc17@gmail.com` / `Whereisdad@1` (tenant_id=1, ACME Corp, admin role).
 
 ### Conversations & Messages
-- `conversations` table: `lib/db/src/schema/conversations.ts` — tenant-scoped, with contactPhone, contactName, status (open/closed/snoozed), assignedUserId, assignedAt, lastMessageAt.
-- `messages` table: same file — conversation_id (FK→conversations), direction (inbound/outbound), body, channel, externalId, createdAt.
-- `conversation_events` table: `lib/db/src/schema/conversationEvents.ts` — audit trail for claims, transfers, unassigns. Fields: conversationId, eventType, actorId, targetId, note, metadata, createdAt.
+- `conversations` table: `lib/db/src/schema/conversations.ts` — tenant-scoped, with contactPhone, contactName, status (open/closed/snoozed), assignedUserId (FK→tenant_users ON DELETE SET NULL), assignedAt, departmentId (FK→departments ON DELETE SET NULL), lastMessageAt.
+- `messages` table: same file — conversation_id (FK→conversations), direction (inbound/outbound), body, senderName, channel, externalId, createdAt.
+- `conversation_events` table: `lib/db/src/schema/conversationEvents.ts` — audit trail for claims, transfers, unassigns. Fields: conversationId (FK→conversations), eventType, actorId (FK→tenant_users), targetId (FK→tenant_users), note, metadata, createdAt.
 - `GET /api/conversations?departmentId=` — list conversations for the authenticated tenant, optionally filtered by department (0 = unassigned).
 - `GET /api/conversations/:id` — get single conversation (tenant-scoped).
 - `GET /api/conversations/:id/messages` — list messages in a conversation.
