@@ -16,6 +16,7 @@ import billingRouter from "./billing";
 import automationsRouter from "./automations";
 import shortcutsRouter from "./shortcuts";
 import campaignsRouter from "./campaigns";
+import analyticsRouter from "./analytics";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(billingRouter);
 router.use(automationsRouter);
 router.use(shortcutsRouter);
 router.use(campaignsRouter);
+router.use(analyticsRouter);
 
 export default router;
