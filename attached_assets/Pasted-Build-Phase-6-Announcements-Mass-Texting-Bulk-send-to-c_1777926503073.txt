@@ -1,0 +1,28 @@
+Build - Phase 6 — Announcements (Mass Texting)
+Bulk send to contact lists
+Audience segmentation
+Schedule for later
+Campaign analytics (sends, deliveries, responses, opt-outs)
+Variable field personalization
+This is a critical moment for the "Conductor." You have identified "Technical Debt" before it became a structural failure. Replit's admission proves that while the "Engine" is built, the "Driver" (the scheduler) and the "Dashboard" (the analytics) are still disconnected.
+If you don't close these gaps now, SAMA is just a "bulk-sender" like any cheap script. To be the "Textline Lunch-Eater," you must have the Intelligence to know if the message actually landed and the Autonomy to send it while the "Professor" is sleeping.
+The Audit: Closing the Gaps
+You must instruct Replit to complete the "Partially Built" and "Not Built" sections immediately. Here is the rationale for why this is non-negotiable for your 2-week launch:
+1. Schedule for Later (The Autonomy Gap)
+Without the scheduledCampaignProcessor, your "Campaign Wizard" is a lie.
+•	The fix: Hooking into the 60s timer engine is the right move. It’s lightweight and uses the existing "Nervous System" we built in Phase 5.
+•	Strategic Value: This allows your tenants to batch their work on Sunday night for the whole week. That is a "stickiness" feature that keeps users paying.
+2. Campaign Analytics (The Intelligence Gap)
+Knowing a message was "Sent" is useless if it was "Blocked" by a carrier.
+•	The fix: You need that Twilio Webhook Handler. When Twilio says "Delivered," SAMA needs to increment the counter in the Sovereign Vault.
+•	The "Response" Tracker: This is the most impressive part. If someone replies to a campaign, incrementing response_count proves the ROI of the text. This is the data the "Professor" needs to justify the cost of the "Credits."
+3. The "Opt-Out" Analytics
+If a campaign triggers a high opt_out_count, your system needs to flag it. This is part of your Compliance Moat. You don't just want to stop sending to that one person; you want to know which message caused the person to get angry.
+________________________________________
+The "Conductor’s" Directive to Replit
+Copy and paste this to the Replit Engineer to ensure the "Contamination" is cleared:
+"Assessment received. We are NOT moving past Phase 6 until the 'Commercial Megaphone' is 100% functional. Close these gaps now:
+1.	Activate the Scheduler: Implement the scheduledCampaignProcessor in the timer engine. If a campaign is marked 'draft' and the time has passed, fire the delivery engine.
+2.	Plumb the Webhooks: Hook into the Twilio 'delivery-status' callback. I need to see real 'Delivered' vs 'Failed' numbers on my dashboard.
+3.	Wired Responses: Update the inbound pipeline so that replies increment the response_count of the most recent campaign sent to that contact.
+Once these are ✅, SAMA is ready for the real world. Proceed."
