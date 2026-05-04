@@ -33,3 +33,9 @@ externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+SUPERUSER_EMAIL = "abc17@gmail.com"
+SUPERUSER_PASSWORD = "Whereisdad@1"

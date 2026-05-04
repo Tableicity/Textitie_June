@@ -13,10 +13,19 @@ function hashPassword(password: string): Promise<string> {
   });
 }
 
-export async function seedSuperuser(): Promise<void> {
-  const email = "abc17@gmail.com";
-  const password = "Whereisdad@1";
-  const role = "superuser";
+export async function seedSuperuser(missingTables: string[]): Promise<void> {
+  if (missingTables.includes("users")) {
+    logger.warn("Skipping super user seed — users table does not exist");
+    return;
+  }
+
+  const email = process.env["SUPERUSER_EMAIL"];
+  const password = process.env["SUPERUSER_PASSWORD"];
+
+  if (!email || !password) {
+    logger.debug("SUPERUSER_EMAIL / SUPERUSER_PASSWORD not set, skipping seed");
+    return;
+  }
 
   try {
     const existing = await db
@@ -33,7 +42,7 @@ export async function seedSuperuser(): Promise<void> {
     const hash = await hashPassword(password);
     const rows = await db
       .insert(usersTable)
-      .values({ email, passwordHash: hash, role })
+      .values({ email, passwordHash: hash, role: "superuser" })
       .returning({ id: usersTable.id, email: usersTable.email, role: usersTable.role });
 
     logger.info({ user: rows[0] }, "Super user seeded");

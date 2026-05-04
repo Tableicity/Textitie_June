@@ -57,7 +57,7 @@ export function InjectComposerDialog({ trigger, defaultTenantId }: { trigger?: R
           toast({ title: "Injection Sent", description: "Message pushed to pipe successfully." });
         },
         onError: (err) => {
-          toast({ title: "Injection Failed", description: err.error || "An error occurred", variant: "destructive" });
+          toast({ title: "Injection Failed", description: err.message || "An error occurred", variant: "destructive" });
         }
       }
     );

@@ -73,7 +73,7 @@ export default function Tenants() {
           toast({ title: "Tenant Created", description: `Successfully created ${values.name}. ${cwMsg}` });
         },
         onError: (err) => {
-          toast({ title: "Error", description: err.error || "Failed to create tenant", variant: "destructive" });
+          toast({ title: "Error", description: err.message || "Failed to create tenant", variant: "destructive" });
         },
       }
     );

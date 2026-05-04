@@ -85,7 +85,7 @@ export default function TenantDetail() {
           toast({ title: "Injection Sent", description: `Message pushed to ${tenant.name} pipe successfully.` });
         },
         onError: (err) => {
-          toast({ title: "Injection Failed", description: err.error || "An error occurred", variant: "destructive" });
+          toast({ title: "Injection Failed", description: err.message || "An error occurred", variant: "destructive" });
         },
       },
     );
@@ -102,7 +102,7 @@ export default function TenantDetail() {
           toast({ title: "Knowledge Base Saved", description: `${tenant.name} AI Student updated.` });
         },
         onError: (err) => {
-          toast({ title: "Save Failed", description: err.error || "An error occurred", variant: "destructive" });
+          toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
         },
       },
     );

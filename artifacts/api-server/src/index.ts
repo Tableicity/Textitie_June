@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { checkSchema } from "./lib/schemaCheck";
 import { seedSuperuser } from "./lib/seedSuperuser";
 
 const rawPort = process.env["PORT"];
@@ -23,5 +24,5 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  seedSuperuser();
+  checkSchema().then((missing) => seedSuperuser(missing));
 });

@@ -86,8 +86,11 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 
 - **Production URL**: `https://textitie.replit.app`
 - **Deploy target**: autoscale
-- **Schema sync**: The API server's production build step runs `drizzle-kit push --force` against the production `DATABASE_URL` before compiling. This ensures the production database schema matches the Drizzle schema definitions automatically on every publish.
-- **External database**: The project uses an external PostgreSQL database via `DATABASE_URL` (not Replit's managed PostgreSQL). Dev and production have separate `DATABASE_URL` secrets pointing to their respective databases.
+- **Build**: Clean compile only (`pnpm --filter @workspace/api-server run build`). No database commands in the build step — those caused publish hangs.
+- **Startup schema check**: `schemaCheck.ts` runs at server startup, queries `information_schema.tables` and logs an ERROR if any required table is missing. Non-blocking — server still starts, but the log makes it obvious what needs fixing.
+- **Startup super user seed**: `seedSuperuser.ts` runs after schema check. Idempotent — skips if user already exists.
+- **Schema sync (manual)**: Run `DATABASE_URL="<url>" pnpm --filter @workspace/db run push-force` from the shell before publishing if schema has changed.
+- **External database**: The project uses an external PostgreSQL database via `DATABASE_URL` (not Replit's managed PostgreSQL). Currently a shared secret — same value in dev and production. See "DATABASE_URL Separation" below for recommended split.
 
 ## Users & Authentication
 
@@ -98,11 +101,14 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 - Frontend: `/profile` page — list users, create new users (email/password/role), reset passwords, delete users.
 - Sidebar: "User Management" and "Sign Out" buttons pinned to the bottom of the left nav.
 - Password hashed with Node.js `crypto.scrypt` (16-byte random salt + 64-byte key, stored as `salt:hash`).
+- Super user seed reads from `SUPERUSER_EMAIL` + `SUPERUSER_PASSWORD` env vars. Skips silently if not set or if users table is missing.
 
 ## Required secrets
 
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SAMA_FROM_NUMBER` — live Twilio sender.
 - `CONDUCTOR_PASSWORD` (and optionally `CONDUCTOR_USERNAME`) — enforce admin auth.
+- `SESSION_SECRET` — signs Bearer tokens for UI login.
+- `SUPERUSER_EMAIL`, `SUPERUSER_PASSWORD` — auto-seed superuser on startup (env vars, not secrets).
 - `N8N_WEBHOOK_URL` (optional) — downstream notification fan-out.
 - `CHATWOOT_BASE_URL`, `CHATWOOT_API_ACCESS_TOKEN` — activate live Chatwoot bridge (Gate 3/4).
 - `OPENAI_API_KEY` — activate the AI Student Whisperer (Gate 4). Optional `SAMA_STUDENT_MODEL` to override the default `gpt-4o-mini`.
