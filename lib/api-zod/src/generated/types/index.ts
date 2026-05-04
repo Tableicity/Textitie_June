@@ -7,6 +7,8 @@
  */
 
 export * from "./apiError";
+export * from "./complianceItem";
+export * from "./complianceReport";
 export * from "./controlPlaneStats";
 export * from "./controlPlaneStatsTenantsByRegionItem";
 export * from "./controlPlaneStatsTenantsByTierItem";
@@ -19,6 +21,7 @@ export * from "./listInjectionsParams";
 export * from "./listWebhookEventsParams";
 export * from "./region";
 export * from "./tenant";
+export * from "./tenantNumberStatus";
 export * from "./tier";
 export * from "./tierCode";
 export * from "./updateTenantInput";

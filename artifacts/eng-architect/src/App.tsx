@@ -1,18 +1,34 @@
+import { useState, useEffect, useCallback } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/AppShell";
 import NotFound from "@/pages/not-found";
+import Login from "@/pages/Login";
+import { initAuth, clearAuth } from "@/lib/auth";
 
 import Dashboard from "@/pages/Dashboard";
 import Tenants from "@/pages/Tenants";
 import TenantDetail from "@/pages/TenantDetail";
 import Injections from "@/pages/Injections";
 import Webhooks from "@/pages/Webhooks";
+import Compliance from "@/pages/Compliance";
 import Tiers from "@/pages/Tiers";
 
-const queryClient = new QueryClient();
+let _logoutCallback: (() => void) | null = null;
+
+function handleAuthError(error: unknown) {
+  if (error && typeof error === "object" && "status" in error && (error as any).status === 401) {
+    clearAuth();
+    _logoutCallback?.();
+  }
+}
+
+const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: handleAuthError }),
+  mutationCache: new MutationCache({ onError: handleAuthError }),
+});
 
 function Router() {
   return (
@@ -22,6 +38,7 @@ function Router() {
       <Route path="/tenants/:id" component={TenantDetail} />
       <Route path="/injections" component={Injections} />
       <Route path="/webhooks" component={Webhooks} />
+      <Route path="/compliance" component={Compliance} />
       <Route path="/tiers" component={Tiers} />
       <Route component={NotFound} />
     </Switch>
@@ -29,6 +46,28 @@ function Router() {
 }
 
 function App() {
+  const [authed, setAuthed] = useState(() => initAuth());
+
+  const logout = useCallback(() => {
+    setAuthed(false);
+    queryClient.clear();
+  }, []);
+
+  useEffect(() => {
+    _logoutCallback = logout;
+    return () => { _logoutCallback = null; };
+  }, [logout]);
+
+  useEffect(() => {
+    if (!authed) {
+      setAuthed(initAuth());
+    }
+  }, []);
+
+  if (!authed) {
+    return <Login onSuccess={() => setAuthed(true)} />;
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

@@ -7,6 +7,7 @@ export type ErrorType<T = unknown> = ApiError<T>;
 export type BodyType<T> = T;
 
 export type AuthTokenGetter = () => Promise<string | null> | string | null;
+export type AuthHeaderGetter = () => Promise<string | null> | string | null;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
@@ -17,6 +18,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _authHeaderGetter: AuthHeaderGetter | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -42,6 +44,15 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Register a getter that supplies the full Authorization header value
+ * (e.g. `"Basic dXNlcjpwYXNz"`).  Takes precedence over `setAuthTokenGetter`.
+ * Pass `null` to clear the getter.
+ */
+export function setAuthHeaderGetter(getter: AuthHeaderGetter | null): void {
+  _authHeaderGetter = getter;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -349,12 +360,17 @@ export async function customFetch<T = unknown>(
     headers.set("accept", DEFAULT_JSON_ACCEPT);
   }
 
-  // Attach bearer token when an auth getter is configured and no
-  // Authorization header has been explicitly provided.
-  if (_authTokenGetter && !headers.has("authorization")) {
-    const token = await _authTokenGetter();
-    if (token) {
-      headers.set("authorization", `Bearer ${token}`);
+  if (!headers.has("authorization")) {
+    if (_authHeaderGetter) {
+      const header = await _authHeaderGetter();
+      if (header) {
+        headers.set("authorization", header);
+      }
+    } else if (_authTokenGetter) {
+      const token = await _authTokenGetter();
+      if (token) {
+        headers.set("authorization", `Bearer ${token}`);
+      }
     }
   }
 

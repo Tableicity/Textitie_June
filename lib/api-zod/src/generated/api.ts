@@ -252,6 +252,42 @@ export const ListWebhookEventsResponse = zod.array(
 );
 
 /**
+ * Queries Twilio Trust Hub and A2P Brand Registration APIs for real-time
+compliance status. Returns brand registration, trust hub bundle, and
+customer profile statuses alongside per-tenant number inventory.
+
+ * @summary 10DLC compliance monitor
+ */
+export const GetComplianceResponse = zod.object({
+  brandRegistration: zod.object({
+    sid: zod.string().nullable(),
+    status: zod.string().nullable(),
+    friendlyName: zod.string().nullable(),
+    detail: zod.string().nullable(),
+  }),
+  trustHubBundle: zod.object({
+    sid: zod.string().nullable(),
+    status: zod.string().nullable(),
+    friendlyName: zod.string().nullable(),
+    detail: zod.string().nullable(),
+  }),
+  customerProfile: zod.object({
+    sid: zod.string().nullable(),
+    status: zod.string().nullable(),
+    friendlyName: zod.string().nullable(),
+    detail: zod.string().nullable(),
+  }),
+  tenantNumbers: zod.array(
+    zod.object({
+      tenantSlug: zod.string(),
+      tenantName: zod.string(),
+      phoneNumber: zod.string().nullable(),
+      region: zod.string(),
+    }),
+  ),
+});
+
+/**
  * @summary Control plane summary
  */
 export const GetStatsResponse = zod.object({

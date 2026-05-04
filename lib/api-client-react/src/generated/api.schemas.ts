@@ -170,6 +170,32 @@ export interface WebhookEvent {
   createdAt: string;
 }
 
+export interface ComplianceItem {
+  /** @nullable */
+  sid: string | null;
+  /** @nullable */
+  status: string | null;
+  /** @nullable */
+  friendlyName: string | null;
+  /** @nullable */
+  detail: string | null;
+}
+
+export interface TenantNumberStatus {
+  tenantSlug: string;
+  tenantName: string;
+  /** @nullable */
+  phoneNumber: string | null;
+  region: string;
+}
+
+export interface ComplianceReport {
+  brandRegistration: ComplianceItem;
+  trustHubBundle: ComplianceItem;
+  customerProfile: ComplianceItem;
+  tenantNumbers: TenantNumberStatus[];
+}
+
 export type ControlPlaneStatsTenantsByRegionItem = {
   region: Region;
   count: number;

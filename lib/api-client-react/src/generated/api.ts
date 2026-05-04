@@ -18,6 +18,7 @@ import type {
 
 import type {
   ApiError,
+  ComplianceReport,
   ControlPlaneStats,
   CreateTenantInput,
   HealthStatus,
@@ -870,6 +871,85 @@ export function useListWebhookEvents<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListWebhookEventsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Queries Twilio Trust Hub and A2P Brand Registration APIs for real-time
+compliance status. Returns brand registration, trust hub bundle, and
+customer profile statuses alongside per-tenant number inventory.
+
+ * @summary 10DLC compliance monitor
+ */
+export const getGetComplianceUrl = () => {
+  return `/api/compliance`;
+};
+
+export const getCompliance = async (
+  options?: RequestInit,
+): Promise<ComplianceReport> => {
+  return customFetch<ComplianceReport>(getGetComplianceUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetComplianceQueryKey = () => {
+  return [`/api/compliance`] as const;
+};
+
+export const getGetComplianceQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCompliance>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCompliance>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetComplianceQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCompliance>>> = ({
+    signal,
+  }) => getCompliance({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCompliance>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetComplianceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCompliance>>
+>;
+export type GetComplianceQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 10DLC compliance monitor
+ */
+
+export function useGetCompliance<
+  TData = Awaited<ReturnType<typeof getCompliance>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCompliance>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetComplianceQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

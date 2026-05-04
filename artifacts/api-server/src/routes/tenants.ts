@@ -1,5 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
+import multer from "multer";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { db, tenantsTable } from "@workspace/db";
 import {
   ListTenantsResponse,
@@ -10,8 +12,10 @@ import {
   UpdateTenantParams,
   UpdateTenantResponse,
 } from "@workspace/api-zod";
+import { provisionChatwootInbox } from "../lib/chatwoot";
 
 const router: IRouter = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 router.get("/tenants", async (_req, res): Promise<void> => {
   const rows = await db.select().from(tenantsTable).orderBy(tenantsTable.id);
@@ -24,6 +28,27 @@ router.post("/tenants", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  let chatwootAccountId = parsed.data.chatwootAccountId ?? null;
+  let chatwootInboxId = parsed.data.chatwootInboxId ?? null;
+
+  if (!chatwootAccountId && !chatwootInboxId) {
+    const provision = await provisionChatwootInbox(parsed.data.name);
+    if (provision.status === "created") {
+      chatwootAccountId = provision.accountId;
+      chatwootInboxId = provision.inboxId;
+      req.log.info(
+        { inboxId: chatwootInboxId, accountId: chatwootAccountId },
+        "Auto-provisioned Chatwoot inbox",
+      );
+    } else {
+      req.log.info(
+        { provisionStatus: provision.status, detail: provision.detail },
+        "Chatwoot auto-provision skipped",
+      );
+    }
+  }
+
   const [row] = await db
     .insert(tenantsTable)
     .values({
@@ -33,8 +58,8 @@ router.post("/tenants", async (req, res): Promise<void> => {
       tierCode: parsed.data.tierCode,
       sovereignToggle: parsed.data.sovereignToggle ?? false,
       phoneNumber: parsed.data.phoneNumber ?? null,
-      chatwootAccountId: parsed.data.chatwootAccountId ?? null,
-      chatwootInboxId: parsed.data.chatwootInboxId ?? null,
+      chatwootAccountId,
+      chatwootInboxId,
       knowledgeBase: parsed.data.knowledgeBase ?? null,
     })
     .returning();
@@ -102,5 +127,106 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
   );
   res.json(UpdateTenantResponse.parse(row));
 });
+
+router.post(
+  "/tenants/:id/knowledge-upload",
+  (req, res, next) => {
+    upload.single("file")(req, res, (err) => {
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          res.status(413).json({ error: "File too large. Maximum size is 5MB." });
+          return;
+        }
+        res.status(400).json({ error: `Upload error: ${err.message}` });
+        return;
+      }
+      next();
+    });
+  },
+  async (req, res): Promise<void> => {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid tenant id" });
+      return;
+    }
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: "No file uploaded" });
+      return;
+    }
+
+    const ext = file.originalname.split(".").pop()?.toLowerCase();
+    let extractedText = "";
+
+    if (ext === "pdf") {
+      try {
+        const data = new Uint8Array(file.buffer);
+        const doc = await getDocument({ data, useSystemFonts: true }).promise;
+        const pages: string[] = [];
+        for (let i = 1; i <= doc.numPages; i++) {
+          const page = await doc.getPage(i);
+          const content = await page.getTextContent();
+          const text = content.items
+            .filter((item: any) => "str" in item)
+            .map((item: any) => item.str)
+            .join(" ");
+          if (text.trim()) pages.push(text.trim());
+        }
+        extractedText = pages.join("\n\n");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        req.log.error({ err: msg }, "PDF parse failed");
+        res.status(400).json({ error: `Failed to parse PDF: ${msg}` });
+        return;
+      }
+    } else if (ext === "txt" || ext === "md" || ext === "csv") {
+      extractedText = file.buffer.toString("utf-8").trim();
+    } else {
+      res
+        .status(400)
+        .json({ error: `Unsupported file type: .${ext}. Use PDF, TXT, MD, or CSV.` });
+      return;
+    }
+
+    if (!extractedText) {
+      res.status(400).json({ error: "No text content extracted from file" });
+      return;
+    }
+
+    const [tenant] = await db
+      .select()
+      .from(tenantsTable)
+      .where(eq(tenantsTable.id, id));
+    if (!tenant) {
+      res.status(404).json({ error: "Tenant not found" });
+      return;
+    }
+
+    const separator = "\n\n--- Uploaded from: " + file.originalname + " ---\n\n";
+    const newKb = (tenant.knowledgeBase ?? "") + separator + extractedText;
+
+    const [updated] = await db
+      .update(tenantsTable)
+      .set({ knowledgeBase: newKb })
+      .where(eq(tenantsTable.id, id))
+      .returning();
+
+    req.log.info(
+      {
+        tenantId: id,
+        fileName: file.originalname,
+        extractedChars: extractedText.length,
+      },
+      "Knowledge base file uploaded",
+    );
+
+    res.json({
+      success: true,
+      fileName: file.originalname,
+      extractedChars: extractedText.length,
+      totalKbChars: updated?.knowledgeBase?.length ?? 0,
+    });
+  },
+);
 
 export default router;

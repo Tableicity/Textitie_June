@@ -50,7 +50,12 @@ export const conductorAuth: RequestHandler = (req, res, next) => {
     }
   }
 
-  res.set("WWW-Authenticate", `Basic realm="${REALM}", charset="UTF-8"`);
+  const isAjax =
+    req.header("x-requested-with") === "XMLHttpRequest" ||
+    (req.header("accept") ?? "").includes("application/json");
+  if (!isAjax) {
+    res.set("WWW-Authenticate", `Basic realm="${REALM}", charset="UTF-8"`);
+  }
   res.status(401).json({ error: "Conductor authentication required" });
 };
 

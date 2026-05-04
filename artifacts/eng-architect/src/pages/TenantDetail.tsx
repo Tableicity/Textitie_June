@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,6 +11,7 @@ import {
   useUpdateTenant,
   getListInjectionsQueryKey,
 } from "@workspace/api-client-react";
+import { getStoredAuthHeader } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -18,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare } from "lucide-react";
+import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload } from "lucide-react";
 
 const injectSchema = z.object({
   to: z.string().min(3, "Phone number is required"),
@@ -44,6 +45,8 @@ export default function TenantDetail() {
   const updateTenant = useUpdateTenant();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const injectForm = useForm<z.infer<typeof injectSchema>>({
     resolver: zodResolver(injectSchema),
@@ -103,6 +106,40 @@ export default function TenantDetail() {
         },
       },
     );
+  };
+
+  const onFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !tenant) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+      const authHeader = getStoredAuthHeader();
+      const headers: Record<string, string> = {};
+      if (authHeader) headers["Authorization"] = authHeader;
+      const resp = await fetch(`${base}/api/tenants/${tenant.id}/knowledge-upload`, {
+        method: "POST",
+        body: formData,
+        headers,
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
+        toast({
+          title: "File Uploaded",
+          description: `Extracted ${data.extractedChars.toLocaleString()} chars from ${data.fileName}. Total KB: ${data.totalKbChars.toLocaleString()} chars.`,
+        });
+      } else {
+        toast({ title: "Upload Failed", description: data.error || "Unknown error", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Upload Failed", description: err instanceof Error ? err.message : "Network error", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   if (isLoading) {
@@ -205,11 +242,37 @@ export default function TenantDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BookOpen size={20} /> Knowledge Base
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            The AI Student reads this before drafting a Whisper for every inbound message. Paste FAQs, product info, escalation rules.
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen size={20} /> Knowledge Base
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                The AI Student reads this before drafting a Whisper for every inbound message.
+              </p>
+            </div>
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.txt,.md,.csv"
+                onChange={onFileUpload}
+                className="hidden"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+              >
+                <Upload size={14} />
+                {uploading ? "Uploading..." : "Upload File"}
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Supports PDF, TXT, MD, CSV (max 5MB). Content is extracted and appended to the knowledge base.
           </p>
         </CardHeader>
         <CardContent>
@@ -238,6 +301,8 @@ export default function TenantDetail() {
               <div className="flex justify-between items-center pt-2">
                 <span className="text-xs text-muted-foreground">
                   {kbDirty ? "Unsaved changes" : "Up to date"}
+                  {" · "}
+                  {(kbForm.getValues("knowledgeBase") || "").length.toLocaleString()} chars
                 </span>
                 <Button
                   type="submit"

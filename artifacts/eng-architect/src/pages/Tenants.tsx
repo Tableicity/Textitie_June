@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ShieldCheck } from "lucide-react";
+import { Plus, ShieldCheck, MessageSquare } from "lucide-react";
 
 const formSchema = z.object({
   slug: z.string().min(2).max(64),
@@ -24,8 +24,6 @@ const formSchema = z.object({
   tierCode: z.enum(["starter", "growth", "enterprise"]),
   sovereignToggle: z.boolean().default(false),
   phoneNumber: z.string().optional(),
-  chatwootAccountId: z.string().optional(),
-  chatwootInboxId: z.string().optional(),
   knowledgeBase: z.string().optional(),
 });
 
@@ -45,8 +43,6 @@ export default function Tenants() {
       tierCode: "starter",
       sovereignToggle: false,
       phoneNumber: "",
-      chatwootAccountId: "",
-      chatwootInboxId: "",
       knowledgeBase: "",
     },
   });
@@ -61,23 +57,20 @@ export default function Tenants() {
           tierCode: values.tierCode,
           sovereignToggle: values.sovereignToggle,
           phoneNumber: values.phoneNumber?.trim() ? values.phoneNumber.trim() : null,
-          chatwootAccountId: values.chatwootAccountId?.trim()
-            ? Number(values.chatwootAccountId)
-            : null,
-          chatwootInboxId: values.chatwootInboxId?.trim()
-            ? Number(values.chatwootInboxId)
-            : null,
           knowledgeBase: values.knowledgeBase?.trim()
             ? values.knowledgeBase
             : null,
         },
       },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
           queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey() });
           setOpen(false);
           form.reset();
-          toast({ title: "Tenant Created", description: `Successfully created ${values.name}.` });
+          const cwMsg = data?.chatwootInboxId
+            ? `Chatwoot inbox #${data.chatwootInboxId} auto-provisioned.`
+            : "Chatwoot provisioning pending.";
+          toast({ title: "Tenant Created", description: `Successfully created ${values.name}. ${cwMsg}` });
         },
         onError: (err) => {
           toast({ title: "Error", description: err.error || "Failed to create tenant", variant: "destructive" });
@@ -188,33 +181,11 @@ export default function Tenants() {
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="chatwootAccountId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Chatwoot Account ID</FormLabel>
-                        <FormControl>
-                          <Input placeholder="1" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="chatwootInboxId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Chatwoot Inbox ID</FormLabel>
-                        <FormControl>
-                          <Input placeholder="1" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                <div className="rounded-lg border bg-muted/50 p-3 flex items-center gap-2">
+                  <MessageSquare size={14} className="text-primary shrink-0" />
+                  <span className="text-xs text-muted-foreground">
+                    Chatwoot inbox will be auto-provisioned on the Tableicity sovereign node.
+                  </span>
                 </div>
                 <FormField
                   control={form.control}
@@ -224,8 +195,8 @@ export default function Tenants() {
                       <FormLabel>Knowledge Base</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Paste FAQs, product info, escalation rules… The AI Student reads this before drafting Whispers."
-                          className="min-h-[120px] font-mono text-xs"
+                          placeholder="Paste FAQs, product info, escalation rules..."
+                          className="min-h-[100px] font-mono text-xs"
                           {...field}
                         />
                       </FormControl>
@@ -270,15 +241,16 @@ export default function Tenants() {
               <TableHead>Slug</TableHead>
               <TableHead>Region</TableHead>
               <TableHead>Tier</TableHead>
+              <TableHead>Chatwoot</TableHead>
               <TableHead>Sovereign</TableHead>
               <TableHead className="text-right">Created</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
             ) : tenants?.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No tenants found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No tenants found.</TableCell></TableRow>
             ) : (
               tenants?.map((t) => (
                 <TableRow key={t.id} className="group cursor-pointer">
@@ -296,6 +268,17 @@ export default function Tenants() {
                   <TableCell>
                     <Link href={`/tenants/${t.id}`} className="block">
                       <Badge variant="secondary" className="capitalize">{t.tierCode}</Badge>
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <Link href={`/tenants/${t.id}`} className="block">
+                      {t.chatwootInboxId ? (
+                        <Badge variant="outline" className="text-emerald-600 border-emerald-300 text-xs">
+                          Inbox {t.chatwootInboxId}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">-</span>
+                      )}
                     </Link>
                   </TableCell>
                   <TableCell>

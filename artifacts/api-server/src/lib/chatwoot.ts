@@ -28,6 +28,82 @@ function chatwootEnv() {
  * only Chatwoot agents can see. "incoming" = a customer-side message
  * (used by the inbound router when SMS arrives from a real handset).
  */
+export type ChatwootInboxResult = {
+  status: "stubbed" | "created" | "failed";
+  inboxId: number | null;
+  accountId: number | null;
+  detail: string;
+};
+
+export async function provisionChatwootInbox(
+  tenantName: string,
+  accountId?: number,
+): Promise<ChatwootInboxResult> {
+  const env = chatwootEnv();
+  if (!env) {
+    return {
+      status: "stubbed",
+      inboxId: null,
+      accountId: null,
+      detail: "Stubbed: CHATWOOT_BASE_URL / CHATWOOT_API_ACCESS_TOKEN not set",
+    };
+  }
+  const acctId = accountId ?? Number(process.env["CHATWOOT_ACCOUNT_ID"] ?? "1");
+  try {
+    const resp = await fetch(
+      `${env.base}/api/v1/accounts/${acctId}/inboxes`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          api_access_token: env.token,
+        },
+        body: JSON.stringify({
+          name: `SAMA - ${tenantName}`,
+          channel: { type: "api", webhook_url: "" },
+        }),
+      },
+    );
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      return {
+        status: "failed",
+        inboxId: null,
+        accountId: acctId,
+        detail: `Chatwoot inbox creation failed: ${resp.status} ${text.slice(0, 200)}`,
+      };
+    }
+    const json = (await resp.json()) as { id?: number };
+    if (!json.id) {
+      return {
+        status: "failed",
+        inboxId: null,
+        accountId: acctId,
+        detail: "Chatwoot inbox creation returned no id",
+      };
+    }
+    logger.info(
+      { inboxId: json.id, accountId: acctId, tenantName },
+      "Chatwoot: inbox provisioned",
+    );
+    return {
+      status: "created",
+      inboxId: json.id,
+      accountId: acctId,
+      detail: `Inbox ${json.id} created in account ${acctId}`,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err: msg }, "Chatwoot: inbox provision failed");
+    return {
+      status: "failed",
+      inboxId: null,
+      accountId: acctId,
+      detail: `Chatwoot exception: ${msg}`,
+    };
+  }
+}
+
 export async function postChatwootMessage(opts: {
   accountId: number;
   inboxId: number;

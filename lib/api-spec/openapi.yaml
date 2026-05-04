@@ -18,6 +18,8 @@ tags:
     description: Conductor message injection
   - name: webhooks
     description: Inbound stub webhooks (Twilio / Chatwoot / n8n)
+  - name: compliance
+    description: 10DLC and A2P registration compliance monitoring
   - name: stats
     description: Control plane summary stats
 paths:
@@ -254,6 +256,23 @@ paths:
                 items:
                   $ref: "#/components/schemas/WebhookEvent"
 
+  /compliance:
+    get:
+      operationId: getCompliance
+      tags: [compliance]
+      summary: 10DLC compliance monitor
+      description: |
+        Queries Twilio Trust Hub and A2P Brand Registration APIs for real-time
+        compliance status. Returns brand registration, trust hub bundle, and
+        customer profile statuses alongside per-tenant number inventory.
+      responses:
+        "200":
+          description: Compliance report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComplianceReport"
+
   /stats:
     get:
       operationId: getStats
@@ -476,6 +495,47 @@ components:
           type: string
           format: date-time
       required: [id, source, payload, createdAt]
+
+    ComplianceItem:
+      type: object
+      properties:
+        sid:
+          type: ["string", "null"]
+        status:
+          type: ["string", "null"]
+        friendlyName:
+          type: ["string", "null"]
+        detail:
+          type: ["string", "null"]
+      required: [sid, status, friendlyName, detail]
+
+    TenantNumberStatus:
+      type: object
+      properties:
+        tenantSlug:
+          type: string
+        tenantName:
+          type: string
+        phoneNumber:
+          type: ["string", "null"]
+        region:
+          type: string
+      required: [tenantSlug, tenantName, phoneNumber, region]
+
+    ComplianceReport:
+      type: object
+      properties:
+        brandRegistration:
+          $ref: "#/components/schemas/ComplianceItem"
+        trustHubBundle:
+          $ref: "#/components/schemas/ComplianceItem"
+        customerProfile:
+          $ref: "#/components/schemas/ComplianceItem"
+        tenantNumbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantNumberStatus"
+      required: [brandRegistration, trustHubBundle, customerProfile, tenantNumbers]
 
     ControlPlaneStats:
       type: object
