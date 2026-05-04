@@ -1105,6 +1105,12 @@ export const CreateCampaignBody = zod.object({
       lastInteractionAfter: zod.string().optional(),
     })
     .optional(),
+  scheduledAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "ISO date-time when the campaign should auto-fire. If omitted, the campaign is created as an immediate draft.",
+    ),
 });
 
 /**
@@ -1218,6 +1224,68 @@ export const SendCampaignResponse = zod.object({
 });
 
 /**
+ * @summary Schedule a draft campaign to fire at a future time
+ */
+export const ScheduleCampaignParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ScheduleCampaignBody = zod.object({
+  scheduledAt: zod.coerce.date(),
+});
+
+export const ScheduleCampaignResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  body: zod.string(),
+  status: zod.enum(["draft", "sending", "paused", "completed", "failed"]),
+  segmentFilter: zod.record(zod.string(), zod.unknown()).nullish(),
+  totalRecipients: zod.number(),
+  queuedCount: zod.number(),
+  sentCount: zod.number(),
+  deliveredCount: zod.number(),
+  failedCount: zod.number(),
+  responseCount: zod.number(),
+  optOutCount: zod.number(),
+  creditsRequired: zod.number(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  scheduledAt: zod.coerce.date().nullish(),
+  startedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Clear a scheduled campaign back to immediate draft
+ */
+export const UnscheduleCampaignParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UnscheduleCampaignResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  body: zod.string(),
+  status: zod.enum(["draft", "sending", "paused", "completed", "failed"]),
+  segmentFilter: zod.record(zod.string(), zod.unknown()).nullish(),
+  totalRecipients: zod.number(),
+  queuedCount: zod.number(),
+  sentCount: zod.number(),
+  deliveredCount: zod.number(),
+  failedCount: zod.number(),
+  responseCount: zod.number(),
+  optOutCount: zod.number(),
+  creditsRequired: zod.number(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  scheduledAt: zod.coerce.date().nullish(),
+  startedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
  * @summary List per-recipient campaign message statuses
  */
 export const ListCampaignMessagesParams = zod.object({
@@ -1232,7 +1300,15 @@ export const ListCampaignMessagesResponseItem = zod.object({
   contactName: zod.string().nullish(),
   renderedBody: zod.string(),
   status: zod.enum(["queued", "sending", "sent", "delivered", "failed"]),
+  externalId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Twilio MessageSid (or stub equivalent) used to correlate delivery-status callbacks",
+    ),
   sentAt: zod.coerce.date().nullish(),
+  deliveredAt: zod.coerce.date().nullish(),
+  respondedAt: zod.coerce.date().nullish(),
   errorMessage: zod.string().nullish(),
 });
 export const ListCampaignMessagesResponse = zod.array(

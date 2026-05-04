@@ -34,6 +34,9 @@ import {
   Loader2,
   ArrowLeft,
   Coins,
+  Calendar,
+  MessageSquare,
+  Ban,
 } from "lucide-react";
 
 type WizardStep = "audience" | "compose" | "review";
@@ -62,7 +65,16 @@ function calcSegments(text: string) {
   return { chars: len, segments: Math.ceil(len / 67), encoding: "UCS-2" as const, limit: 67 };
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, scheduledAt }: { status: string; scheduledAt?: string | null }) {
+  const isScheduled = status === "draft" && scheduledAt && new Date(scheduledAt).getTime() > Date.now();
+  if (isScheduled) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+        <Calendar className="w-3 h-3" />
+        scheduled
+      </span>
+    );
+  }
   const colors: Record<string, string> = {
     draft: "bg-slate-100 text-slate-700",
     sending: "bg-blue-100 text-blue-700",
@@ -180,7 +192,7 @@ function CampaignListView({ onCreateNew, onViewDetail }: { onCreateNew: () => vo
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
                   <h3 className="font-medium text-slate-900">{c.name}</h3>
-                  <StatusBadge status={c.status} />
+                  <StatusBadge status={c.status} scheduledAt={c.scheduledAt} />
                 </div>
                 <div className="flex items-center gap-2">
                   {c.status === "draft" && (
@@ -226,6 +238,13 @@ function CreateCampaignWizard({ onCancel, onCreated }: { onCancel: () => void; o
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [filterStatus, setFilterStatus] = useState("");
   const [customTag, setCustomTag] = useState("");
+  const [sendMode, setSendMode] = useState<"now" | "later">("now");
+  const [scheduledAtLocal, setScheduledAtLocal] = useState<string>(() => {
+    // Default to 1 hour from now in datetime-local format
+    const d = new Date(Date.now() + 60 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -285,8 +304,26 @@ function CreateCampaignWizard({ onCancel, onCreated }: { onCancel: () => void; o
       toast({ title: "Name and message body are required", variant: "destructive" });
       return;
     }
+    let scheduledAtIso: string | undefined;
+    if (sendMode === "later") {
+      const parsed = new Date(scheduledAtLocal);
+      if (Number.isNaN(parsed.getTime())) {
+        toast({ title: "Pick a valid date and time", variant: "destructive" });
+        return;
+      }
+      if (parsed.getTime() <= Date.now()) {
+        toast({ title: "Scheduled time must be in the future", variant: "destructive" });
+        return;
+      }
+      scheduledAtIso = parsed.toISOString();
+    }
     createMutation.mutate({
-      data: { name: name.trim(), body: body.trim(), segmentFilter },
+      data: {
+        name: name.trim(),
+        body: body.trim(),
+        segmentFilter,
+        ...(scheduledAtIso ? { scheduledAt: scheduledAtIso } : {}),
+      },
     });
   };
 
@@ -539,6 +576,57 @@ function CreateCampaignWizard({ onCancel, onCreated }: { onCancel: () => void; o
             )}
 
             <div>
+              <p className="text-xs font-medium text-slate-700 mb-2 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" /> When to Send
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSendMode("now")}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors text-left ${
+                    sendMode === "now"
+                      ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                      : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Send className="w-4 h-4" />
+                    <span>Send now</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">Create as draft, send manually</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSendMode("later")}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors text-left ${
+                    sendMode === "later"
+                      ? "bg-amber-50 border-amber-300 text-amber-700"
+                      : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    <span>Schedule for later</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">Auto-fire at the chosen time</p>
+                </button>
+              </div>
+              {sendMode === "later" && (
+                <div className="mt-3">
+                  <input
+                    type="datetime-local"
+                    value={scheduledAtLocal}
+                    onChange={(e) => setScheduledAtLocal(e.target.value)}
+                    className="w-full px-3 py-2 border border-amber-300 bg-amber-50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <p className="text-xs text-amber-700 mt-1">
+                    The scheduler runs every minute, so the campaign may fire up to ~60s after the chosen time.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div>
               <p className="text-xs text-slate-500 mb-1">Message</p>
               <div className="bg-slate-50 rounded-lg p-3 text-sm font-mono whitespace-pre-wrap text-slate-700">{body}</div>
             </div>
@@ -569,8 +657,8 @@ function CreateCampaignWizard({ onCancel, onCreated }: { onCancel: () => void; o
               disabled={createMutation.isPending || !canAfford}
               className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2"
             >
-              {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              Create & Review
+              {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : sendMode === "later" ? <Calendar className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+              {sendMode === "later" ? "Schedule Campaign" : "Create & Review"}
             </button>
           </div>
         </div>
@@ -638,9 +726,16 @@ function CampaignDetailView({ campaignId, onBack }: { campaignId: number; onBack
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold text-slate-900">{campaign.name}</h2>
-            <StatusBadge status={campaign.status} />
+            <StatusBadge status={campaign.status} scheduledAt={campaign.scheduledAt} />
           </div>
-          <p className="text-xs text-slate-400">Created {new Date(campaign.createdAt).toLocaleString()}</p>
+          <p className="text-xs text-slate-400">
+            Created {new Date(campaign.createdAt).toLocaleString()}
+            {campaign.scheduledAt && campaign.status === "draft" && (
+              <span className="ml-2 text-amber-600 font-medium">
+                · Auto-fires {new Date(campaign.scheduledAt).toLocaleString()}
+              </span>
+            )}
+          </p>
         </div>
         {campaign.status === "draft" && (
           <button
@@ -649,7 +744,7 @@ function CampaignDetailView({ campaignId, onBack }: { campaignId: number; onBack
             className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors inline-flex items-center gap-2"
           >
             {sendMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Send Now
+            {campaign.scheduledAt ? "Send Now Instead" : "Send Now"}
           </button>
         )}
       </div>
@@ -684,6 +779,30 @@ function CampaignDetailView({ campaignId, onBack }: { campaignId: number; onBack
               <div className="text-center">
                 <p className="text-2xl font-bold text-indigo-600">{deliveryRate}%</p>
                 <p className="text-xs text-slate-500">Delivery Rate</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">Engagement & Attribution</h3>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-emerald-50 rounded-lg p-3 text-center">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto mb-1" />
+                <p className="text-2xl font-bold text-emerald-700">{campaign.deliveredCount ?? 0}</p>
+                <p className="text-xs text-emerald-600">Delivered</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">via carrier callback</p>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-3 text-center">
+                <MessageSquare className="w-4 h-4 text-blue-600 mx-auto mb-1" />
+                <p className="text-2xl font-bold text-blue-700">{campaign.responseCount ?? 0}</p>
+                <p className="text-xs text-blue-600">Responses</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">last-touch within 72h</p>
+              </div>
+              <div className="bg-rose-50 rounded-lg p-3 text-center">
+                <Ban className="w-4 h-4 text-rose-600 mx-auto mb-1" />
+                <p className="text-2xl font-bold text-rose-700">{campaign.optOutCount ?? 0}</p>
+                <p className="text-xs text-rose-600">Opt-Outs</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">attributed to this campaign</p>
               </div>
             </div>
           </div>

@@ -1499,6 +1499,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /campaigns/{id}/schedule:
+    post:
+      operationId: scheduleCampaign
+      tags: [campaigns]
+      summary: Schedule a draft campaign to fire at a future time
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleCampaignInput"
+      responses:
+        "200":
+          description: Campaign scheduled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignItem"
+        "400":
+          description: Invalid scheduledAt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Draft campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /campaigns/{id}/unschedule:
+    post:
+      operationId: unscheduleCampaign
+      tags: [campaigns]
+      summary: Clear a scheduled campaign back to immediate draft
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Campaign unscheduled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignItem"
+        "404":
+          description: Draft campaign not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /campaigns/{id}/messages:
     get:
       operationId: listCampaignMessages
@@ -2653,7 +2715,19 @@ components:
               type: string
             lastInteractionAfter:
               type: string
+        scheduledAt:
+          type: ["string", "null"]
+          format: date-time
+          description: ISO date-time when the campaign should auto-fire. If omitted, the campaign is created as an immediate draft.
       required: [name, body]
+
+    ScheduleCampaignInput:
+      type: object
+      properties:
+        scheduledAt:
+          type: string
+          format: date-time
+      required: [scheduledAt]
 
     CreditBalance:
       type: object
@@ -2783,7 +2857,16 @@ components:
         status:
           type: string
           enum: [queued, sending, sent, delivered, failed]
+        externalId:
+          type: ["string", "null"]
+          description: Twilio MessageSid (or stub equivalent) used to correlate delivery-status callbacks
         sentAt:
+          type: ["string", "null"]
+          format: date-time
+        deliveredAt:
+          type: ["string", "null"]
+          format: date-time
+        respondedAt:
           type: ["string", "null"]
           format: date-time
         errorMessage:

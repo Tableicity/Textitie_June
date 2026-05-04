@@ -70,6 +70,7 @@ export * from "./optOutItem";
 export * from "./purchasedNumberResult";
 export * from "./purchaseNumberInput";
 export * from "./region";
+export * from "./scheduleCampaignInput";
 export * from "./searchAvailableNumbersParams";
 export * from "./sendMessageInput";
 export * from "./setAgentStatusInput";

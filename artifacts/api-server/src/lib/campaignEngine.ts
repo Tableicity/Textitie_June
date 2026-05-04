@@ -4,6 +4,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { getSender } from "./senders";
 import { extractContactVars, injectVariables, calculateSegments } from "./smsUtils";
 import { deductCampaignCredits } from "./creditEngine";
+import { simulateDeliveryCallback } from "./deliveryStatus";
 import { logger } from "./logger";
 
 const SEND_RATE_PER_SECOND = 10;
@@ -36,6 +37,7 @@ async function sendBatch(ctx: CampaignContext): Promise<boolean> {
   if (claimed.rows.length === 0) return false;
 
   const sender = getSender();
+  const isStub = sender.name === "stub";
 
   for (const row of claimed.rows) {
     try {
@@ -49,12 +51,22 @@ async function sendBatch(ctx: CampaignContext): Promise<boolean> {
 
       const newStatus = result.status === "failed" ? "failed" : "sent";
       await pool.query(
-        `UPDATE campaign_messages SET status = $1, sent_at = NOW(), error_message = $2 WHERE id = $3`,
-        [newStatus, result.status === "failed" ? result.responseSummary : null, row.id],
+        `UPDATE campaign_messages SET status = $1, sent_at = NOW(), external_id = $2, error_message = $3 WHERE id = $4`,
+        [
+          newStatus,
+          result.externalId,
+          result.status === "failed" ? result.responseSummary : null,
+          row.id,
+        ],
       );
 
       if (newStatus === "sent") {
         ctx.sentSoFar++;
+        // Sim-Vibe: when running on the stub sender, replay a fake Twilio
+        // delivery callback so the "Delivered" counters move during local testing.
+        if (isStub && result.externalId) {
+          simulateDeliveryCallback(result.externalId);
+        }
       } else {
         ctx.failedSoFar++;
       }
@@ -122,7 +134,7 @@ export async function executeCampaign(campaignId: number): Promise<void> {
 
     if (ctx.sentSoFar > 0) {
       const renderedRows = await pool.query(
-        `SELECT rendered_body FROM campaign_messages WHERE campaign_id = $1 AND status = 'sent'`,
+        `SELECT rendered_body FROM campaign_messages WHERE campaign_id = $1 AND status IN ('sent', 'delivered')`,
         [campaignId],
       );
       let totalSegments = 0;
@@ -238,4 +250,67 @@ export async function createCampaignMessages(
   );
 
   return audience.length;
+}
+
+/**
+ * Internal helper used by the scheduler. Picks up a draft+scheduled campaign,
+ * runs the pre-flight credit check, atomically claims it, queues messages,
+ * and kicks off executeCampaign in the background.
+ *
+ * Returns null on success, or an error string explaining why it was skipped
+ * (insufficient credits, no audience, race lost, etc).
+ */
+export async function activateScheduledCampaign(
+  campaignId: number,
+): Promise<{ ok: boolean; reason?: string }> {
+  const { preFlightCheck } = await import("./creditEngine");
+
+  const rows = await db
+    .select()
+    .from(campaignsTable)
+    .where(eq(campaignsTable.id, campaignId))
+    .limit(1);
+  if (rows.length === 0) return { ok: false, reason: "not found" };
+  const campaign = rows[0];
+  if (campaign.status !== "draft") return { ok: false, reason: `status=${campaign.status}` };
+
+  const audience = await buildAudience(campaign.tenantId, campaign.segmentFilter as any);
+  if (audience.length === 0) {
+    await pool.query(
+      `UPDATE campaigns SET status = 'failed', completed_at = NOW() WHERE id = $1 AND status = 'draft'`,
+      [campaignId],
+    );
+    return { ok: false, reason: "no eligible recipients" };
+  }
+
+  const segInfo = calculateSegments(campaign.body);
+  const segCount = Math.max(1, segInfo.segmentCount);
+  const preflight = await preFlightCheck(campaign.tenantId, audience.length, segCount);
+  if (!preflight.allowed) {
+    await pool.query(
+      `UPDATE campaigns SET status = 'failed', completed_at = NOW() WHERE id = $1 AND status = 'draft'`,
+      [campaignId],
+    );
+    return { ok: false, reason: `insufficient credits (need ${preflight.requiredCredits}, have ${preflight.availableCredits})` };
+  }
+
+  const claimed = await pool.query(
+    `UPDATE campaigns SET status = 'sending', started_at = NOW()
+     WHERE id = $1 AND status = 'draft'
+     RETURNING id`,
+    [campaignId],
+  );
+  if (claimed.rows.length === 0) return { ok: false, reason: "race lost" };
+
+  const queued = await createCampaignMessages(campaignId, audience, campaign.body);
+  await pool.query(
+    `UPDATE campaigns SET total_recipients = $1, queued_count = $2, credits_required = $3 WHERE id = $4`,
+    [audience.length, queued, audience.length * segCount, campaignId],
+  );
+
+  executeCampaign(campaignId).catch((err) => {
+    logger.error({ err, campaignId }, "Scheduled campaign execution error (fire-and-forget)");
+  });
+
+  return { ok: true };
 }

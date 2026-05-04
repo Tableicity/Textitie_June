@@ -2,6 +2,7 @@ import { db, automationRulesTable, optOutsTable, conversationsTable, messagesTab
 import { eq, and, asc } from "drizzle-orm";
 import { pool } from "@workspace/db";
 import { logger } from "./logger";
+import { attributeOptOut } from "./campaignAttribution";
 
 const TCPA_KEYWORDS = ["stop", "end", "unsubscribe", "cancel", "quit"];
 
@@ -105,6 +106,11 @@ async function handleTcpaKeyword(
      ON CONFLICT (tenant_id, phone_number) DO NOTHING`,
     [tenantId, contactPhone, `Keyword: ${normalized}`],
   );
+
+  // Smoking Gun: tag the opt-out with the campaign that triggered it
+  // (last-touch within 72h) so tenants can see WHICH message angered the
+  // customer. Non-fatal if no recent campaign exists.
+  await attributeOptOut(tenantId, contactPhone);
 
   await db.insert(messagesTable).values({
     conversationId,

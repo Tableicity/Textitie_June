@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { tenantsTable } from "./tenants";
 import { conversationsTable } from "./conversations";
 
@@ -26,7 +26,9 @@ export const campaignsTable = pgTable("campaigns", {
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-});
+}, (table) => [
+  index("campaigns_status_scheduled_idx").on(table.status, table.scheduledAt),
+]);
 
 export type Campaign = typeof campaignsTable.$inferSelect;
 
@@ -41,8 +43,14 @@ export const campaignMessagesTable = pgTable("campaign_messages", {
   contactName: text("contact_name"),
   renderedBody: text("rendered_body").notNull(),
   status: text("status").notNull().default("queued"),
+  externalId: text("external_id"),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  respondedAt: timestamp("responded_at", { withTimezone: true }),
   errorMessage: text("error_message"),
-});
+}, (table) => [
+  index("campaign_messages_external_id_idx").on(table.externalId),
+  index("campaign_messages_phone_sent_idx").on(table.contactPhone, table.sentAt),
+]);
 
 export type CampaignMessage = typeof campaignMessagesTable.$inferSelect;

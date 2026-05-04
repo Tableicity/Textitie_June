@@ -13,4 +13,9 @@ export interface CreateCampaignInput {
   /** @minLength 1 */
   body: string;
   segmentFilter?: CreateCampaignInputSegmentFilter;
+  /**
+   * ISO date-time when the campaign should auto-fire. If omitted, the campaign is created as an immediate draft.
+   * @nullable
+   */
+  scheduledAt?: Date | null;
 }

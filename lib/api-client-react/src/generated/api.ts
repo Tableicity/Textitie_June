@@ -61,6 +61,7 @@ import type {
   OptOutItem,
   PurchaseNumberInput,
   PurchasedNumberResult,
+  ScheduleCampaignInput,
   SearchAvailableNumbersParams,
   SendMessageInput,
   SetAgentStatusInput,
@@ -5597,6 +5598,177 @@ export const useSendCampaign = <
   TContext
 > => {
   return useMutation(getSendCampaignMutationOptions(options));
+};
+
+/**
+ * @summary Schedule a draft campaign to fire at a future time
+ */
+export const getScheduleCampaignUrl = (id: number) => {
+  return `/api/campaigns/${id}/schedule`;
+};
+
+export const scheduleCampaign = async (
+  id: number,
+  scheduleCampaignInput: ScheduleCampaignInput,
+  options?: RequestInit,
+): Promise<CampaignItem> => {
+  return customFetch<CampaignItem>(getScheduleCampaignUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(scheduleCampaignInput),
+  });
+};
+
+export const getScheduleCampaignMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleCampaign>>,
+    TError,
+    { id: number; data: BodyType<ScheduleCampaignInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof scheduleCampaign>>,
+  TError,
+  { id: number; data: BodyType<ScheduleCampaignInput> },
+  TContext
+> => {
+  const mutationKey = ["scheduleCampaign"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof scheduleCampaign>>,
+    { id: number; data: BodyType<ScheduleCampaignInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return scheduleCampaign(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ScheduleCampaignMutationResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleCampaign>>
+>;
+export type ScheduleCampaignMutationBody = BodyType<ScheduleCampaignInput>;
+export type ScheduleCampaignMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Schedule a draft campaign to fire at a future time
+ */
+export const useScheduleCampaign = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleCampaign>>,
+    TError,
+    { id: number; data: BodyType<ScheduleCampaignInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof scheduleCampaign>>,
+  TError,
+  { id: number; data: BodyType<ScheduleCampaignInput> },
+  TContext
+> => {
+  return useMutation(getScheduleCampaignMutationOptions(options));
+};
+
+/**
+ * @summary Clear a scheduled campaign back to immediate draft
+ */
+export const getUnscheduleCampaignUrl = (id: number) => {
+  return `/api/campaigns/${id}/unschedule`;
+};
+
+export const unscheduleCampaign = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CampaignItem> => {
+  return customFetch<CampaignItem>(getUnscheduleCampaignUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnscheduleCampaignMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unscheduleCampaign>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unscheduleCampaign>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["unscheduleCampaign"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unscheduleCampaign>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unscheduleCampaign(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnscheduleCampaignMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unscheduleCampaign>>
+>;
+
+export type UnscheduleCampaignMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Clear a scheduled campaign back to immediate draft
+ */
+export const useUnscheduleCampaign = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unscheduleCampaign>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unscheduleCampaign>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getUnscheduleCampaignMutationOptions(options));
 };
 
 /**

@@ -29,7 +29,7 @@ router.get("/campaigns", requireTenantAuth, async (req, res) => {
 
 router.post("/campaigns", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
-  const { name, body, segmentFilter } = req.body ?? {};
+  const { name, body, segmentFilter, scheduledAt } = req.body ?? {};
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     res.status(400).json({ error: "Campaign name is required" });
@@ -38,6 +38,16 @@ router.post("/campaigns", requireTenantAuth, async (req, res) => {
   if (!body || typeof body !== "string" || body.trim().length === 0) {
     res.status(400).json({ error: "Campaign body is required" });
     return;
+  }
+
+  let scheduledAtDate: Date | null = null;
+  if (scheduledAt) {
+    const parsed = new Date(scheduledAt);
+    if (Number.isNaN(parsed.getTime())) {
+      res.status(400).json({ error: "scheduledAt must be a valid ISO date-time" });
+      return;
+    }
+    scheduledAtDate = parsed;
   }
 
   try {
@@ -55,6 +65,7 @@ router.post("/campaigns", requireTenantAuth, async (req, res) => {
         segmentFilter: segmentFilter ?? null,
         totalRecipients: audience.length,
         creditsRequired,
+        scheduledAt: scheduledAtDate,
         createdBy: req.tenantUser!.tenantUserId,
       })
       .returning();
@@ -62,6 +73,62 @@ router.post("/campaigns", requireTenantAuth, async (req, res) => {
     res.status(201).json(rows[0]);
   } catch (err) {
     logger.error({ err }, "Create campaign error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/campaigns/:id/schedule", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const id = Number(req.params.id);
+  const { scheduledAt } = req.body ?? {};
+
+  if (!scheduledAt) {
+    res.status(400).json({ error: "scheduledAt is required" });
+    return;
+  }
+  const parsed = new Date(scheduledAt);
+  if (Number.isNaN(parsed.getTime())) {
+    res.status(400).json({ error: "scheduledAt must be a valid ISO date-time" });
+    return;
+  }
+  if (parsed.getTime() <= Date.now()) {
+    res.status(400).json({ error: "scheduledAt must be in the future" });
+    return;
+  }
+
+  try {
+    const updated = await db
+      .update(campaignsTable)
+      .set({ scheduledAt: parsed })
+      .where(and(eq(campaignsTable.id, id), eq(campaignsTable.tenantId, tenantId), eq(campaignsTable.status, "draft")))
+      .returning();
+    if (updated.length === 0) {
+      res.status(404).json({ error: "Draft campaign not found" });
+      return;
+    }
+    res.json(updated[0]);
+  } catch (err) {
+    logger.error({ err }, "Schedule campaign error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/campaigns/:id/unschedule", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const id = Number(req.params.id);
+  try {
+    const updated = await db
+      .update(campaignsTable)
+      .set({ scheduledAt: null })
+      .where(and(eq(campaignsTable.id, id), eq(campaignsTable.tenantId, tenantId), eq(campaignsTable.status, "draft")))
+      .returning();
+    if (updated.length === 0) {
+      res.status(404).json({ error: "Draft campaign not found" });
+      return;
+    }
+    res.json(updated[0]);
+  } catch (err) {
+    logger.error({ err }, "Unschedule campaign error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

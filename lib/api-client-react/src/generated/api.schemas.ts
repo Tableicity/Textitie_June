@@ -728,6 +728,15 @@ export interface CreateCampaignInput {
   /** @minLength 1 */
   body: string;
   segmentFilter?: CreateCampaignInputSegmentFilter;
+  /**
+   * ISO date-time when the campaign should auto-fire. If omitted, the campaign is created as an immediate draft.
+   * @nullable
+   */
+  scheduledAt?: string | null;
+}
+
+export interface ScheduleCampaignInput {
+  scheduledAt: string;
 }
 
 export interface CreditBalance {
@@ -816,8 +825,17 @@ export interface CampaignMessageItem {
   contactName?: string | null;
   renderedBody: string;
   status: CampaignMessageItemStatus;
+  /**
+   * Twilio MessageSid (or stub equivalent) used to correlate delivery-status callbacks
+   * @nullable
+   */
+  externalId?: string | null;
   /** @nullable */
   sentAt?: string | null;
+  /** @nullable */
+  deliveredAt?: string | null;
+  /** @nullable */
+  respondedAt?: string | null;
   /** @nullable */
   errorMessage?: string | null;
 }

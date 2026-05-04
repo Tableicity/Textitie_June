@@ -2,6 +2,7 @@ import { db, automationRulesTable, conversationsTable, messagesTable, conversati
 import { eq, and, lt, asc, sql } from "drizzle-orm";
 import { pool } from "@workspace/db";
 import { logger } from "./logger";
+import { activateScheduledCampaign } from "./campaignEngine";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -25,6 +26,37 @@ export function startTimerEngine(): void {
 async function runTimerCycle(): Promise<void> {
   await processFollowUpTimers();
   await processAutoResolve();
+  await processScheduledCampaigns();
+}
+
+/**
+ * Phase 6 — Autonomy: pick up draft campaigns whose scheduled_at has elapsed,
+ * run the pre-flight + credit + audience flow, and kick off delivery. The
+ * 60s polling cadence means scheduled campaigns can fire up to a minute late,
+ * which is acceptable for marketing batches.
+ */
+async function processScheduledCampaigns(): Promise<void> {
+  try {
+    const due = await pool.query(
+      `SELECT id FROM campaigns
+       WHERE status = 'draft'
+         AND scheduled_at IS NOT NULL
+         AND scheduled_at <= NOW()
+       ORDER BY scheduled_at ASC
+       LIMIT 25`,
+    );
+
+    for (const row of due.rows) {
+      const result = await activateScheduledCampaign(row.id);
+      if (result.ok) {
+        logger.info({ campaignId: row.id }, "Scheduled campaign fired by timer engine");
+      } else {
+        logger.warn({ campaignId: row.id, reason: result.reason }, "Scheduled campaign skipped");
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, "processScheduledCampaigns failed");
+  }
 }
 
 async function processFollowUpTimers(): Promise<void> {

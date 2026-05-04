@@ -17,8 +17,17 @@ export interface CampaignMessageItem {
   contactName?: string | null;
   renderedBody: string;
   status: CampaignMessageItemStatus;
+  /**
+   * Twilio MessageSid (or stub equivalent) used to correlate delivery-status callbacks
+   * @nullable
+   */
+  externalId?: string | null;
   /** @nullable */
   sentAt?: Date | null;
+  /** @nullable */
+  deliveredAt?: Date | null;
+  /** @nullable */
+  respondedAt?: Date | null;
   /** @nullable */
   errorMessage?: string | null;
 }

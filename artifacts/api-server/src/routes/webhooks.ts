@@ -10,6 +10,8 @@ import {
 import { postChatwootMessage } from "../lib/chatwoot";
 import { studentWhisper } from "@workspace/ai-student";
 import { processInboundMessage } from "../lib/automationEngine";
+import { attributeInboundResponse } from "../lib/campaignAttribution";
+import { processDeliveryStatus } from "../lib/deliveryStatus";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -184,6 +186,14 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                   "Automation engine handled inbound message",
                 );
               }
+
+              // Phase 6 — Last-Touch Campaign Attribution (72h window).
+              // Skip if this was an opt-out: those are attributed separately
+              // inside the automation engine to keep response_count clean
+              // (an opt-out is not a "response" for ROI purposes).
+              if (result.action !== "tcpa_opt_out" && result.action !== "opted_out_ignored") {
+                await attributeInboundResponse(tenant.id, fromNumber);
+              }
             } catch (err) {
               logger.warn(
                 { err: err instanceof Error ? err.message : String(err) },
@@ -238,6 +248,37 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
     `SAMA Webhook: recorded from ${params.data.source}`,
   );
   res.status(201).json(ListWebhookEventsResponseItem.parse(row));
+});
+
+/**
+ * Twilio delivery-status callback. Twilio POSTs here with MessageSid +
+ * MessageStatus when a message moves through the carrier (sent → delivered or
+ * undelivered/failed). The Sim-Vibe path also calls this in-process so the
+ * dashboard counters move during local testing without a live Twilio account.
+ *
+ * Always returns 200 — Twilio retries non-2xx responses aggressively.
+ */
+router.post("/webhooks/twilio/status", async (req, res): Promise<void> => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const externalId = pickString(body, ["MessageSid", "messageSid", "sid"]);
+  const status = pickString(body, ["MessageStatus", "messageStatus", "status"]);
+  const errorCode = pickString(body, ["ErrorCode", "errorCode"]);
+  const errorMessage = pickString(body, ["ErrorMessage", "errorMessage"]);
+
+  if (!externalId || !status) {
+    req.log.warn({ body }, "Twilio status webhook missing MessageSid or MessageStatus");
+    res.status(200).json({ ok: true, skipped: "missing fields" });
+    return;
+  }
+
+  try {
+    const result = await processDeliveryStatus(externalId, status, errorCode, errorMessage);
+    req.log.info({ externalId, status, ...result }, "Twilio delivery-status processed");
+    res.status(200).json({ ok: true, ...result });
+  } catch (err) {
+    req.log.error({ err, externalId, status }, "Twilio delivery-status handler error");
+    res.status(200).json({ ok: false, error: "internal" });
+  }
 });
 
 router.get("/webhook-events", async (req, res): Promise<void> => {
