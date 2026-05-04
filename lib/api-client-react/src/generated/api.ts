@@ -18,12 +18,18 @@ import type {
 
 import type {
   AddDepartmentMemberInput,
+  AgentBasicItem,
+  AgentItem,
+  AgentStatusResult,
   ApiError,
   AssignNumberInput,
+  AutoRouteResult,
   AvailableNumberItem,
+  ClaimResult,
   ComplianceReport,
   ControlPlaneStats,
   Conversation,
+  ConversationEventItem,
   CreateDepartmentInput,
   CreateTenantInput,
   DepartmentItem,
@@ -32,6 +38,7 @@ import type {
   HealthStatus,
   InjectMessageInput,
   InjectionLog,
+  InviteAgentInput,
   ListConversationsParams,
   ListInjectionsParams,
   ListWebhookEventsParams,
@@ -40,6 +47,7 @@ import type {
   PurchasedNumberResult,
   SearchAvailableNumbersParams,
   SendMessageInput,
+  SetAgentStatusInput,
   SuccessResult,
   Tenant,
   TenantLoginInput,
@@ -47,6 +55,8 @@ import type {
   TenantMeResult,
   TenantPhoneNumberItem,
   Tier,
+  TransferInput,
+  UpdateAgentInput,
   UpdateDepartmentInput,
   UpdateTenantInput,
   WebhookEvent,
@@ -1554,6 +1564,854 @@ export const useSendMessage = <
   TContext
 > => {
   return useMutation(getSendMessageMutationOptions(options));
+};
+
+/**
+ * @summary Claim an unassigned conversation
+ */
+export const getClaimConversationUrl = (id: number) => {
+  return `/api/conversations/${id}/claim`;
+};
+
+export const claimConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ClaimResult> => {
+  return customFetch<ClaimResult>(getClaimConversationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getClaimConversationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof claimConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof claimConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["claimConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof claimConversation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return claimConversation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClaimConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof claimConversation>>
+>;
+
+export type ClaimConversationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Claim an unassigned conversation
+ */
+export const useClaimConversation = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof claimConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof claimConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getClaimConversationMutationOptions(options));
+};
+
+/**
+ * @summary Transfer conversation to another agent
+ */
+export const getTransferConversationUrl = (id: number) => {
+  return `/api/conversations/${id}/transfer`;
+};
+
+export const transferConversation = async (
+  id: number,
+  transferInput: TransferInput,
+  options?: RequestInit,
+): Promise<ClaimResult> => {
+  return customFetch<ClaimResult>(getTransferConversationUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(transferInput),
+  });
+};
+
+export const getTransferConversationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof transferConversation>>,
+    TError,
+    { id: number; data: BodyType<TransferInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof transferConversation>>,
+  TError,
+  { id: number; data: BodyType<TransferInput> },
+  TContext
+> => {
+  const mutationKey = ["transferConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof transferConversation>>,
+    { id: number; data: BodyType<TransferInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return transferConversation(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TransferConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof transferConversation>>
+>;
+export type TransferConversationMutationBody = BodyType<TransferInput>;
+export type TransferConversationMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Transfer conversation to another agent
+ */
+export const useTransferConversation = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof transferConversation>>,
+    TError,
+    { id: number; data: BodyType<TransferInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof transferConversation>>,
+  TError,
+  { id: number; data: BodyType<TransferInput> },
+  TContext
+> => {
+  return useMutation(getTransferConversationMutationOptions(options));
+};
+
+/**
+ * @summary Release conversation back to pool
+ */
+export const getUnassignConversationUrl = (id: number) => {
+  return `/api/conversations/${id}/unassign`;
+};
+
+export const unassignConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SuccessResult> => {
+  return customFetch<SuccessResult>(getUnassignConversationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnassignConversationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unassignConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unassignConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["unassignConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unassignConversation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unassignConversation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnassignConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unassignConversation>>
+>;
+
+export type UnassignConversationMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Release conversation back to pool
+ */
+export const useUnassignConversation = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unassignConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unassignConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getUnassignConversationMutationOptions(options));
+};
+
+/**
+ * @summary Auto-route conversation to an agent based on department strategy
+ */
+export const getAutoRouteConversationUrl = (id: number) => {
+  return `/api/conversations/${id}/auto-route`;
+};
+
+export const autoRouteConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<AutoRouteResult> => {
+  return customFetch<AutoRouteResult>(getAutoRouteConversationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAutoRouteConversationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autoRouteConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof autoRouteConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["autoRouteConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof autoRouteConversation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return autoRouteConversation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AutoRouteConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof autoRouteConversation>>
+>;
+
+export type AutoRouteConversationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Auto-route conversation to an agent based on department strategy
+ */
+export const useAutoRouteConversation = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autoRouteConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof autoRouteConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getAutoRouteConversationMutationOptions(options));
+};
+
+/**
+ * @summary Get conversation audit trail
+ */
+export const getListConversationEventsUrl = (id: number) => {
+  return `/api/conversations/${id}/events`;
+};
+
+export const listConversationEvents = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ConversationEventItem[]> => {
+  return customFetch<ConversationEventItem[]>(
+    getListConversationEventsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListConversationEventsQueryKey = (id: number) => {
+  return [`/api/conversations/${id}/events`] as const;
+};
+
+export const getListConversationEventsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listConversationEvents>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listConversationEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListConversationEventsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listConversationEvents>>
+  > = ({ signal }) => listConversationEvents(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listConversationEvents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListConversationEventsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listConversationEvents>>
+>;
+export type ListConversationEventsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get conversation audit trail
+ */
+
+export function useListConversationEvents<
+  TData = Awaited<ReturnType<typeof listConversationEvents>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listConversationEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListConversationEventsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List all agents for the tenant
+ */
+export const getListAgentsUrl = () => {
+  return `/api/agents`;
+};
+
+export const listAgents = async (
+  options?: RequestInit,
+): Promise<AgentItem[]> => {
+  return customFetch<AgentItem[]>(getListAgentsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAgentsQueryKey = () => {
+  return [`/api/agents`] as const;
+};
+
+export const getListAgentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAgents>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAgents>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAgentsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgents>>> = ({
+    signal,
+  }) => listAgents({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAgents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAgentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAgents>>
+>;
+export type ListAgentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all agents for the tenant
+ */
+
+export function useListAgents<
+  TData = Awaited<ReturnType<typeof listAgents>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAgents>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAgentsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Invite a new agent to the tenant
+ */
+export const getInviteAgentUrl = () => {
+  return `/api/agents/invite`;
+};
+
+export const inviteAgent = async (
+  inviteAgentInput: InviteAgentInput,
+  options?: RequestInit,
+): Promise<AgentBasicItem> => {
+  return customFetch<AgentBasicItem>(getInviteAgentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(inviteAgentInput),
+  });
+};
+
+export const getInviteAgentMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof inviteAgent>>,
+    TError,
+    { data: BodyType<InviteAgentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof inviteAgent>>,
+  TError,
+  { data: BodyType<InviteAgentInput> },
+  TContext
+> => {
+  const mutationKey = ["inviteAgent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof inviteAgent>>,
+    { data: BodyType<InviteAgentInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return inviteAgent(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type InviteAgentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof inviteAgent>>
+>;
+export type InviteAgentMutationBody = BodyType<InviteAgentInput>;
+export type InviteAgentMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Invite a new agent to the tenant
+ */
+export const useInviteAgent = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof inviteAgent>>,
+    TError,
+    { data: BodyType<InviteAgentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof inviteAgent>>,
+  TError,
+  { data: BodyType<InviteAgentInput> },
+  TContext
+> => {
+  return useMutation(getInviteAgentMutationOptions(options));
+};
+
+/**
+ * @summary Update agent profile (role, skills, languages)
+ */
+export const getUpdateAgentUrl = (id: number) => {
+  return `/api/agents/${id}`;
+};
+
+export const updateAgent = async (
+  id: number,
+  updateAgentInput: UpdateAgentInput,
+  options?: RequestInit,
+): Promise<AgentItem> => {
+  return customFetch<AgentItem>(getUpdateAgentUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateAgentInput),
+  });
+};
+
+export const getUpdateAgentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAgent>>,
+    TError,
+    { id: number; data: BodyType<UpdateAgentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAgent>>,
+  TError,
+  { id: number; data: BodyType<UpdateAgentInput> },
+  TContext
+> => {
+  const mutationKey = ["updateAgent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAgent>>,
+    { id: number; data: BodyType<UpdateAgentInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateAgent(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAgentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAgent>>
+>;
+export type UpdateAgentMutationBody = BodyType<UpdateAgentInput>;
+export type UpdateAgentMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update agent profile (role, skills, languages)
+ */
+export const useUpdateAgent = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAgent>>,
+    TError,
+    { id: number; data: BodyType<UpdateAgentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAgent>>,
+  TError,
+  { id: number; data: BodyType<UpdateAgentInput> },
+  TContext
+> => {
+  return useMutation(getUpdateAgentMutationOptions(options));
+};
+
+/**
+ * @summary Delete an agent
+ */
+export const getDeleteAgentUrl = (id: number) => {
+  return `/api/agents/${id}`;
+};
+
+export const deleteAgent = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SuccessResult> => {
+  return customFetch<SuccessResult>(getDeleteAgentUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAgentMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAgent>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAgent>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteAgent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAgent>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteAgent(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAgentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAgent>>
+>;
+
+export type DeleteAgentMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete an agent
+ */
+export const useDeleteAgent = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAgent>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAgent>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteAgentMutationOptions(options));
+};
+
+/**
+ * @summary Set own online/offline/away status
+ */
+export const getSetAgentStatusUrl = () => {
+  return `/api/agents/status`;
+};
+
+export const setAgentStatus = async (
+  setAgentStatusInput: SetAgentStatusInput,
+  options?: RequestInit,
+): Promise<AgentStatusResult> => {
+  return customFetch<AgentStatusResult>(getSetAgentStatusUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setAgentStatusInput),
+  });
+};
+
+export const getSetAgentStatusMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setAgentStatus>>,
+    TError,
+    { data: BodyType<SetAgentStatusInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setAgentStatus>>,
+  TError,
+  { data: BodyType<SetAgentStatusInput> },
+  TContext
+> => {
+  const mutationKey = ["setAgentStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setAgentStatus>>,
+    { data: BodyType<SetAgentStatusInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return setAgentStatus(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetAgentStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setAgentStatus>>
+>;
+export type SetAgentStatusMutationBody = BodyType<SetAgentStatusInput>;
+export type SetAgentStatusMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Set own online/offline/away status
+ */
+export const useSetAgentStatus = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setAgentStatus>>,
+    TError,
+    { data: BodyType<SetAgentStatusInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setAgentStatus>>,
+  TError,
+  { data: BodyType<SetAgentStatusInput> },
+  TContext
+> => {
+  return useMutation(getSetAgentStatusMutationOptions(options));
 };
 
 /**

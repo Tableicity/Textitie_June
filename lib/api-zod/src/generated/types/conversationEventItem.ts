@@ -6,16 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface DepartmentItem {
+export interface ConversationEventItem {
   id: number;
-  tenantId: number;
-  name: string;
+  conversationId: number;
+  eventType: string;
   /** @nullable */
-  phoneNumber: string | null;
+  actorId: number | null;
   /** @nullable */
-  twilioSid: string | null;
+  targetId: number | null;
   /** @nullable */
-  description: string | null;
-  routingStrategy: string;
+  note: string | null;
+  /** @nullable */
+  metadata: string | null;
   createdAt: Date;
 }

@@ -75,7 +75,12 @@ router.patch("/departments/:id", requireTenantAuth, async (req, res) => {
     res.status(400).json({ error: "Invalid department ID" });
     return;
   }
-  const { name, description } = req.body ?? {};
+  const { name, description, routingStrategy } = req.body ?? {};
+  const validStrategies = ["round_robin", "load_balanced", "last_assigned"];
+  if (routingStrategy !== undefined && !validStrategies.includes(routingStrategy)) {
+    res.status(400).json({ error: `Invalid routing strategy. Must be one of: ${validStrategies.join(", ")}` });
+    return;
+  }
   try {
     const existing = await db
       .select({ id: departmentsTable.id })
@@ -89,6 +94,7 @@ router.patch("/departments/:id", requireTenantAuth, async (req, res) => {
     const updates: Record<string, unknown> = {};
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
+    if (routingStrategy !== undefined) updates.routingStrategy = routingStrategy;
     if (Object.keys(updates).length === 0) {
       res.status(400).json({ error: "No fields to update" });
       return;

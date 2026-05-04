@@ -1,21 +1,25 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListDepartments,
   useCreateDepartment,
   useUpdateDepartment,
   useDeleteDepartment,
-  useListDepartmentMembers,
-  useAddDepartmentMember,
-  useRemoveDepartmentMember,
   useListPhoneNumbers,
   usePurchasePhoneNumber,
   useAssignPhoneNumber,
+  useListAgents,
+  useInviteAgent,
+  useUpdateAgent,
+  useDeleteAgent,
+  useTenantMe,
   getListDepartmentsQueryKey,
-  getListDepartmentMembersQueryKey,
   getListPhoneNumbersQueryKey,
+  getListAgentsQueryKey,
+  getTenantMeQueryKey,
   type DepartmentItem,
   type AvailableNumberItem,
+  type AgentItem,
 } from "@workspace/api-client-react";
 import { getTenantToken } from "@/lib/auth";
 import {
@@ -29,10 +33,10 @@ import {
   AlertCircle,
   Loader2,
   Building2,
-  CheckCircle2,
   PhoneCall,
   UserPlus,
-  UserMinus,
+  Mail,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -313,7 +317,7 @@ function DepartmentCard({ dept }: { dept: DepartmentItem }) {
           {dept.description || "No description provided."}
         </CardDescription>
       </CardHeader>
-      <CardContent className="mt-auto pt-0">
+      <CardContent className="mt-auto pt-0 space-y-3">
         <div className="flex items-center gap-2 mt-4 text-sm font-medium">
           {dept.phoneNumber ? (
             <>
@@ -326,9 +330,40 @@ function DepartmentCard({ dept }: { dept: DepartmentItem }) {
             </Badge>
           )}
         </div>
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-slate-500">Routing Strategy</Label>
+            <Badge variant="outline" className="text-xs font-normal capitalize">
+              {formatStrategy(dept.routingStrategy)}
+            </Badge>
+          </div>
+          <Select
+            value={dept.routingStrategy || "round_robin"}
+            onValueChange={(value) =>
+              updateMutation.mutate({
+                id: dept.id,
+                data: { routingStrategy: value },
+              })
+            }
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="round_robin">Round Robin</SelectItem>
+              <SelectItem value="load_balanced">Load Balanced</SelectItem>
+              <SelectItem value="last_assigned">Last Assigned</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </CardContent>
     </Card>
   );
+}
+
+function formatStrategy(s: string | undefined | null): string {
+  if (!s) return "Round Robin";
+  return s.replace(/_/g, " ");
 }
 
 function PhoneNumbersSection() {
@@ -589,157 +624,495 @@ function PhoneNumbersSection() {
 
 function TeamSection() {
   const queryClient = useQueryClient();
-  const { data: departments, isLoading: loadingDepts } = useListDepartments({
-    query: { queryKey: getListDepartmentsQueryKey() },
+  const { data: agents, isLoading } = useListAgents({
+    query: { queryKey: getListAgentsQueryKey() },
   });
+  const { data: meData } = useTenantMe({
+    query: { queryKey: getTenantMeQueryKey() },
+  });
+  const currentRole = meData?.user?.role || "agent";
+  const isAdmin = currentRole === "admin";
 
-  const [selectedDeptId, setSelectedDeptId] = useState<string>("");
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
+  const [inviteRole, setInviteRole] = useState<string>("agent");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
 
-  const { data: members, isLoading: loadingMembers } = useListDepartmentMembers(
-    selectedDeptId ? parseInt(selectedDeptId) : 0,
-    { query: { enabled: !!selectedDeptId, queryKey: getListDepartmentMembersQueryKey(parseInt(selectedDeptId)) } }
-  );
-
-  const [addUserId, setAddUserId] = useState("");
-  const addMutation = useAddDepartmentMember({
+  const inviteMutation = useInviteAgent({
     mutation: {
-      onSuccess: () => {
-        setAddUserId("");
-        if (selectedDeptId) {
-          queryClient.invalidateQueries({ queryKey: getListDepartmentMembersQueryKey(parseInt(selectedDeptId)) });
-        }
-      }
-    }
+      onSuccess: (created) => {
+        setInviteSuccess(`Invited ${created.name} (${created.email}).`);
+        setInviteError(null);
+        setInviteEmail("");
+        setInviteName("");
+        setInvitePassword("");
+        setInviteRole("agent");
+        queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() });
+      },
+      onError: (err: any) => {
+        setInviteError(err?.message || "Failed to invite agent.");
+        setInviteSuccess(null);
+      },
+    },
   });
 
-  const removeMutation = useRemoveDepartmentMember({
-    mutation: {
-      onSuccess: () => {
-        if (selectedDeptId) {
-          queryClient.invalidateQueries({ queryKey: getListDepartmentMembersQueryKey(parseInt(selectedDeptId)) });
-        }
-      }
-    }
-  });
+  const handleInvite = (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteError(null);
+    setInviteSuccess(null);
+    if (!inviteEmail.trim() || !inviteName.trim() || !invitePassword.trim()) return;
+    inviteMutation.mutate({
+      data: {
+        email: inviteEmail.trim(),
+        name: inviteName.trim(),
+        password: invitePassword,
+        role: inviteRole,
+      },
+    });
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Department Members</h2>
-          <p className="text-slate-500 text-sm">Manage which agents have access to specific department lines.</p>
+          <h2 className="text-lg font-semibold text-slate-900">Agents</h2>
+          <p className="text-slate-500 text-sm">
+            Manage agents, their roles, skills, and department memberships.
+          </p>
         </div>
-        
-        <div className="w-full sm:w-64">
-          <Select value={selectedDeptId} onValueChange={setSelectedDeptId}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={loadingDepts ? "Loading..." : "Select a department"} />
-            </SelectTrigger>
-            <SelectContent>
-              {departments?.map((d) => (
-                <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+
+        <Dialog
+          open={inviteOpen}
+          onOpenChange={(open) => {
+            setInviteOpen(open);
+            if (!open) {
+              setInviteError(null);
+              setInviteSuccess(null);
+            }
+          }}
+        >
+          <DialogTrigger asChild>
+            <Button className="bg-blue-600 hover:bg-blue-700">
+              <UserPlus className="w-4 h-4 mr-2" />
+              Invite Agent
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <form onSubmit={handleInvite}>
+              <DialogHeader>
+                <DialogTitle>Invite Agent</DialogTitle>
+                <DialogDescription>
+                  Create a new tenant user. They will be able to log in with the credentials you set.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                {inviteError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Invite failed</AlertTitle>
+                    <AlertDescription>{inviteError}</AlertDescription>
+                  </Alert>
+                )}
+                {inviteSuccess && (
+                  <Alert>
+                    <CheckCircle2 className="h-4 w-4" />
+                    <AlertTitle>Success</AlertTitle>
+                    <AlertDescription>{inviteSuccess}</AlertDescription>
+                  </Alert>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="invite-email">Email</Label>
+                  <Input
+                    id="invite-email"
+                    type="email"
+                    placeholder="agent@company.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="invite-name">Name</Label>
+                  <Input
+                    id="invite-name"
+                    placeholder="Jane Doe"
+                    value={inviteName}
+                    onChange={(e) => setInviteName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="invite-password">Password</Label>
+                  <Input
+                    id="invite-password"
+                    type="password"
+                    placeholder="Minimum 8 characters"
+                    value={invitePassword}
+                    onChange={(e) => setInvitePassword(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="agent">Agent</SelectItem>
+                      <SelectItem value="supervisor">Supervisor</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setInviteOpen(false)}>
+                  Close
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    inviteMutation.isPending ||
+                    !inviteEmail.trim() ||
+                    !inviteName.trim() ||
+                    !invitePassword.trim()
+                  }
+                >
+                  {inviteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Send Invite
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {selectedDeptId ? (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 pb-4">
-            <div>
-              <CardTitle className="text-base">Assigned Agents</CardTitle>
-              <CardDescription>Agents assigned to this department can view and reply to its messages.</CardDescription>
-            </div>
-            
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
-                  <UserPlus className="w-4 h-4 mr-2" />
-                  Add Member
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Member to Department</DialogTitle>
-                  <DialogDescription>
-                    Enter the User ID of the agent you want to assign to this department.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="py-4 space-y-4">
-                  <div className="space-y-2">
-                    <Label>Tenant User ID</Label>
-                    <Input 
-                      type="number" 
-                      placeholder="e.g. 1" 
-                      value={addUserId} 
-                      onChange={(e) => setAddUserId(e.target.value)} 
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline">Cancel</Button>
-                  <Button 
-                    onClick={() => addMutation.mutate({ 
-                      id: parseInt(selectedDeptId), 
-                      data: { tenantUserId: parseInt(addUserId) } 
-                    })}
-                    disabled={!addUserId || addMutation.isPending}
-                  >
-                    {addMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Add Member
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loadingMembers ? (
-              <div className="p-6 space-y-4">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            ) : members?.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 text-sm">
-                <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                No agents assigned to this department yet.
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {members?.map(member => (
-                  <div key={member.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm uppercase">
-                        {member.name.substring(0, 2)}
-                      </div>
-                      <div>
-                        <div className="font-medium text-slate-900">{member.name}</div>
-                        <div className="text-xs text-slate-500">{member.email} • {member.role}</div>
-                      </div>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => removeMutation.mutate({ id: parseInt(selectedDeptId), userId: member.tenantUserId })}
-                      disabled={removeMutation.isPending}
-                    >
-                      <UserMinus className="w-4 h-4 mr-2" />
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {isLoading ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-6 space-y-3">
+                <Skeleton className="h-5 w-1/2" />
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-2/3" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : agents?.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-xl border border-slate-200 border-dashed">
+          <Users className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-slate-900 mb-1">No agents yet</h3>
+          <p className="text-slate-500 text-sm mb-4">
+            Invite your first teammate to get started.
+          </p>
+          <Button variant="outline" onClick={() => setInviteOpen(true)}>
+            <UserPlus className="w-4 h-4 mr-2" />
+            Invite Agent
+          </Button>
+        </div>
       ) : (
-        <div className="p-12 text-center border border-slate-200 border-dashed rounded-xl bg-white">
-          <Building2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-base font-medium text-slate-900 mb-1">Select a Department</h3>
-          <p className="text-sm text-slate-500">Choose a department from the dropdown above to view and manage its members.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          {agents?.map((agent) => (
+            <AgentCard key={agent.id} agent={agent} isAdmin={isAdmin} />
+          ))}
         </div>
       )}
     </div>
+  );
+}
+
+function roleBadgeClasses(role: string): string {
+  switch (role) {
+    case "admin":
+      return "bg-purple-100 text-purple-700 border-purple-200";
+    case "supervisor":
+      return "bg-blue-100 text-blue-700 border-blue-200";
+    default:
+      return "bg-slate-100 text-slate-700 border-slate-200";
+  }
+}
+
+function statusDotColor(status: string): string {
+  switch (status) {
+    case "online":
+      return "bg-green-500";
+    case "away":
+      return "bg-yellow-500";
+    default:
+      return "bg-slate-400";
+  }
+}
+
+function AgentCard({ agent, isAdmin }: { agent: AgentItem; isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [name, setName] = useState(agent.name);
+  const [role, setRole] = useState(agent.role);
+  const [skills, setSkills] = useState((agent.skills || []).join(", "));
+  const [languages, setLanguages] = useState((agent.languages || []).join(", "));
+  const [editError, setEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (editOpen) {
+      setName(agent.name);
+      setRole(agent.role);
+      setSkills((agent.skills || []).join(", "));
+      setLanguages((agent.languages || []).join(", "));
+      setEditError(null);
+    }
+  }, [editOpen, agent]);
+
+  const updateMutation = useUpdateAgent({
+    mutation: {
+      onSuccess: () => {
+        setEditOpen(false);
+        queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() });
+      },
+      onError: (err: any) => {
+        setEditError(err?.message || "Failed to update agent.");
+      },
+    },
+  });
+
+  const deleteMutation = useDeleteAgent({
+    mutation: {
+      onSuccess: () => {
+        setDeleteOpen(false);
+        queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() });
+      },
+    },
+  });
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditError(null);
+    const skillsArr = skills
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const languagesArr = languages
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    updateMutation.mutate({
+      id: agent.id,
+      data: {
+        name: name.trim(),
+        ...(isAdmin ? { role } : {}),
+        skills: skillsArr,
+        languages: languagesArr,
+      },
+    });
+  };
+
+  return (
+    <Card className="flex flex-col hover:border-slate-300 transition-colors">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="relative flex-shrink-0 mt-0.5">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm uppercase">
+                {agent.name.substring(0, 2)}
+              </div>
+              <span
+                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${statusDotColor(
+                  agent.status,
+                )}`}
+                title={agent.status}
+              />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <CardTitle className="text-base font-semibold leading-tight truncate">
+                  {agent.name}
+                </CardTitle>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] uppercase font-medium ${roleBadgeClasses(agent.role)}`}
+                >
+                  {agent.role}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5 truncate">
+                <Mail className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{agent.email}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-1 flex-shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-slate-400 hover:text-slate-600"
+              onClick={() => setEditOpen(true)}
+            >
+              <Edit2 className="w-4 h-4" />
+            </Button>
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-slate-400 hover:text-red-600"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 mt-auto">
+        {agent.skills && agent.skills.length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase font-medium text-slate-500 mb-1.5">
+              Skills
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {agent.skills.map((s) => (
+                <Badge key={s} variant="secondary" className="text-xs font-normal">
+                  {s}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        {agent.languages && agent.languages.length > 0 && (
+          <div>
+            <div className="text-[11px] uppercase font-medium text-slate-500 mb-1.5">
+              Languages
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {agent.languages.map((l) => (
+                <Badge key={l} variant="secondary" className="text-xs font-normal">
+                  {l}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        <div>
+          <div className="text-[11px] uppercase font-medium text-slate-500 mb-1.5">
+            Departments
+          </div>
+          {agent.departments && agent.departments.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {agent.departments.map((d) => (
+                <Badge key={d.id} variant="outline" className="text-xs font-normal">
+                  <Building2 className="w-3 h-3 mr-1" />
+                  {d.name}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400">No department assignments.</div>
+          )}
+        </div>
+      </CardContent>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <form onSubmit={handleSave}>
+            <DialogHeader>
+              <DialogTitle>Edit Agent</DialogTitle>
+              <DialogDescription>
+                Update profile, skills, and languages for {agent.name}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {editError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Update failed</AlertTitle>
+                  <AlertDescription>{editError}</AlertDescription>
+                </Alert>
+              )}
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={role} onValueChange={setRole} disabled={!isAdmin}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="agent">Agent</SelectItem>
+                    <SelectItem value="supervisor">Supervisor</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!isAdmin && (
+                  <p className="text-xs text-slate-500">
+                    Only admins can change agent roles.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Skills</Label>
+                <Input
+                  placeholder="e.g. billing, technical, sales"
+                  value={skills}
+                  onChange={(e) => setSkills(e.target.value)}
+                />
+                <p className="text-xs text-slate-500">Comma-separated list of skills.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Languages</Label>
+                <Input
+                  placeholder="e.g. en, es, fr"
+                  value={languages}
+                  onChange={(e) => setLanguages(e.target.value)}
+                />
+                <p className="text-xs text-slate-500">Comma-separated list of languages.</p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateMutation.isPending || !name.trim()}>
+                {updateMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Agent</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <strong>{agent.name}</strong>? This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteMutation.mutate({ id: agent.id })}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-2" />
+              )}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }

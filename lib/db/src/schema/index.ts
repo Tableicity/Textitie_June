@@ -6,3 +6,4 @@ export * from "./users";
 export * from "./tenantUsers";
 export * from "./departments";
 export * from "./conversations";
+export * from "./conversationEvents";

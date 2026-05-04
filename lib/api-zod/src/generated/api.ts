@@ -365,6 +365,7 @@ export const ListConversationsResponseItem = zod.object({
   contactName: zod.string().nullable(),
   status: zod.enum(["open", "closed", "snoozed"]),
   assignedUserId: zod.number().nullable(),
+  assignedAt: zod.coerce.date().nullable(),
   lastMessageAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
 });
@@ -387,6 +388,7 @@ export const GetConversationResponse = zod.object({
   contactName: zod.string().nullable(),
   status: zod.enum(["open", "closed", "snoozed"]),
   assignedUserId: zod.number().nullable(),
+  assignedAt: zod.coerce.date().nullable(),
   lastMessageAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
 });
@@ -421,6 +423,170 @@ export const SendMessageBody = zod.object({
 });
 
 /**
+ * @summary Claim an unassigned conversation
+ */
+export const ClaimConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ClaimConversationResponse = zod.object({
+  success: zod.boolean(),
+  assignedUserId: zod.number(),
+  assignedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Transfer conversation to another agent
+ */
+export const TransferConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const TransferConversationBody = zod.object({
+  targetUserId: zod.number(),
+  note: zod.string().optional(),
+});
+
+export const TransferConversationResponse = zod.object({
+  success: zod.boolean(),
+  assignedUserId: zod.number(),
+  assignedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Release conversation back to pool
+ */
+export const UnassignConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UnassignConversationResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary Auto-route conversation to an agent based on department strategy
+ */
+export const AutoRouteConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AutoRouteConversationResponse = zod.object({
+  success: zod.boolean(),
+  assignedUserId: zod.number(),
+  strategy: zod.string(),
+  assignedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Get conversation audit trail
+ */
+export const ListConversationEventsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListConversationEventsResponseItem = zod.object({
+  id: zod.number(),
+  conversationId: zod.number(),
+  eventType: zod.string(),
+  actorId: zod.number().nullable(),
+  targetId: zod.number().nullable(),
+  note: zod.string().nullable(),
+  metadata: zod.string().nullable(),
+  createdAt: zod.coerce.date(),
+});
+export const ListConversationEventsResponse = zod.array(
+  ListConversationEventsResponseItem,
+);
+
+/**
+ * @summary List all agents for the tenant
+ */
+export const ListAgentsResponseItem = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  name: zod.string(),
+  role: zod.string(),
+  status: zod.string(),
+  skills: zod.array(zod.string()),
+  languages: zod.array(zod.string()),
+  lastAssignedAt: zod.coerce.date().nullable(),
+  departments: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+    }),
+  ),
+  createdAt: zod.coerce.date(),
+});
+export const ListAgentsResponse = zod.array(ListAgentsResponseItem);
+
+/**
+ * @summary Invite a new agent to the tenant
+ */
+export const InviteAgentBody = zod.object({
+  email: zod.string(),
+  name: zod.string(),
+  password: zod.string(),
+  role: zod.string().optional(),
+});
+
+/**
+ * @summary Update agent profile (role, skills, languages)
+ */
+export const UpdateAgentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateAgentBody = zod.object({
+  name: zod.string().optional(),
+  role: zod.string().optional(),
+  skills: zod.array(zod.string()).optional(),
+  languages: zod.array(zod.string()).optional(),
+});
+
+export const UpdateAgentResponse = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  name: zod.string(),
+  role: zod.string(),
+  status: zod.string(),
+  skills: zod.array(zod.string()),
+  languages: zod.array(zod.string()),
+  lastAssignedAt: zod.coerce.date().nullable(),
+  departments: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+    }),
+  ),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete an agent
+ */
+export const DeleteAgentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteAgentResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary Set own online/offline/away status
+ */
+export const SetAgentStatusBody = zod.object({
+  status: zod.enum(["online", "offline", "away"]),
+});
+
+export const SetAgentStatusResponse = zod.object({
+  id: zod.number(),
+  status: zod.string(),
+});
+
+/**
  * @summary List departments for the current tenant
  */
 export const ListDepartmentsResponseItem = zod.object({
@@ -430,6 +596,7 @@ export const ListDepartmentsResponseItem = zod.object({
   phoneNumber: zod.string().nullable(),
   twilioSid: zod.string().nullable(),
   description: zod.string().nullable(),
+  routingStrategy: zod.string(),
   createdAt: zod.coerce.date(),
 });
 export const ListDepartmentsResponse = zod.array(ListDepartmentsResponseItem);
@@ -457,6 +624,7 @@ export const GetDepartmentResponse = zod.object({
   phoneNumber: zod.string().nullable(),
   twilioSid: zod.string().nullable(),
   description: zod.string().nullable(),
+  routingStrategy: zod.string(),
   createdAt: zod.coerce.date(),
 });
 
@@ -470,6 +638,7 @@ export const UpdateDepartmentParams = zod.object({
 export const UpdateDepartmentBody = zod.object({
   name: zod.string().optional(),
   description: zod.string().optional(),
+  routingStrategy: zod.string().optional(),
 });
 
 export const UpdateDepartmentResponse = zod.object({
@@ -479,6 +648,7 @@ export const UpdateDepartmentResponse = zod.object({
   phoneNumber: zod.string().nullable(),
   twilioSid: zod.string().nullable(),
   description: zod.string().nullable(),
+  routingStrategy: zod.string(),
   createdAt: zod.coerce.date(),
 });
 
@@ -596,5 +766,6 @@ export const AssignPhoneNumberResponse = zod.object({
   phoneNumber: zod.string().nullable(),
   twilioSid: zod.string().nullable(),
   description: zod.string().nullable(),
+  routingStrategy: zod.string(),
   createdAt: zod.coerce.date(),
 });

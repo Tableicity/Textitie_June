@@ -11,6 +11,7 @@ import complianceRouter from "./compliance";
 import conversationsRouter from "./conversations";
 import departmentsRouter from "./departments";
 import phoneNumbersRouter from "./phoneNumbers";
+import agentsRouter from "./agents";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(complianceRouter);
 router.use(conversationsRouter);
 router.use(departmentsRouter);
 router.use(phoneNumbersRouter);
+router.use(agentsRouter);
 
 export default router;

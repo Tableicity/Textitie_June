@@ -1,6 +1,7 @@
 import { pgTable, serial, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
 import { tenantsTable } from "./tenants";
 import { departmentsTable } from "./departments";
+import { tenantUsersTable } from "./tenantUsers";
 
 export const conversationsTable = pgTable("conversations", {
   id: serial("id").primaryKey(),
@@ -12,7 +13,9 @@ export const conversationsTable = pgTable("conversations", {
   contactPhone: text("contact_phone").notNull(),
   contactName: text("contact_name"),
   status: text("status").notNull().default("open"),
-  assignedUserId: integer("assigned_user_id"),
+  assignedUserId: integer("assigned_user_id")
+    .references(() => tenantUsersTable.id, { onDelete: "set null" }),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }),
   lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

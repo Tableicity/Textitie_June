@@ -6,8 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UpdateDepartmentInput {
+export interface UpdateAgentInput {
   name?: string;
-  description?: string;
-  routingStrategy?: string;
+  role?: string;
+  skills?: string[];
+  languages?: string[];
 }

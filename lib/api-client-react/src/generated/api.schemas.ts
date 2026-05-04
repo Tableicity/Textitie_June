@@ -260,6 +260,8 @@ export interface Conversation {
   /** @nullable */
   assignedUserId: number | null;
   /** @nullable */
+  assignedAt: string | null;
+  /** @nullable */
   lastMessageAt: string | null;
   createdAt: string;
 }
@@ -298,6 +300,7 @@ export interface DepartmentItem {
   twilioSid: string | null;
   /** @nullable */
   description: string | null;
+  routingStrategy: string;
   createdAt: string;
 }
 
@@ -310,6 +313,7 @@ export interface CreateDepartmentInput {
 export interface UpdateDepartmentInput {
   name?: string;
   description?: string;
+  routingStrategy?: string;
 }
 
 export interface DepartmentMemberItem {
@@ -369,6 +373,99 @@ export interface AssignNumberInput {
   phoneNumber: string;
   twilioSid?: string;
   departmentId: number;
+}
+
+export interface ClaimResult {
+  success: boolean;
+  assignedUserId: number;
+  assignedAt: string;
+}
+
+export interface TransferInput {
+  targetUserId: number;
+  note?: string;
+}
+
+export interface AutoRouteResult {
+  success: boolean;
+  assignedUserId: number;
+  strategy: string;
+  assignedAt: string;
+}
+
+export interface ConversationEventItem {
+  id: number;
+  conversationId: number;
+  eventType: string;
+  /** @nullable */
+  actorId: number | null;
+  /** @nullable */
+  targetId: number | null;
+  /** @nullable */
+  note: string | null;
+  /** @nullable */
+  metadata: string | null;
+  createdAt: string;
+}
+
+export interface AgentDeptRef {
+  id: number;
+  name: string;
+}
+
+export interface AgentItem {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  skills: string[];
+  languages: string[];
+  /** @nullable */
+  lastAssignedAt: string | null;
+  departments: AgentDeptRef[];
+  createdAt: string;
+}
+
+export interface AgentBasicItem {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface InviteAgentInput {
+  email: string;
+  name: string;
+  password: string;
+  role?: string;
+}
+
+export interface UpdateAgentInput {
+  name?: string;
+  role?: string;
+  skills?: string[];
+  languages?: string[];
+}
+
+export type SetAgentStatusInputStatus =
+  (typeof SetAgentStatusInputStatus)[keyof typeof SetAgentStatusInputStatus];
+
+export const SetAgentStatusInputStatus = {
+  online: "online",
+  offline: "offline",
+  away: "away",
+} as const;
+
+export interface SetAgentStatusInput {
+  status: SetAgentStatusInputStatus;
+}
+
+export interface AgentStatusResult {
+  id: number;
+  status: string;
 }
 
 export type ListInjectionsParams = {

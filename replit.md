@@ -110,27 +110,38 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 `artifacts/user-app` — Textline-style messaging inbox for tenant customer agents. Mounted at `/app`.
 
 ### Tenant Auth
-- `tenant_users` table: `lib/db/src/schema/tenantUsers.ts` — id, tenant_id (FK→tenants), email (unique), password_hash (scrypt), name, role (agent|admin), active, created_at.
+- `tenant_users` table: `lib/db/src/schema/tenantUsers.ts` — id, tenant_id (FK→tenants), email (unique), password_hash (scrypt), name, role (admin|agent|supervisor), active, status (online|offline|away), skills (text), languages (text), lastAssignedAt, created_at.
 - `POST /api/tenant-auth/login` — email+password login, returns JWT with `scope: "tenant"` (24h TTL).
 - `GET /api/tenant-auth/me` — returns current tenant user info from token.
 - `requireTenantAuth` middleware (`artifacts/api-server/src/middleware/tenantAuth.ts`) validates tenant JWT and attaches `req.tenantUser`.
-- Test credentials: `agent@acme.test` / `tenant123` (tenant_id=1, ACME Corp).
+- Test credentials: `abc17@gmail.com` / `Whereisdad@1` (tenant_id=1, ACME Corp, admin role).
 
 ### Conversations & Messages
-- `conversations` table: `lib/db/src/schema/conversations.ts` — tenant-scoped, with contactPhone, contactName, status (open/closed), assignedUserId, lastMessageAt.
+- `conversations` table: `lib/db/src/schema/conversations.ts` — tenant-scoped, with contactPhone, contactName, status (open/closed/snoozed), assignedUserId, assignedAt, lastMessageAt.
 - `messages` table: same file — conversation_id (FK→conversations), direction (inbound/outbound), body, channel, externalId, createdAt.
+- `conversation_events` table: `lib/db/src/schema/conversationEvents.ts` — audit trail for claims, transfers, unassigns. Fields: conversationId, eventType, actorId, targetId, note, metadata, createdAt.
 - `GET /api/conversations?departmentId=` — list conversations for the authenticated tenant, optionally filtered by department (0 = unassigned).
 - `GET /api/conversations/:id` — get single conversation (tenant-scoped).
 - `GET /api/conversations/:id/messages` — list messages in a conversation.
 - `POST /api/conversations/:id/messages` — send a message (creates outbound message record).
+- `POST /api/conversations/:id/claim` — agent claims an unassigned conversation (sets assignedUserId + assignedAt, creates event).
+- `POST /api/conversations/:id/transfer` — transfer to another agent (body: {targetUserId, note?}, creates event).
+- `POST /api/conversations/:id/unassign` — release conversation back to pool (clears assignedUserId/assignedAt, creates event).
+- `POST /api/conversations/:id/auto-route` — auto-route conversation using department's routing strategy (round_robin|load_balanced|last_assigned).
+- `GET /api/conversations/:id/events` — get conversation audit trail.
 - `GET /api/departments` — list departments for the tenant.
 - `POST /api/departments` — create a department (name, description).
 - `GET /api/departments/:id` — get a single department.
-- `PATCH /api/departments/:id` — update department name/description.
+- `PATCH /api/departments/:id` — update department name/description/routingStrategy.
 - `DELETE /api/departments/:id` — delete a department (conversations are unlinked via ON DELETE SET NULL).
 - `GET /api/departments/:id/members` — list members of a department (joined with tenant_users).
 - `POST /api/departments/:id/members` — add a tenant user to a department.
 - `DELETE /api/departments/:id/members/:userId` — remove a member from a department.
+- `GET /api/agents` — list all agents for the tenant (with status, skills, languages, departments).
+- `POST /api/agents/invite` — invite/create a new agent (email, name, password, role).
+- `PATCH /api/agents/:id` — update agent (name, role, skills, languages). Admin-only for role changes.
+- `DELETE /api/agents/:id` — delete an agent. Admin-only.
+- `POST /api/agents/status` — set own online/offline/away status.
 - `GET /api/phone-numbers` — list phone numbers assigned to the tenant's departments.
 - `GET /api/phone-numbers/search?country=&areaCode=` — search available Twilio numbers.
 - `POST /api/phone-numbers/purchase` — purchase a Twilio number and optionally assign to a department.
@@ -138,17 +149,25 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 
 ### User UI Pages
 - `/app/login` — tenant login page (blue theme, "SAMA Messaging" branding).
-- `/app/` — conversation inbox (2-panel: conversation list + message thread).
-- `/app/settings` — full workspace settings with tabbed UI: Departments (CRUD), Phone Numbers (search/purchase/assign Twilio numbers), Team (department member management).
-- AppShell: auth guard (redirects to login if no token or 401), dark sidebar with nav icons (inbox, settings, logout).
+- `/app/` — conversation inbox (2-panel: conversation list + message thread). Includes claim/transfer/unassign buttons, agent assignment info in header, activity log panel toggle, and agent status indicators on conversation cards.
+- `/app/settings` — full workspace settings with tabbed UI: Departments (CRUD + routing strategy selector), Phone Numbers (search/purchase/assign Twilio numbers), Team (agent list with status dots, invite/edit/delete dialogs, skills & languages badges).
+- AppShell: auth guard, dark sidebar with nav icons (inbox, settings, logout). Clickable status dot on user avatar cycles online→away→offline via `POST /api/agents/status`.
 - Auth tokens stored in `sessionStorage` under key `sama_tenant_token`.
 
 ### Departments & Phone Numbers (Phase 2)
-- `departments` table: `lib/db/src/schema/departments.ts` — id, tenant_id, name, phone_number, description, created_at. Tenant-scoped.
+- `departments` table: `lib/db/src/schema/departments.ts` — id, tenant_id, name, phone_number, description, routingStrategy (round_robin|load_balanced|last_assigned, default round_robin), created_at. Tenant-scoped.
 - `department_members` join table: same file — department_id, tenant_user_id (unique composite), created_at.
 - `conversations.departmentId` nullable FK → `departments.id` with `ON DELETE SET NULL`.
-- Inbox has department filter dropdown (All / Unassigned / per-department) and shows department badge on conversations.
-- conductorAuth bypasses `/departments` and `/phone-numbers` paths (these use `requireTenantAuth` instead).
+- `conversations.assignedUserId` nullable FK → `tenant_users.id` with `ON DELETE SET NULL`.
+- Inbox has department filter dropdown (All / Unassigned / per-department) and shows department badge + assigned agent on conversations.
+- conductorAuth bypasses `/departments`, `/phone-numbers`, and `/agents` paths (these use `requireTenantAuth` instead).
+
+### Team & Agent Management (Phase 3)
+- Routing engine: `artifacts/api-server/src/lib/routing.ts` — picks online agents from department members using configured strategy (round_robin by lastAssignedAt, load_balanced by active conversation count, last_assigned by previous assignee).
+- Agent status (online/offline/away) stored in `tenant_users.status`, toggled from AppShell sidebar.
+- Skills & languages stored as comma-separated text in DB, returned as arrays in API responses.
+- Conversation events table provides full audit trail (claimed, transferred, unassigned events with actor/target/note).
+- Schema check updated to 11 tables (added conversation_events).
 
 ### OpenAPI Naming Convention
 - Avoid `*Response` suffix on schema names — Orval generates both Zod consts and TS interfaces with same name, causing export collisions in `lib/api-zod`. Use `*Result` instead.

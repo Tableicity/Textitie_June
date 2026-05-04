@@ -11,6 +11,7 @@ export const departmentsTable = pgTable("departments", {
   phoneNumber: text("phone_number"),
   twilioSid: text("twilio_sid"),
   description: text("description"),
+  routingStrategy: text("routing_strategy").notNull().default("round_robin"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -30,6 +30,8 @@ tags:
     description: Department management
   - name: phone-numbers
     description: Phone number provisioning
+  - name: agents
+    description: Agent management and status
 paths:
   /healthz:
     get:
@@ -446,6 +448,234 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+
+  /conversations/{id}/claim:
+    post:
+      operationId: claimConversation
+      tags: [conversations]
+      summary: Claim an unassigned conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation claimed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResult"
+        "409":
+          description: Already assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /conversations/{id}/transfer:
+    post:
+      operationId: transferConversation
+      tags: [conversations]
+      summary: Transfer conversation to another agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferInput"
+      responses:
+        "200":
+          description: Conversation transferred
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResult"
+
+  /conversations/{id}/unassign:
+    post:
+      operationId: unassignConversation
+      tags: [conversations]
+      summary: Release conversation back to pool
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation unassigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /conversations/{id}/auto-route:
+    post:
+      operationId: autoRouteConversation
+      tags: [conversations]
+      summary: Auto-route conversation to an agent based on department strategy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation routed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoRouteResult"
+        "422":
+          description: No agents available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /conversations/{id}/events:
+    get:
+      operationId: listConversationEvents
+      tags: [conversations]
+      summary: Get conversation audit trail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of conversation events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConversationEventItem"
+
+  /agents:
+    get:
+      operationId: listAgents
+      tags: [agents]
+      summary: List all agents for the tenant
+      responses:
+        "200":
+          description: List of agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentItem"
+
+  /agents/invite:
+    post:
+      operationId: inviteAgent
+      tags: [agents]
+      summary: Invite a new agent to the tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteAgentInput"
+      responses:
+        "201":
+          description: Agent created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentBasicItem"
+        "403":
+          description: Not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /agents/{id}:
+    patch:
+      operationId: updateAgent
+      tags: [agents]
+      summary: Update agent profile (role, skills, languages)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentInput"
+      responses:
+        "200":
+          description: Agent updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentItem"
+    delete:
+      operationId: deleteAgent
+      tags: [agents]
+      summary: Delete an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Agent deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+        "403":
+          description: Not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /agents/status:
+    post:
+      operationId: setAgentStatus
+      tags: [agents]
+      summary: Set own online/offline/away status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetAgentStatusInput"
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentStatusResult"
 
   /departments:
     get:
@@ -1066,6 +1296,9 @@ components:
           $ref: "#/components/schemas/ConversationStatus"
         assignedUserId:
           type: ["integer", "null"]
+        assignedAt:
+          type: ["string", "null"]
+          format: date-time
         lastMessageAt:
           type: ["string", "null"]
           format: date-time
@@ -1080,6 +1313,7 @@ components:
         - contactName
         - status
         - assignedUserId
+        - assignedAt
         - lastMessageAt
         - createdAt
 
@@ -1130,10 +1364,12 @@ components:
           type: ["string", "null"]
         description:
           type: ["string", "null"]
+        routingStrategy:
+          type: string
         createdAt:
           type: string
           format: date-time
-      required: [id, tenantId, name, phoneNumber, twilioSid, description, createdAt]
+      required: [id, tenantId, name, phoneNumber, twilioSid, description, routingStrategy, createdAt]
 
     CreateDepartmentInput:
       type: object
@@ -1151,6 +1387,8 @@ components:
         name:
           type: string
         description:
+          type: string
+        routingStrategy:
           type: string
 
     DepartmentMemberItem:
@@ -1259,3 +1497,166 @@ components:
         departmentId:
           type: integer
       required: [phoneNumber, departmentId]
+
+    ClaimResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        assignedUserId:
+          type: integer
+        assignedAt:
+          type: string
+          format: date-time
+      required: [success, assignedUserId, assignedAt]
+
+    TransferInput:
+      type: object
+      properties:
+        targetUserId:
+          type: integer
+        note:
+          type: string
+      required: [targetUserId]
+
+    AutoRouteResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        assignedUserId:
+          type: integer
+        strategy:
+          type: string
+        assignedAt:
+          type: string
+          format: date-time
+      required: [success, assignedUserId, strategy, assignedAt]
+
+    ConversationEventItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        eventType:
+          type: string
+        actorId:
+          type: ["integer", "null"]
+        targetId:
+          type: ["integer", "null"]
+        note:
+          type: ["string", "null"]
+        metadata:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, conversationId, eventType, actorId, targetId, note, metadata, createdAt]
+
+    AgentDeptRef:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required: [id, name]
+
+    AgentItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        languages:
+          type: array
+          items:
+            type: string
+        lastAssignedAt:
+          type: ["string", "null"]
+          format: date-time
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentDeptRef"
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, email, name, role, status, skills, languages, lastAssignedAt, departments, createdAt]
+
+    AgentBasicItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, email, name, role, status, createdAt]
+
+    InviteAgentInput:
+      type: object
+      properties:
+        email:
+          type: string
+        name:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+      required: [email, name, password]
+
+    UpdateAgentInput:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        languages:
+          type: array
+          items:
+            type: string
+
+    SetAgentStatusInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [online, offline, away]
+      required: [status]
+
+    AgentStatusResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+      required: [id, status]

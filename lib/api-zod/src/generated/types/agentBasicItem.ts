@@ -6,8 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UpdateDepartmentInput {
-  name?: string;
-  description?: string;
-  routingStrategy?: string;
+export interface AgentBasicItem {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  createdAt: Date;
 }

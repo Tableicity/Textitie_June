@@ -19,6 +19,8 @@ export interface Conversation {
   /** @nullable */
   assignedUserId: number | null;
   /** @nullable */
+  assignedAt: Date | null;
+  /** @nullable */
   lastMessageAt: Date | null;
   createdAt: Date;
 }

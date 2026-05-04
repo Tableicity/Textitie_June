@@ -1,8 +1,10 @@
 import { Router } from "express";
-import { db, conversationsTable, messagesTable, departmentsTable } from "@workspace/db";
+import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable } from "@workspace/db";
 import { eq, and, desc, isNull } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
+import { pickAgent } from "../lib/routing";
+import type { RoutingStrategy } from "../lib/routing";
 
 const router = Router();
 
@@ -29,6 +31,7 @@ router.get("/conversations", requireTenantAuth, async (req, res) => {
         contactName: conversationsTable.contactName,
         status: conversationsTable.status,
         assignedUserId: conversationsTable.assignedUserId,
+        assignedAt: conversationsTable.assignedAt,
         lastMessageAt: conversationsTable.lastMessageAt,
         createdAt: conversationsTable.createdAt,
       })
@@ -163,5 +166,245 @@ router.post(
     }
   },
 );
+
+router.post("/conversations/:id/claim", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const userId = req.tenantUser!.tenantUserId;
+  const id = Number(req.params.id);
+
+  try {
+    const rows = await db
+      .select()
+      .from(conversationsTable)
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .limit(1);
+
+    if (rows.length === 0) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const conv = rows[0];
+    if (conv.assignedUserId !== null) {
+      res.status(409).json({ error: "Conversation is already assigned" });
+      return;
+    }
+
+    const now = new Date();
+    await db
+      .update(conversationsTable)
+      .set({ assignedUserId: userId, assignedAt: now })
+      .where(eq(conversationsTable.id, id));
+
+    await db
+      .update(tenantUsersTable)
+      .set({ lastAssignedAt: now })
+      .where(eq(tenantUsersTable.id, userId));
+
+    await db.insert(conversationEventsTable).values({
+      conversationId: id,
+      eventType: "claimed",
+      actorId: userId,
+    });
+
+    res.json({ success: true, assignedUserId: userId, assignedAt: now.toISOString() });
+  } catch (err) {
+    logger.error({ err }, "Claim conversation error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/conversations/:id/transfer", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const actorId = req.tenantUser!.tenantUserId;
+  const id = Number(req.params.id);
+  const { targetUserId, note } = req.body ?? {};
+
+  if (!targetUserId) {
+    res.status(400).json({ error: "targetUserId is required" });
+    return;
+  }
+
+  try {
+    const conv = await db
+      .select()
+      .from(conversationsTable)
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .limit(1);
+
+    if (conv.length === 0) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const target = await db
+      .select({ id: tenantUsersTable.id })
+      .from(tenantUsersTable)
+      .where(and(eq(tenantUsersTable.id, targetUserId), eq(tenantUsersTable.tenantId, tenantId)))
+      .limit(1);
+
+    if (target.length === 0) {
+      res.status(404).json({ error: "Target agent not found" });
+      return;
+    }
+
+    const now = new Date();
+    await db
+      .update(conversationsTable)
+      .set({ assignedUserId: targetUserId, assignedAt: now })
+      .where(eq(conversationsTable.id, id));
+
+    await db
+      .update(tenantUsersTable)
+      .set({ lastAssignedAt: now })
+      .where(eq(tenantUsersTable.id, targetUserId));
+
+    await db.insert(conversationEventsTable).values({
+      conversationId: id,
+      eventType: "transferred",
+      actorId,
+      targetId: targetUserId,
+      note: note || null,
+    });
+
+    res.json({ success: true, assignedUserId: targetUserId, assignedAt: now.toISOString() });
+  } catch (err) {
+    logger.error({ err }, "Transfer conversation error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/conversations/:id/unassign", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const actorId = req.tenantUser!.tenantUserId;
+  const id = Number(req.params.id);
+
+  try {
+    const conv = await db
+      .select()
+      .from(conversationsTable)
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .limit(1);
+
+    if (conv.length === 0) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    await db
+      .update(conversationsTable)
+      .set({ assignedUserId: null, assignedAt: null })
+      .where(eq(conversationsTable.id, id));
+
+    await db.insert(conversationEventsTable).values({
+      conversationId: id,
+      eventType: "unassigned",
+      actorId,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, "Unassign conversation error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/conversations/:id/auto-route", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const id = Number(req.params.id);
+
+  try {
+    const conv = await db
+      .select()
+      .from(conversationsTable)
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .limit(1);
+
+    if (conv.length === 0) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    if (!conv[0].departmentId) {
+      res.status(400).json({ error: "Conversation has no department — assign a department first" });
+      return;
+    }
+
+    const dept = await db
+      .select({ routingStrategy: departmentsTable.routingStrategy })
+      .from(departmentsTable)
+      .where(eq(departmentsTable.id, conv[0].departmentId))
+      .limit(1);
+
+    const strategy = (dept[0]?.routingStrategy ?? "round_robin") as RoutingStrategy;
+    const agentId = await pickAgent(conv[0].departmentId, tenantId, strategy);
+
+    if (!agentId) {
+      res.status(422).json({ error: "No online agents available in this department" });
+      return;
+    }
+
+    const now = new Date();
+    await db
+      .update(conversationsTable)
+      .set({ assignedUserId: agentId, assignedAt: now })
+      .where(eq(conversationsTable.id, id));
+
+    await db
+      .update(tenantUsersTable)
+      .set({ lastAssignedAt: now })
+      .where(eq(tenantUsersTable.id, agentId));
+
+    await db.insert(conversationEventsTable).values({
+      conversationId: id,
+      eventType: "auto_routed",
+      targetId: agentId,
+      metadata: JSON.stringify({ strategy }),
+    });
+
+    res.json({ success: true, assignedUserId: agentId, strategy, assignedAt: now.toISOString() });
+  } catch (err) {
+    logger.error({ err }, "Auto-route conversation error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/conversations/:id/events", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const conversationId = Number(req.params.id);
+
+  try {
+    const conv = await db
+      .select({ id: conversationsTable.id })
+      .from(conversationsTable)
+      .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.tenantId, tenantId)))
+      .limit(1);
+
+    if (conv.length === 0) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const events = await db
+      .select({
+        id: conversationEventsTable.id,
+        conversationId: conversationEventsTable.conversationId,
+        eventType: conversationEventsTable.eventType,
+        actorId: conversationEventsTable.actorId,
+        targetId: conversationEventsTable.targetId,
+        note: conversationEventsTable.note,
+        metadata: conversationEventsTable.metadata,
+        createdAt: conversationEventsTable.createdAt,
+      })
+      .from(conversationEventsTable)
+      .where(eq(conversationEventsTable.conversationId, conversationId))
+      .orderBy(desc(conversationEventsTable.createdAt));
+
+    res.json(events);
+  } catch (err) {
+    logger.error({ err }, "List conversation events error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 export default router;
