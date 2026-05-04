@@ -82,6 +82,13 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 
 `POST /api/tenants/:id/knowledge-upload` accepts PDF/TXT/MD/CSV via multipart upload (max 5MB). PDFs extracted via `pdfjs-dist`; text files read as UTF-8. Extracted content appended to tenant `knowledge_base` column with separator.
 
+## Deployment
+
+- **Production URL**: `https://textitie.replit.app`
+- **Deploy target**: autoscale
+- **Schema sync**: The API server's production build step runs `drizzle-kit push --force` against the production `DATABASE_URL` before compiling. This ensures the production database schema matches the Drizzle schema definitions automatically on every publish.
+- **External database**: The project uses an external PostgreSQL database via `DATABASE_URL` (not Replit's managed PostgreSQL). Dev and production have separate `DATABASE_URL` secrets pointing to their respective databases.
+
 ## Required secrets
 
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SAMA_FROM_NUMBER` — live Twilio sender.
