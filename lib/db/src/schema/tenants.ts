@@ -11,6 +11,13 @@ export const tenantsTable = pgTable("tenants", {
   chatwootAccountId: integer("chatwoot_account_id"),
   chatwootInboxId: integer("chatwoot_inbox_id"),
   knowledgeBase: text("knowledge_base"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  subscriptionStatus: text("subscription_status").notNull().default("none"),
+  planTierCode: text("plan_tier_code"),
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
