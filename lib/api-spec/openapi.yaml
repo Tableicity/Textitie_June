@@ -42,6 +42,8 @@ tags:
     description: TCPA opt-out management
   - name: campaigns
     description: Bulk campaign messaging and analytics
+  - name: analytics
+    description: Tenant inbox analytics and KPI reporting
 paths:
   /healthz:
     get:
@@ -1588,6 +1590,118 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /analytics/overview:
+    get:
+      operationId: getAnalyticsOverview
+      tags: [analytics]
+      summary: Aggregate KPIs for the tenant inbox over a date range
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Overview KPIs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsOverview"
+        "400":
+          description: Invalid range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /analytics/volume:
+    get:
+      operationId: getAnalyticsVolume
+      tags: [analytics]
+      summary: Daily conversation and message volume time series
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Daily volume points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalyticsVolumePoint"
+
+  /analytics/agents:
+    get:
+      operationId: getAnalyticsAgents
+      tags: [analytics]
+      summary: Per-agent performance KPIs
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Agent KPIs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalyticsAgentKpi"
+
+  /analytics/departments:
+    get:
+      operationId: getAnalyticsDepartments
+      tags: [analytics]
+      summary: Per-department KPIs
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Department KPIs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalyticsDepartmentKpi"
+
+  /analytics/export:
+    get:
+      operationId: exportAnalyticsConversations
+      tags: [analytics]
+      summary: Export conversation analytics for the date range as CSV
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+
 components:
   schemas:
     HealthStatus:
@@ -2872,3 +2986,55 @@ components:
         errorMessage:
           type: ["string", "null"]
       required: [id, campaignId, contactPhone, renderedBody, status]
+
+    AnalyticsOverview:
+      type: object
+      properties:
+        totalConversations: { type: integer }
+        openConversations: { type: integer }
+        closedConversations: { type: integer }
+        inboundMessages: { type: integer }
+        outboundMessages: { type: integer }
+        avgResponseSeconds: { type: ["number", "null"] }
+        medianResponseSeconds: { type: ["number", "null"] }
+        p90ResponseSeconds: { type: ["number", "null"] }
+        avgResolutionSeconds: { type: ["number", "null"] }
+        medianResolutionSeconds: { type: ["number", "null"] }
+        resolutionRate: { type: ["number", "null"] }
+      required:
+        - totalConversations
+        - openConversations
+        - closedConversations
+        - inboundMessages
+        - outboundMessages
+
+    AnalyticsVolumePoint:
+      type: object
+      properties:
+        bucket: { type: string }
+        newConversations: { type: integer }
+        inboundMessages: { type: integer }
+        outboundMessages: { type: integer }
+      required: [bucket, newConversations, inboundMessages, outboundMessages]
+
+    AnalyticsAgentKpi:
+      type: object
+      properties:
+        agentId: { type: ["integer", "null"] }
+        agentName: { type: string }
+        conversationsHandled: { type: integer }
+        messagesSent: { type: integer }
+        avgResponseSeconds: { type: ["number", "null"] }
+        resolvedCount: { type: integer }
+      required: [agentName, conversationsHandled, messagesSent, resolvedCount]
+
+    AnalyticsDepartmentKpi:
+      type: object
+      properties:
+        departmentId: { type: ["integer", "null"] }
+        departmentName: { type: string }
+        conversations: { type: integer }
+        avgResponseSeconds: { type: ["number", "null"] }
+        avgResolutionSeconds: { type: ["number", "null"] }
+        resolvedCount: { type: integer }
+      required: [departmentName, conversations, resolvedCount]

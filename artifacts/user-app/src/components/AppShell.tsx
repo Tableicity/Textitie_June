@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, Redirect } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone } from "lucide-react";
+import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3 } from "lucide-react";
 import {
   useTenantMe,
   useSetAgentStatus,
@@ -149,6 +149,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             title="Campaigns"
           >
             <Megaphone className="w-5 h-5" />
+          </Link>
+
+          <Link
+            href="/analytics"
+            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
+              location === "/analytics"
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+            title="Analytics"
+            data-testid="link-analytics"
+          >
+            <BarChart3 className="w-5 h-5" />
           </Link>
 
           <Link

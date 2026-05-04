@@ -10,6 +10,7 @@ import Settings from "@/pages/Settings";
 import Billing from "@/pages/Billing";
 import Automations from "@/pages/Automations";
 import Campaigns from "@/pages/Campaigns";
+import Analytics from "@/pages/Analytics";
 import AppShell from "@/components/AppShell";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ function Router() {
             <Route path="/billing" component={Billing} />
             <Route path="/automations" component={Automations} />
             <Route path="/campaigns" component={Campaigns} />
+            <Route path="/analytics" component={Analytics} />
             <Route component={NotFound} />
           </Switch>
         </AppShell>

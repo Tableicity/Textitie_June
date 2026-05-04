@@ -21,6 +21,10 @@ import type {
   AgentBasicItem,
   AgentItem,
   AgentStatusResult,
+  AnalyticsAgentKpi,
+  AnalyticsDepartmentKpi,
+  AnalyticsOverview,
+  AnalyticsVolumePoint,
   ApiError,
   AssignNumberInput,
   AudiencePreviewInput,
@@ -50,6 +54,11 @@ import type {
   DepartmentItem,
   DepartmentMemberItem,
   DepartmentMemberRecord,
+  ExportAnalyticsConversationsParams,
+  GetAnalyticsAgentsParams,
+  GetAnalyticsDepartmentsParams,
+  GetAnalyticsOverviewParams,
+  GetAnalyticsVolumeParams,
   HealthStatus,
   InjectMessageInput,
   InjectionLog,
@@ -5851,6 +5860,506 @@ export function useListCampaignMessages<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListCampaignMessagesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Aggregate KPIs for the tenant inbox over a date range
+ */
+export const getGetAnalyticsOverviewUrl = (
+  params?: GetAnalyticsOverviewParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/analytics/overview?${stringifiedParams}`
+    : `/api/analytics/overview`;
+};
+
+export const getAnalyticsOverview = async (
+  params?: GetAnalyticsOverviewParams,
+  options?: RequestInit,
+): Promise<AnalyticsOverview> => {
+  return customFetch<AnalyticsOverview>(getGetAnalyticsOverviewUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAnalyticsOverviewQueryKey = (
+  params?: GetAnalyticsOverviewParams,
+) => {
+  return [`/api/analytics/overview`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAnalyticsOverviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAnalyticsOverview>>,
+  TError = ErrorType<ApiError>,
+>(
+  params?: GetAnalyticsOverviewParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsOverview>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAnalyticsOverviewQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAnalyticsOverview>>
+  > = ({ signal }) =>
+    getAnalyticsOverview(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAnalyticsOverview>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAnalyticsOverviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAnalyticsOverview>>
+>;
+export type GetAnalyticsOverviewQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Aggregate KPIs for the tenant inbox over a date range
+ */
+
+export function useGetAnalyticsOverview<
+  TData = Awaited<ReturnType<typeof getAnalyticsOverview>>,
+  TError = ErrorType<ApiError>,
+>(
+  params?: GetAnalyticsOverviewParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsOverview>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAnalyticsOverviewQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Daily conversation and message volume time series
+ */
+export const getGetAnalyticsVolumeUrl = (params?: GetAnalyticsVolumeParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/analytics/volume?${stringifiedParams}`
+    : `/api/analytics/volume`;
+};
+
+export const getAnalyticsVolume = async (
+  params?: GetAnalyticsVolumeParams,
+  options?: RequestInit,
+): Promise<AnalyticsVolumePoint[]> => {
+  return customFetch<AnalyticsVolumePoint[]>(getGetAnalyticsVolumeUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAnalyticsVolumeQueryKey = (
+  params?: GetAnalyticsVolumeParams,
+) => {
+  return [`/api/analytics/volume`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAnalyticsVolumeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAnalyticsVolume>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAnalyticsVolumeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsVolume>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAnalyticsVolumeQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAnalyticsVolume>>
+  > = ({ signal }) => getAnalyticsVolume(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAnalyticsVolume>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAnalyticsVolumeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAnalyticsVolume>>
+>;
+export type GetAnalyticsVolumeQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Daily conversation and message volume time series
+ */
+
+export function useGetAnalyticsVolume<
+  TData = Awaited<ReturnType<typeof getAnalyticsVolume>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAnalyticsVolumeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsVolume>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAnalyticsVolumeQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Per-agent performance KPIs
+ */
+export const getGetAnalyticsAgentsUrl = (params?: GetAnalyticsAgentsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/analytics/agents?${stringifiedParams}`
+    : `/api/analytics/agents`;
+};
+
+export const getAnalyticsAgents = async (
+  params?: GetAnalyticsAgentsParams,
+  options?: RequestInit,
+): Promise<AnalyticsAgentKpi[]> => {
+  return customFetch<AnalyticsAgentKpi[]>(getGetAnalyticsAgentsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAnalyticsAgentsQueryKey = (
+  params?: GetAnalyticsAgentsParams,
+) => {
+  return [`/api/analytics/agents`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAnalyticsAgentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAnalyticsAgents>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAnalyticsAgentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsAgents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAnalyticsAgentsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAnalyticsAgents>>
+  > = ({ signal }) => getAnalyticsAgents(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAnalyticsAgents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAnalyticsAgentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAnalyticsAgents>>
+>;
+export type GetAnalyticsAgentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-agent performance KPIs
+ */
+
+export function useGetAnalyticsAgents<
+  TData = Awaited<ReturnType<typeof getAnalyticsAgents>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAnalyticsAgentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsAgents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAnalyticsAgentsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Per-department KPIs
+ */
+export const getGetAnalyticsDepartmentsUrl = (
+  params?: GetAnalyticsDepartmentsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/analytics/departments?${stringifiedParams}`
+    : `/api/analytics/departments`;
+};
+
+export const getAnalyticsDepartments = async (
+  params?: GetAnalyticsDepartmentsParams,
+  options?: RequestInit,
+): Promise<AnalyticsDepartmentKpi[]> => {
+  return customFetch<AnalyticsDepartmentKpi[]>(
+    getGetAnalyticsDepartmentsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetAnalyticsDepartmentsQueryKey = (
+  params?: GetAnalyticsDepartmentsParams,
+) => {
+  return [`/api/analytics/departments`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAnalyticsDepartmentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAnalyticsDepartments>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAnalyticsDepartmentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsDepartments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAnalyticsDepartmentsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAnalyticsDepartments>>
+  > = ({ signal }) =>
+    getAnalyticsDepartments(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAnalyticsDepartments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAnalyticsDepartmentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAnalyticsDepartments>>
+>;
+export type GetAnalyticsDepartmentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-department KPIs
+ */
+
+export function useGetAnalyticsDepartments<
+  TData = Awaited<ReturnType<typeof getAnalyticsDepartments>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAnalyticsDepartmentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAnalyticsDepartments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAnalyticsDepartmentsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Export conversation analytics for the date range as CSV
+ */
+export const getExportAnalyticsConversationsUrl = (
+  params?: ExportAnalyticsConversationsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/analytics/export?${stringifiedParams}`
+    : `/api/analytics/export`;
+};
+
+export const exportAnalyticsConversations = async (
+  params?: ExportAnalyticsConversationsParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportAnalyticsConversationsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportAnalyticsConversationsQueryKey = (
+  params?: ExportAnalyticsConversationsParams,
+) => {
+  return [`/api/analytics/export`, ...(params ? [params] : [])] as const;
+};
+
+export const getExportAnalyticsConversationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportAnalyticsConversations>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportAnalyticsConversationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportAnalyticsConversations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getExportAnalyticsConversationsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportAnalyticsConversations>>
+  > = ({ signal }) =>
+    exportAnalyticsConversations(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportAnalyticsConversations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportAnalyticsConversationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportAnalyticsConversations>>
+>;
+export type ExportAnalyticsConversationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export conversation analytics for the date range as CSV
+ */
+
+export function useExportAnalyticsConversations<
+  TData = Awaited<ReturnType<typeof exportAnalyticsConversations>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportAnalyticsConversationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportAnalyticsConversations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportAnalyticsConversationsQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

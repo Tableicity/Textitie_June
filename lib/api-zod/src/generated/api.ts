@@ -1314,3 +1314,91 @@ export const ListCampaignMessagesResponseItem = zod.object({
 export const ListCampaignMessagesResponse = zod.array(
   ListCampaignMessagesResponseItem,
 );
+
+/**
+ * @summary Aggregate KPIs for the tenant inbox over a date range
+ */
+export const GetAnalyticsOverviewQueryParams = zod.object({
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+});
+
+export const GetAnalyticsOverviewResponse = zod.object({
+  totalConversations: zod.number(),
+  openConversations: zod.number(),
+  closedConversations: zod.number(),
+  inboundMessages: zod.number(),
+  outboundMessages: zod.number(),
+  avgResponseSeconds: zod.number().nullish(),
+  medianResponseSeconds: zod.number().nullish(),
+  p90ResponseSeconds: zod.number().nullish(),
+  avgResolutionSeconds: zod.number().nullish(),
+  medianResolutionSeconds: zod.number().nullish(),
+  resolutionRate: zod.number().nullish(),
+});
+
+/**
+ * @summary Daily conversation and message volume time series
+ */
+export const GetAnalyticsVolumeQueryParams = zod.object({
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+});
+
+export const GetAnalyticsVolumeResponseItem = zod.object({
+  bucket: zod.string(),
+  newConversations: zod.number(),
+  inboundMessages: zod.number(),
+  outboundMessages: zod.number(),
+});
+export const GetAnalyticsVolumeResponse = zod.array(
+  GetAnalyticsVolumeResponseItem,
+);
+
+/**
+ * @summary Per-agent performance KPIs
+ */
+export const GetAnalyticsAgentsQueryParams = zod.object({
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+});
+
+export const GetAnalyticsAgentsResponseItem = zod.object({
+  agentId: zod.number().nullish(),
+  agentName: zod.string(),
+  conversationsHandled: zod.number(),
+  messagesSent: zod.number(),
+  avgResponseSeconds: zod.number().nullish(),
+  resolvedCount: zod.number(),
+});
+export const GetAnalyticsAgentsResponse = zod.array(
+  GetAnalyticsAgentsResponseItem,
+);
+
+/**
+ * @summary Per-department KPIs
+ */
+export const GetAnalyticsDepartmentsQueryParams = zod.object({
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+});
+
+export const GetAnalyticsDepartmentsResponseItem = zod.object({
+  departmentId: zod.number().nullish(),
+  departmentName: zod.string(),
+  conversations: zod.number(),
+  avgResponseSeconds: zod.number().nullish(),
+  avgResolutionSeconds: zod.number().nullish(),
+  resolvedCount: zod.number(),
+});
+export const GetAnalyticsDepartmentsResponse = zod.array(
+  GetAnalyticsDepartmentsResponseItem,
+);
+
+/**
+ * @summary Export conversation analytics for the date range as CSV
+ */
+export const ExportAnalyticsConversationsQueryParams = zod.object({
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+});

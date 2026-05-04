@@ -331,7 +331,11 @@ export function toCsv(rows: ConversationExportRow[]): string {
   ];
   const escape = (v: unknown): string => {
     if (v === null || v === undefined) return "";
-    const s = String(v);
+    let s = String(v);
+    // Defuse CSV formula injection (Excel/Sheets execute cells starting with = + - @ \t \r)
+    if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) {
+      s = `'${s}`;
+    }
     if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
       return `"${s.replace(/"/g, '""')}"`;
     }

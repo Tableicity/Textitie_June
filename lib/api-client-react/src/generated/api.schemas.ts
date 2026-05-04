@@ -840,6 +840,56 @@ export interface CampaignMessageItem {
   errorMessage?: string | null;
 }
 
+export interface AnalyticsOverview {
+  totalConversations: number;
+  openConversations: number;
+  closedConversations: number;
+  inboundMessages: number;
+  outboundMessages: number;
+  /** @nullable */
+  avgResponseSeconds?: number | null;
+  /** @nullable */
+  medianResponseSeconds?: number | null;
+  /** @nullable */
+  p90ResponseSeconds?: number | null;
+  /** @nullable */
+  avgResolutionSeconds?: number | null;
+  /** @nullable */
+  medianResolutionSeconds?: number | null;
+  /** @nullable */
+  resolutionRate?: number | null;
+}
+
+export interface AnalyticsVolumePoint {
+  bucket: string;
+  newConversations: number;
+  inboundMessages: number;
+  outboundMessages: number;
+}
+
+export interface AnalyticsAgentKpi {
+  /** @nullable */
+  agentId?: number | null;
+  agentName: string;
+  conversationsHandled: number;
+  messagesSent: number;
+  /** @nullable */
+  avgResponseSeconds?: number | null;
+  resolvedCount: number;
+}
+
+export interface AnalyticsDepartmentKpi {
+  /** @nullable */
+  departmentId?: number | null;
+  departmentName: string;
+  conversations: number;
+  /** @nullable */
+  avgResponseSeconds?: number | null;
+  /** @nullable */
+  avgResolutionSeconds?: number | null;
+  resolvedCount: number;
+}
+
 export type ListInjectionsParams = {
   /**
    * @minimum 1
@@ -868,4 +918,29 @@ export type SearchAvailableNumbersParams = {
   areaCode?: string;
   contains?: string;
   limit?: number;
+};
+
+export type GetAnalyticsOverviewParams = {
+  from?: string;
+  to?: string;
+};
+
+export type GetAnalyticsVolumeParams = {
+  from?: string;
+  to?: string;
+};
+
+export type GetAnalyticsAgentsParams = {
+  from?: string;
+  to?: string;
+};
+
+export type GetAnalyticsDepartmentsParams = {
+  from?: string;
+  to?: string;
+};
+
+export type ExportAnalyticsConversationsParams = {
+  from?: string;
+  to?: string;
 };
