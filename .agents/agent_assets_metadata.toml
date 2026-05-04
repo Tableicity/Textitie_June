@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "qe5yI8S6pH_weRXAM3BRm"
+uri = "file://John/Database_URL_work.md"
+type = "text"
+title = "DATABASE_URL Separation Plan"
