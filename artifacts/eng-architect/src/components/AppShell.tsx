@@ -1,11 +1,12 @@
 import { Link, useLocation } from "wouter";
-import { Activity, Webhook, Box, ShieldAlert, Zap, Users, ShieldCheck } from "lucide-react";
+import { Activity, Webhook, Box, ShieldAlert, Zap, Users, ShieldCheck, UserCog, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { InjectComposerDialog } from "./InjectComposerDialog";
+import { clearAuth } from "@/lib/auth";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
 
   const links = [
     { href: "/", label: "Dashboard", icon: Activity },
@@ -15,6 +16,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: "/compliance", label: "10DLC Compliance", icon: ShieldCheck },
     { href: "/tiers", label: "Tiers", icon: Box },
   ];
+
+  const profileActive = location === "/profile";
+
+  const handleLogout = () => {
+    clearAuth();
+    window.location.reload();
+  };
 
   return (
     <div className="flex h-screen bg-background">
@@ -48,6 +56,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
+        <div className="p-2 border-t border-sidebar-border space-y-1">
+          <Link href="/profile" className={cn(
+            "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+            profileActive
+              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          )}>
+            <UserCog size={16} className={profileActive ? "text-primary" : ""} />
+            User Management
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors w-full text-sidebar-foreground/70 hover:bg-destructive/10 hover:text-destructive"
+          >
+            <LogOut size={16} />
+            Sign Out
+          </button>
+        </div>
       </div>
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="h-16 border-b flex items-center justify-between px-6 bg-card">

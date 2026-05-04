@@ -68,7 +68,7 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 
 ## UI pages
 
-`/` Login gate → Dashboard · `/tenants` · `/tenants/:id` (KB upload button) · `/injections` (with inline composer) · `/webhooks` (filter by source) · `/compliance` (10DLC status cards + number inventory) · `/tiers`. Persistent left sidebar with SAMA wordmark + "CONDUCTOR MODE" indicator. Global "Inject Message" button in the header opens the composer dialog from anywhere.
+`/` Login gate (email+password) → Dashboard · `/tenants` · `/tenants/:id` (KB upload button) · `/injections` (with inline composer) · `/webhooks` (filter by source) · `/compliance` (10DLC status cards + number inventory) · `/tiers` · `/profile` (user management). Persistent left sidebar with SAMA wordmark + "CONDUCTOR MODE" indicator. Bottom of sidebar: "User Management" link + "Sign Out" button. Global "Inject Message" button in the header opens the composer dialog from anywhere.
 
 ## Chatwoot Auto-Provisioning (Gate 5)
 
@@ -89,11 +89,14 @@ Multi-tenant control plane for SAMA (Simple but Advanced Messaging Alternative).
 - **Schema sync**: The API server's production build step runs `drizzle-kit push --force` against the production `DATABASE_URL` before compiling. This ensures the production database schema matches the Drizzle schema definitions automatically on every publish.
 - **External database**: The project uses an external PostgreSQL database via `DATABASE_URL` (not Replit's managed PostgreSQL). Dev and production have separate `DATABASE_URL` secrets pointing to their respective databases.
 
-## Users & Super User
+## Users & Authentication
 
 - `users` table: `lib/db/src/schema/users.ts` — id, email, password_hash (scrypt), role, created_at.
-- Super user `abc17@gmail.com` (role: `superuser`) seeded via `scripts/src/seed-superuser.ts`.
-- Seed runs automatically during production build (after schema push, before API server compile).
+- Login: `POST /api/auth/login` validates email+password, returns HMAC-signed Bearer token (24h TTL, signed with SESSION_SECRET).
+- Auth middleware accepts both Bearer tokens (UI) and Basic Auth (programmatic/API access).
+- User management API: `GET /api/auth/users`, `POST /api/auth/users`, `PATCH /api/auth/users/:id/password`, `DELETE /api/auth/users/:id`.
+- Frontend: `/profile` page — list users, create new users (email/password/role), reset passwords, delete users.
+- Sidebar: "User Management" and "Sign Out" buttons pinned to the bottom of the left nav.
 - Password hashed with Node.js `crypto.scrypt` (16-byte random salt + 64-byte key, stored as `salt:hash`).
 
 ## Required secrets
