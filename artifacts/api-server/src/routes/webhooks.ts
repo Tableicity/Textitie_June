@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { desc, eq } from "drizzle-orm";
-import { db, webhookEventsTable, tenantsTable } from "@workspace/db";
+import { desc, eq, and } from "drizzle-orm";
+import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable } from "@workspace/db";
 import {
   ReceiveWebhookParams,
   ListWebhookEventsQueryParams,
@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { postChatwootMessage } from "../lib/chatwoot";
 import { studentWhisper } from "@workspace/ai-student";
+import { processInboundMessage } from "../lib/automationEngine";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -63,7 +64,6 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
           );
 
           // ---- AI Student Whisper (fire-and-forget) ----
-          // Twilio's webhook gets a fast 201 even if the LLM takes a moment.
           const studentTenant = tenant;
           const studentFrom = fromNumber;
           const studentBody = messageBody;
@@ -124,6 +124,73 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
             },
             "SAMA Inbound Router: matched tenant but Chatwoot not wired",
           );
+        }
+
+        // ---- Automation Engine (Phase 5) ----
+        if (fromNumber) {
+          void (async () => {
+            try {
+              const existing = await db
+                .select({ id: conversationsTable.id })
+                .from(conversationsTable)
+                .where(
+                  and(
+                    eq(conversationsTable.tenantId, tenant.id),
+                    eq(conversationsTable.contactPhone, fromNumber),
+                    eq(conversationsTable.status, "open"),
+                  ),
+                )
+                .limit(1);
+
+              let conversationId: number;
+              if (existing.length > 0) {
+                conversationId = existing[0].id;
+              } else {
+                const [newConv] = await db
+                  .insert(conversationsTable)
+                  .values({
+                    tenantId: tenant.id,
+                    contactPhone: fromNumber,
+                    contactName: fromNumber,
+                    status: "open",
+                    lastMessageAt: new Date(),
+                  })
+                  .returning({ id: conversationsTable.id });
+                conversationId = newConv.id;
+              }
+
+              await db.insert(messagesTable).values({
+                conversationId,
+                direction: "inbound",
+                body: messageBody,
+                senderName: fromNumber,
+                read: false,
+              });
+
+              await db
+                .update(conversationsTable)
+                .set({ lastMessageAt: new Date() })
+                .where(eq(conversationsTable.id, conversationId));
+
+              const result = await processInboundMessage(
+                tenant.id,
+                conversationId,
+                fromNumber,
+                messageBody,
+              );
+              if (result.handled) {
+                logger.info(
+                  { tenantSlug: tenant.slug, from: fromNumber, action: result.action },
+                  "Automation engine handled inbound message",
+                );
+              }
+            } catch (err) {
+              logger.warn(
+                { err: err instanceof Error ? err.message : String(err) },
+                "Automation engine pipeline failed (non-fatal)",
+              );
+            }
+          })();
         }
 
         payload = {

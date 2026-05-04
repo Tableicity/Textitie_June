@@ -567,6 +567,100 @@ export interface BillingEventItem {
   createdAt: string;
 }
 
+export type AutomationRuleType =
+  (typeof AutomationRuleType)[keyof typeof AutomationRuleType];
+
+export const AutomationRuleType = {
+  keyword_reply: "keyword_reply",
+  follow_up_timer: "follow_up_timer",
+  auto_resolve: "auto_resolve",
+  welcome_message: "welcome_message",
+  auto_unsubscribe: "auto_unsubscribe",
+} as const;
+
+export type AutomationRuleItemTriggerConfig = { [key: string]: unknown };
+
+export type AutomationRuleItemActionConfig = { [key: string]: unknown };
+
+export interface AutomationRuleItem {
+  id: number;
+  tenantId: number;
+  type: AutomationRuleType;
+  name: string;
+  enabled: boolean;
+  triggerConfig: AutomationRuleItemTriggerConfig;
+  actionConfig: AutomationRuleItemActionConfig;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateAutomationInputTriggerConfig = { [key: string]: unknown };
+
+export type CreateAutomationInputActionConfig = { [key: string]: unknown };
+
+export interface CreateAutomationInput {
+  type: AutomationRuleType;
+  /** @minLength 1 */
+  name: string;
+  enabled?: boolean;
+  triggerConfig?: CreateAutomationInputTriggerConfig;
+  actionConfig?: CreateAutomationInputActionConfig;
+  priority?: number;
+}
+
+export type UpdateAutomationInputTriggerConfig = { [key: string]: unknown };
+
+export type UpdateAutomationInputActionConfig = { [key: string]: unknown };
+
+export interface UpdateAutomationInput {
+  name?: string;
+  enabled?: boolean;
+  triggerConfig?: UpdateAutomationInputTriggerConfig;
+  actionConfig?: UpdateAutomationInputActionConfig;
+  priority?: number;
+}
+
+export interface ShortcutItem {
+  id: number;
+  tenantId: number;
+  name: string;
+  shortcutKey: string;
+  body: string;
+  /** @nullable */
+  category: string | null;
+  /** @nullable */
+  createdBy?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateShortcutInput {
+  /** @minLength 1 */
+  name: string;
+  /** @minLength 2 */
+  shortcutKey: string;
+  /** @minLength 1 */
+  body: string;
+  category?: string;
+}
+
+export interface UpdateShortcutInput {
+  name?: string;
+  shortcutKey?: string;
+  body?: string;
+  category?: string;
+}
+
+export interface OptOutItem {
+  id: number;
+  tenantId: number;
+  phoneNumber: string;
+  /** @nullable */
+  reason?: string | null;
+  optedOutAt: string;
+}
+
 export type ListInjectionsParams = {
   /**
    * @minimum 1

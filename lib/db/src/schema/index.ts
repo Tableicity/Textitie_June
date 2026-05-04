@@ -9,3 +9,6 @@ export * from "./conversations";
 export * from "./conversationEvents";
 export * from "./usageRecords";
 export * from "./billingEvents";
+export * from "./automationRules";
+export * from "./messageTemplates";
+export * from "./optOuts";

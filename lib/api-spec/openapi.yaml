@@ -34,6 +34,12 @@ tags:
     description: Agent management and status
   - name: billing
     description: Subscription billing and usage
+  - name: automations
+    description: Automation rules management
+  - name: shortcuts
+    description: Message templates and shortcuts
+  - name: opt-outs
+    description: TCPA opt-out management
 paths:
   /healthz:
     get:
@@ -1068,6 +1074,236 @@ paths:
                 items:
                   $ref: "#/components/schemas/BillingEventItem"
 
+  /automations:
+    get:
+      operationId: listAutomations
+      tags: [automations]
+      summary: List automation rules for the tenant
+      responses:
+        "200":
+          description: List of automation rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutomationRuleItem"
+    post:
+      operationId: createAutomation
+      tags: [automations]
+      summary: Create a new automation rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAutomationInput"
+      responses:
+        "201":
+          description: Automation rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRuleItem"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /automations/{id}:
+    patch:
+      operationId: updateAutomation
+      tags: [automations]
+      summary: Update an automation rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAutomationInput"
+      responses:
+        "200":
+          description: Automation rule updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRuleItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteAutomation
+      tags: [automations]
+      summary: Delete an automation rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /shortcuts:
+    get:
+      operationId: listShortcuts
+      tags: [shortcuts]
+      summary: List message templates for the tenant
+      responses:
+        "200":
+          description: List of shortcuts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShortcutItem"
+    post:
+      operationId: createShortcut
+      tags: [shortcuts]
+      summary: Create a new message template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShortcutInput"
+      responses:
+        "201":
+          description: Shortcut created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShortcutItem"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Shortcut key already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /shortcuts/{id}:
+    patch:
+      operationId: updateShortcut
+      tags: [shortcuts]
+      summary: Update a message template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateShortcutInput"
+      responses:
+        "200":
+          description: Shortcut updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShortcutItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteShortcut
+      tags: [shortcuts]
+      summary: Delete a message template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /opt-outs:
+    get:
+      operationId: listOptOuts
+      tags: [opt-outs]
+      summary: List opted-out phone numbers
+      responses:
+        "200":
+          description: List of opt-outs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OptOutItem"
+
+  /opt-outs/{id}:
+    delete:
+      operationId: deleteOptOut
+      tags: [opt-outs]
+      summary: Remove an opt-out record (re-subscribe)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Opt-out removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -1956,3 +2192,143 @@ components:
           type: string
           format: date-time
       required: [id, tenantId, eventType, createdAt]
+
+    AutomationRuleType:
+      type: string
+      enum: [keyword_reply, follow_up_timer, auto_resolve, welcome_message, auto_unsubscribe]
+
+    AutomationRuleItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        type:
+          $ref: "#/components/schemas/AutomationRuleType"
+        name:
+          type: string
+        enabled:
+          type: boolean
+        triggerConfig:
+          type: object
+          additionalProperties: true
+        actionConfig:
+          type: object
+          additionalProperties: true
+        priority:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, tenantId, type, name, enabled, triggerConfig, actionConfig, priority, createdAt, updatedAt]
+
+    CreateAutomationInput:
+      type: object
+      properties:
+        type:
+          $ref: "#/components/schemas/AutomationRuleType"
+        name:
+          type: string
+          minLength: 1
+        enabled:
+          type: boolean
+          default: true
+        triggerConfig:
+          type: object
+          additionalProperties: true
+        actionConfig:
+          type: object
+          additionalProperties: true
+        priority:
+          type: integer
+          default: 0
+      required: [type, name]
+
+    UpdateAutomationInput:
+      type: object
+      properties:
+        name:
+          type: string
+        enabled:
+          type: boolean
+        triggerConfig:
+          type: object
+          additionalProperties: true
+        actionConfig:
+          type: object
+          additionalProperties: true
+        priority:
+          type: integer
+
+    ShortcutItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        name:
+          type: string
+        shortcutKey:
+          type: string
+        body:
+          type: string
+        category:
+          type: ["string", "null"]
+        createdBy:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, tenantId, name, shortcutKey, body, category, createdAt, updatedAt]
+
+    CreateShortcutInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        shortcutKey:
+          type: string
+          minLength: 2
+        body:
+          type: string
+          minLength: 1
+        category:
+          type: string
+      required: [name, shortcutKey, body]
+
+    UpdateShortcutInput:
+      type: object
+      properties:
+        name:
+          type: string
+        shortcutKey:
+          type: string
+        body:
+          type: string
+        category:
+          type: string
+
+    OptOutItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        phoneNumber:
+          type: string
+        reason:
+          type: ["string", "null"]
+        optedOutAt:
+          type: string
+          format: date-time
+      required: [id, tenantId, phoneNumber, optedOutAt]

@@ -13,6 +13,8 @@ import departmentsRouter from "./departments";
 import phoneNumbersRouter from "./phoneNumbers";
 import agentsRouter from "./agents";
 import billingRouter from "./billing";
+import automationsRouter from "./automations";
+import shortcutsRouter from "./shortcuts";
 
 const router: IRouter = Router();
 
@@ -30,5 +32,7 @@ router.use(departmentsRouter);
 router.use(phoneNumbersRouter);
 router.use(agentsRouter);
 router.use(billingRouter);
+router.use(automationsRouter);
+router.use(shortcutsRouter);
 
 export default router;

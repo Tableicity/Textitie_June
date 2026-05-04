@@ -47,6 +47,42 @@ No specific user preferences were provided in the original document.
 - **Tier Pricing**: Starter $29/mo (1,000 credits, 3 agents, 1 phone), Growth $79/mo (5,000 credits, 10 agents, 5 phones), Enterprise $199/mo (unlimited credits/agents/phones). Overage: $0.03/credit. Phone add-on: $5/mo.
 - **Billing Dashboard UI** (`artifacts/user-app/src/pages/Billing.tsx`): Current plan card with status badge + trial countdown, usage meter with progress bar, plan comparison cards with upgrade/downgrade, billing history timeline, confirmation dialogs, toast notifications for success/error.
 
+### Phase 5 — Automations & Shortcuts
+- **Schema Changes**:
+  - New `automation_rules` table: id, tenant_id, type (keyword_reply/follow_up_timer/auto_resolve/welcome_message/auto_unsubscribe), name, enabled, trigger_config (jsonb), action_config (jsonb), priority, created_at, updated_at
+  - New `message_templates` table: id, tenant_id, name, shortcut_key, body, category, created_by, created_at, updated_at. Unique index on (tenant_id, shortcut_key).
+  - New `opt_outs` table: id, tenant_id, phone_number (unique per tenant), opted_out_at, reason
+- **Automation Engine** (`artifacts/api-server/src/lib/automationEngine.ts`):
+  - `processInboundMessage()`: Pipeline that runs on every inbound Twilio SMS. Checks START keyword for re-subscribe first, then checks opt-out status, TCPA keywords (STOP/END/UNSUBSCRIBE/CANCEL/QUIT → opt-out + confirmation + close conversation), welcome message for first conversation messages, keyword auto-reply (exact/contains/regex matching).
+  - `handleResubscribe()`: Removes opt-out record when contact sends START.
+  - Wired into `webhooks.ts` Twilio inbound handler: finds/creates conversation, persists inbound message, runs automation pipeline (fire-and-forget).
+- **Timer Engine** (`artifacts/api-server/src/lib/timerEngine.ts`):
+  - 60s polling loop started on boot.
+  - `processFollowUpTimers()`: Sends follow-up after X hours of inactivity (dedup via conversation_events check).
+  - `processAutoResolve()`: Closes conversations after X hours of inactivity, sends closing message.
+- **API Endpoints** (all require tenant auth, bypassed from conductor auth):
+  - `GET /api/automations` — list automation rules
+  - `POST /api/automations` — create rule
+  - `PATCH /api/automations/:id` — update rule
+  - `DELETE /api/automations/:id` — delete rule
+  - `GET /api/shortcuts` — list message templates
+  - `POST /api/shortcuts` — create template
+  - `PATCH /api/shortcuts/:id` — update template
+  - `DELETE /api/shortcuts/:id` — delete template
+  - `GET /api/opt-outs` — list opted-out numbers
+  - `DELETE /api/opt-outs/:id` — re-subscribe (remove opt-out)
+- **Automations UI** (`artifacts/user-app/src/pages/Automations.tsx`):
+  - Three-tab layout: Rules (CRUD with toggle enable/disable), Shortcuts (grid cards with CRUD), Opt-outs (table with re-subscribe)
+  - Rule cards show type badge, active/disabled status, keywords, timer hours, and reply preview
+  - Create/edit dialogs with type-specific fields (keywords, match type, inactive hours, reply body)
+  - Nav: Zap icon in sidebar between Settings and Billing
+- **Inbox Shortcuts Picker** (`artifacts/user-app/src/pages/Inbox.tsx`):
+  - Type "/" in composer to show shortcuts dropdown above input
+  - Filters in real-time as you type (e.g., "/hel" → shows "/hello")
+  - Keyboard navigation (arrow up/down, Tab/Enter to select, Escape to dismiss)
+  - Click/select inserts full template body into composer
+- **Demo Seed Data**: 6 automation rules (welcome, 2 keyword replies, follow-up timer, auto-resolve, TCPA) and 7 shortcuts (/hello, /transfer, /hours, /bye, /escalate, /order, /refund) seeded for ACME Corp.
+
 ### Auto-Seed Strategy
 - **Location**: `artifacts/api-server/src/lib/seedData.ts`, called from `index.ts` on every startup
 - **Idempotent**: All seed operations check for existing data before inserting — safe to run repeatedly
@@ -56,6 +92,8 @@ No specific user preferences were provided in the original document.
   - Departments for ACME (Customer Support, Sales, Marketing) if missing
   - 6 demo conversations with realistic message threads (account help, order tracking, subscription upgrade, sales inquiry, German routing) if missing
   - Billing demo: puts ACME on a Starter free trial with a "Trial Started" billing event and usage record reflecting actual outbound message count
+  - 6 automation rules (welcome message, keyword replies for hours/pricing, 24h follow-up, 72h auto-resolve, TCPA opt-out) for ACME
+  - 7 message template shortcuts (/hello, /transfer, /hours, /bye, /escalate, /order, /refund) for ACME
 - **Production behavior**: On first publish, the seed ensures tiers have pricing and ACME has demo data to interact with. Existing data is never overwritten.
 - **Future vision**: This seed provides a testable sandbox. Next phase will add user sign-on with seeded demo data per org and a "+Create Organization" button.
 

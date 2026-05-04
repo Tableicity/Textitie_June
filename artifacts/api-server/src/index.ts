@@ -4,6 +4,7 @@ import { checkSchema } from "./lib/schemaCheck";
 import { seedSuperuser } from "./lib/seedSuperuser";
 import { seedTenantUsers } from "./lib/seedTenantUsers";
 import { seedDemoData } from "./lib/seedData";
+import { startTimerEngine } from "./lib/timerEngine";
 
 const rawPort = process.env["PORT"];
 
@@ -30,5 +31,8 @@ app.listen(port, (err) => {
     await seedSuperuser(missing);
     await seedTenantUsers(missing);
     await seedDemoData(missing);
+    if (!missing.includes("automation_rules")) {
+      startTimerEngine();
+    }
   });
 });

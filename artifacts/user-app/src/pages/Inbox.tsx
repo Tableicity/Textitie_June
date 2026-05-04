@@ -9,12 +9,14 @@ import {
   useTransferConversation,
   useUnassignConversation,
   useListConversationEvents,
+  useListShortcuts,
   getListMessagesQueryKey,
   getListConversationsQueryKey,
   getGetConversationQueryKey,
   getListConversationEventsQueryKey,
+  getListShortcutsQueryKey,
 } from "@workspace/api-client-react";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import {
   Search,
@@ -66,10 +68,15 @@ export default function Inbox() {
   const [transferTarget, setTransferTarget] = useState<string>("");
   const [transferNote, setTransferNote] = useState("");
   const [showEvents, setShowEvents] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [shortcutFilter, setShortcutFilter] = useState("");
+  const [shortcutIndex, setShortcutIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: departments } = useListDepartments();
   const { data: agents } = useListAgents();
+  const { data: shortcuts } = useListShortcuts({ query: { queryKey: getListShortcutsQueryKey() } });
 
   const deptMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -176,6 +183,61 @@ export default function Inbox() {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
+
+  const filteredShortcuts = useMemo(() => {
+    if (!shortcuts || !shortcutFilter) return shortcuts || [];
+    const q = shortcutFilter.toLowerCase();
+    return shortcuts.filter(
+      (s) =>
+        s.shortcutKey.toLowerCase().includes(q) ||
+        s.name.toLowerCase().includes(q) ||
+        s.body.toLowerCase().includes(q)
+    );
+  }, [shortcuts, shortcutFilter]);
+
+  const handleComposeChange = useCallback(
+    (value: string) => {
+      setComposeText(value);
+      if (value.startsWith("/") && value.length >= 1) {
+        setShowShortcuts(true);
+        setShortcutFilter(value);
+        setShortcutIndex(0);
+      } else {
+        setShowShortcuts(false);
+        setShortcutFilter("");
+      }
+    },
+    []
+  );
+
+  const insertShortcut = useCallback(
+    (body: string) => {
+      setComposeText(body);
+      setShowShortcuts(false);
+      setShortcutFilter("");
+      inputRef.current?.focus();
+    },
+    []
+  );
+
+  const handleComposeKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!showShortcuts || filteredShortcuts.length === 0) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setShortcutIndex((i) => Math.min(i + 1, filteredShortcuts.length - 1));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setShortcutIndex((i) => Math.max(i - 1, 0));
+      } else if (e.key === "Tab" || (e.key === "Enter" && showShortcuts)) {
+        e.preventDefault();
+        insertShortcut(filteredShortcuts[shortcutIndex].body);
+      } else if (e.key === "Escape") {
+        setShowShortcuts(false);
+      }
+    },
+    [showShortcuts, filteredShortcuts, shortcutIndex, insertShortcut]
+  );
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -628,27 +690,58 @@ export default function Inbox() {
 
             {/* Compose Area */}
             <div className="p-4 border-t border-slate-200 bg-white">
-              <form onSubmit={handleSend} className="flex items-end gap-2">
-                <div className="flex-1 relative">
-                  <Input
-                    value={composeText}
-                    onChange={(e) => setComposeText(e.target.value)}
-                    placeholder="Type a message..."
-                    className="pr-12 py-3 bg-slate-50 border-slate-200 focus-visible:ring-blue-500 rounded-xl"
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  size="icon"
-                  className="rounded-xl h-11 w-11 bg-blue-600 hover:bg-blue-700 shrink-0"
-                  disabled={!composeText.trim() || sendMessage.isPending}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </form>
+              <div className="relative">
+                {showShortcuts && filteredShortcuts.length > 0 && (
+                  <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-52 overflow-auto z-20">
+                    <div className="px-3 py-2 border-b border-slate-100">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Shortcuts</span>
+                    </div>
+                    {filteredShortcuts.map((s, i) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className={`w-full text-left px-3 py-2 flex items-start gap-3 transition-colors ${
+                          i === shortcutIndex ? "bg-blue-50" : "hover:bg-slate-50"
+                        }`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          insertShortcut(s.body);
+                        }}
+                        onMouseEnter={() => setShortcutIndex(i)}
+                      >
+                        <Badge variant="outline" className="text-[10px] h-5 font-mono flex-shrink-0 mt-0.5">{s.shortcutKey}</Badge>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-slate-900">{s.name}</div>
+                          <div className="text-[11px] text-slate-400 truncate">{s.body}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <form onSubmit={handleSend} className="flex items-end gap-2">
+                  <div className="flex-1 relative">
+                    <Input
+                      ref={inputRef}
+                      value={composeText}
+                      onChange={(e) => handleComposeChange(e.target.value)}
+                      onKeyDown={handleComposeKeyDown}
+                      placeholder='Type a message... (type "/" for shortcuts)'
+                      className="pr-12 py-3 bg-slate-50 border-slate-200 focus-visible:ring-blue-500 rounded-xl"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    size="icon"
+                    className="rounded-xl h-11 w-11 bg-blue-600 hover:bg-blue-700 shrink-0"
+                    disabled={!composeText.trim() || sendMessage.isPending}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </form>
+              </div>
               <div className="flex justify-between items-center mt-2 px-1">
                 <span className="text-[10px] text-slate-400 font-medium">
-                  Press Enter to send
+                  Press Enter to send · Type / for shortcuts
                 </span>
               </div>
             </div>

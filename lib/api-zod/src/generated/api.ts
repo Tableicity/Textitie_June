@@ -866,3 +866,182 @@ export const GetBillingHistoryResponseItem = zod.object({
 export const GetBillingHistoryResponse = zod.array(
   GetBillingHistoryResponseItem,
 );
+
+/**
+ * @summary List automation rules for the tenant
+ */
+export const ListAutomationsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  type: zod.enum([
+    "keyword_reply",
+    "follow_up_timer",
+    "auto_resolve",
+    "welcome_message",
+    "auto_unsubscribe",
+  ]),
+  name: zod.string(),
+  enabled: zod.boolean(),
+  triggerConfig: zod.record(zod.string(), zod.unknown()),
+  actionConfig: zod.record(zod.string(), zod.unknown()),
+  priority: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListAutomationsResponse = zod.array(ListAutomationsResponseItem);
+
+/**
+ * @summary Create a new automation rule
+ */
+
+export const createAutomationBodyEnabledDefault = true;
+export const createAutomationBodyPriorityDefault = 0;
+
+export const CreateAutomationBody = zod.object({
+  type: zod.enum([
+    "keyword_reply",
+    "follow_up_timer",
+    "auto_resolve",
+    "welcome_message",
+    "auto_unsubscribe",
+  ]),
+  name: zod.string().min(1),
+  enabled: zod.boolean().default(createAutomationBodyEnabledDefault),
+  triggerConfig: zod.record(zod.string(), zod.unknown()).optional(),
+  actionConfig: zod.record(zod.string(), zod.unknown()).optional(),
+  priority: zod.number().default(createAutomationBodyPriorityDefault),
+});
+
+/**
+ * @summary Update an automation rule
+ */
+export const UpdateAutomationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateAutomationBody = zod.object({
+  name: zod.string().optional(),
+  enabled: zod.boolean().optional(),
+  triggerConfig: zod.record(zod.string(), zod.unknown()).optional(),
+  actionConfig: zod.record(zod.string(), zod.unknown()).optional(),
+  priority: zod.number().optional(),
+});
+
+export const UpdateAutomationResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  type: zod.enum([
+    "keyword_reply",
+    "follow_up_timer",
+    "auto_resolve",
+    "welcome_message",
+    "auto_unsubscribe",
+  ]),
+  name: zod.string(),
+  enabled: zod.boolean(),
+  triggerConfig: zod.record(zod.string(), zod.unknown()),
+  actionConfig: zod.record(zod.string(), zod.unknown()),
+  priority: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete an automation rule
+ */
+export const DeleteAutomationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteAutomationResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List message templates for the tenant
+ */
+export const ListShortcutsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  shortcutKey: zod.string(),
+  body: zod.string(),
+  category: zod.string().nullable(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListShortcutsResponse = zod.array(ListShortcutsResponseItem);
+
+/**
+ * @summary Create a new message template
+ */
+
+export const createShortcutBodyShortcutKeyMin = 2;
+
+export const CreateShortcutBody = zod.object({
+  name: zod.string().min(1),
+  shortcutKey: zod.string().min(createShortcutBodyShortcutKeyMin),
+  body: zod.string().min(1),
+  category: zod.string().optional(),
+});
+
+/**
+ * @summary Update a message template
+ */
+export const UpdateShortcutParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateShortcutBody = zod.object({
+  name: zod.string().optional(),
+  shortcutKey: zod.string().optional(),
+  body: zod.string().optional(),
+  category: zod.string().optional(),
+});
+
+export const UpdateShortcutResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  shortcutKey: zod.string(),
+  body: zod.string(),
+  category: zod.string().nullable(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a message template
+ */
+export const DeleteShortcutParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteShortcutResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List opted-out phone numbers
+ */
+export const ListOptOutsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  phoneNumber: zod.string(),
+  reason: zod.string().nullish(),
+  optedOutAt: zod.coerce.date(),
+});
+export const ListOptOutsResponse = zod.array(ListOptOutsResponseItem);
+
+/**
+ * @summary Remove an opt-out record (re-subscribe)
+ */
+export const DeleteOptOutParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteOptOutResponse = zod.object({
+  success: zod.boolean(),
+});

@@ -1,6 +1,6 @@
-import { db, tiersTable, tenantsTable, departmentsTable, conversationsTable, messagesTable, tenantUsersTable, billingEventsTable, usageRecordsTable } from "@workspace/db";
+import { db, tiersTable, tenantsTable, departmentsTable, conversationsTable, messagesTable, tenantUsersTable, billingEventsTable, usageRecordsTable, automationRulesTable, messageTemplatesTable } from "@workspace/db";
 import { pool } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 const TIER_PRICING = [
@@ -302,6 +302,135 @@ async function seedBillingDemo(): Promise<void> {
   logger.info({ tenantId: tenant.id }, "Billing demo data seeded");
 }
 
+const DEMO_AUTOMATIONS = [
+  {
+    tenantSlug: "acme",
+    type: "welcome_message",
+    name: "Welcome New Contacts",
+    enabled: true,
+    triggerConfig: {},
+    actionConfig: { replyBody: "Welcome to ACME Corp! How can we help you today? A team member will be with you shortly." },
+    priority: 0,
+  },
+  {
+    tenantSlug: "acme",
+    type: "keyword_reply",
+    name: "Hours & Availability",
+    enabled: true,
+    triggerConfig: { keywords: ["hours", "open", "available", "schedule"], matchType: "contains" },
+    actionConfig: { replyBody: "Our business hours are Monday–Friday, 9 AM – 6 PM EST. We typically respond within 15 minutes during business hours." },
+    priority: 10,
+  },
+  {
+    tenantSlug: "acme",
+    type: "keyword_reply",
+    name: "Pricing Info",
+    enabled: true,
+    triggerConfig: { keywords: ["price", "pricing", "cost", "how much"], matchType: "contains" },
+    actionConfig: { replyBody: "Thanks for your interest in pricing! Our plans start at $29/mo. Visit our website for full details, or I can connect you with our sales team." },
+    priority: 20,
+  },
+  {
+    tenantSlug: "acme",
+    type: "follow_up_timer",
+    name: "24h Follow-up",
+    enabled: true,
+    triggerConfig: { inactiveHours: 24 },
+    actionConfig: { replyBody: "Hi! Just checking in — is there anything else we can help you with?" },
+    priority: 0,
+  },
+  {
+    tenantSlug: "acme",
+    type: "auto_resolve",
+    name: "Auto-close after 72h",
+    enabled: true,
+    triggerConfig: { inactiveHours: 72 },
+    actionConfig: { replyBody: "This conversation has been closed due to inactivity. Feel free to message us anytime if you need help!" },
+    priority: 0,
+  },
+  {
+    tenantSlug: "acme",
+    type: "auto_unsubscribe",
+    name: "TCPA Opt-out",
+    enabled: true,
+    triggerConfig: {},
+    actionConfig: {},
+    priority: -1,
+  },
+];
+
+const DEMO_SHORTCUTS = [
+  { tenantSlug: "acme", name: "Greeting", shortcutKey: "/hello", body: "Hi there! Thanks for reaching out to ACME Corp. How can I help you today?", category: "General" },
+  { tenantSlug: "acme", name: "Transfer Notice", shortcutKey: "/transfer", body: "I'm going to transfer you to a specialist who can better assist you. One moment please!", category: "General" },
+  { tenantSlug: "acme", name: "Business Hours", shortcutKey: "/hours", body: "Our business hours are Monday–Friday, 9 AM – 6 PM EST. We typically respond within 15 minutes during business hours.", category: "Info" },
+  { tenantSlug: "acme", name: "Closing", shortcutKey: "/bye", body: "Thanks for contacting ACME Corp! Don't hesitate to reach out if you need anything else. Have a great day!", category: "General" },
+  { tenantSlug: "acme", name: "Escalation", shortcutKey: "/escalate", body: "I understand this is important. Let me escalate this to our senior team right away. You'll hear back within the hour.", category: "Support" },
+  { tenantSlug: "acme", name: "Order Status", shortcutKey: "/order", body: "I'd be happy to look into your order status. Could you please share your order number?", category: "Support" },
+  { tenantSlug: "acme", name: "Refund Policy", shortcutKey: "/refund", body: "Our refund policy allows returns within 30 days of purchase. Would you like me to initiate a refund for you?", category: "Support" },
+];
+
+async function seedAutomations(): Promise<void> {
+  for (const rule of DEMO_AUTOMATIONS) {
+    const tenants = await db
+      .select({ id: tenantsTable.id })
+      .from(tenantsTable)
+      .where(eq(tenantsTable.slug, rule.tenantSlug))
+      .limit(1);
+
+    if (tenants.length === 0) continue;
+    const tenantId = tenants[0].id;
+
+    const existing = await db
+      .select({ id: automationRulesTable.id })
+      .from(automationRulesTable)
+      .where(and(eq(automationRulesTable.tenantId, tenantId), eq(automationRulesTable.name, rule.name)))
+      .limit(1);
+
+    if (existing.length > 0) continue;
+
+    await db.insert(automationRulesTable).values({
+      tenantId,
+      type: rule.type,
+      name: rule.name,
+      enabled: rule.enabled,
+      triggerConfig: rule.triggerConfig,
+      actionConfig: rule.actionConfig,
+      priority: rule.priority,
+    });
+    logger.info({ name: rule.name, type: rule.type }, "Demo automation rule seeded");
+  }
+}
+
+async function seedShortcuts(): Promise<void> {
+  for (const tmpl of DEMO_SHORTCUTS) {
+    const tenants = await db
+      .select({ id: tenantsTable.id })
+      .from(tenantsTable)
+      .where(eq(tenantsTable.slug, tmpl.tenantSlug))
+      .limit(1);
+
+    if (tenants.length === 0) continue;
+    const tenantId = tenants[0].id;
+
+    const existing = await db
+      .select({ id: messageTemplatesTable.id })
+      .from(messageTemplatesTable)
+      .where(and(eq(messageTemplatesTable.tenantId, tenantId), eq(messageTemplatesTable.shortcutKey, tmpl.shortcutKey)))
+      .limit(1);
+
+    if (existing.length > 0) continue;
+
+    await db.insert(messageTemplatesTable).values({
+      tenantId,
+      name: tmpl.name,
+      shortcutKey: tmpl.shortcutKey,
+      body: tmpl.body,
+      category: tmpl.category,
+    });
+    logger.info({ name: tmpl.name, shortcutKey: tmpl.shortcutKey }, "Demo shortcut seeded");
+  }
+}
+
 export async function seedDemoData(missingTables: string[]): Promise<void> {
   const required = ["tiers", "tenants", "departments", "conversations", "messages", "billing_events", "usage_records"];
   const blocked = required.filter((t) => missingTables.includes(t));
@@ -316,6 +445,12 @@ export async function seedDemoData(missingTables: string[]): Promise<void> {
     await seedDepartments();
     await seedConversations();
     await seedBillingDemo();
+    if (!missingTables.includes("automation_rules")) {
+      await seedAutomations();
+    }
+    if (!missingTables.includes("message_templates")) {
+      await seedShortcuts();
+    }
     logger.info("Demo data seed complete");
   } catch (err) {
     logger.error({ err }, "Demo data seed failed (non-fatal)");

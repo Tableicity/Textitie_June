@@ -15,6 +15,9 @@ const REQUIRED_TABLES = [
   "conversation_events",
   "usage_records",
   "billing_events",
+  "automation_rules",
+  "message_templates",
+  "opt_outs",
 ];
 
 export async function checkSchema(): Promise<string[]> {

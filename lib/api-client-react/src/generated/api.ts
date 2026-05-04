@@ -24,6 +24,7 @@ import type {
   ApiError,
   AssignNumberInput,
   AutoRouteResult,
+  AutomationRuleItem,
   AvailableNumberItem,
   BillingEventItem,
   BillingPlanItem,
@@ -34,7 +35,9 @@ import type {
   ControlPlaneStats,
   Conversation,
   ConversationEventItem,
+  CreateAutomationInput,
   CreateDepartmentInput,
+  CreateShortcutInput,
   CreateTenantInput,
   DepartmentItem,
   DepartmentMemberItem,
@@ -47,11 +50,13 @@ import type {
   ListInjectionsParams,
   ListWebhookEventsParams,
   Message,
+  OptOutItem,
   PurchaseNumberInput,
   PurchasedNumberResult,
   SearchAvailableNumbersParams,
   SendMessageInput,
   SetAgentStatusInput,
+  ShortcutItem,
   SubscribeInput,
   SubscriptionDetail,
   SubscriptionResult,
@@ -64,7 +69,9 @@ import type {
   Tier,
   TransferInput,
   UpdateAgentInput,
+  UpdateAutomationInput,
   UpdateDepartmentInput,
+  UpdateShortcutInput,
   UpdateTenantInput,
   UsageStats,
   WebhookEvent,
@@ -4004,3 +4011,826 @@ export function useGetBillingHistory<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List automation rules for the tenant
+ */
+export const getListAutomationsUrl = () => {
+  return `/api/automations`;
+};
+
+export const listAutomations = async (
+  options?: RequestInit,
+): Promise<AutomationRuleItem[]> => {
+  return customFetch<AutomationRuleItem[]>(getListAutomationsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAutomationsQueryKey = () => {
+  return [`/api/automations`] as const;
+};
+
+export const getListAutomationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAutomations>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAutomations>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAutomationsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listAutomations>>> = ({
+    signal,
+  }) => listAutomations({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAutomations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAutomationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAutomations>>
+>;
+export type ListAutomationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List automation rules for the tenant
+ */
+
+export function useListAutomations<
+  TData = Awaited<ReturnType<typeof listAutomations>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAutomations>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAutomationsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new automation rule
+ */
+export const getCreateAutomationUrl = () => {
+  return `/api/automations`;
+};
+
+export const createAutomation = async (
+  createAutomationInput: CreateAutomationInput,
+  options?: RequestInit,
+): Promise<AutomationRuleItem> => {
+  return customFetch<AutomationRuleItem>(getCreateAutomationUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createAutomationInput),
+  });
+};
+
+export const getCreateAutomationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAutomation>>,
+    TError,
+    { data: BodyType<CreateAutomationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAutomation>>,
+  TError,
+  { data: BodyType<CreateAutomationInput> },
+  TContext
+> => {
+  const mutationKey = ["createAutomation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAutomation>>,
+    { data: BodyType<CreateAutomationInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createAutomation(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateAutomationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAutomation>>
+>;
+export type CreateAutomationMutationBody = BodyType<CreateAutomationInput>;
+export type CreateAutomationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Create a new automation rule
+ */
+export const useCreateAutomation = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAutomation>>,
+    TError,
+    { data: BodyType<CreateAutomationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createAutomation>>,
+  TError,
+  { data: BodyType<CreateAutomationInput> },
+  TContext
+> => {
+  return useMutation(getCreateAutomationMutationOptions(options));
+};
+
+/**
+ * @summary Update an automation rule
+ */
+export const getUpdateAutomationUrl = (id: number) => {
+  return `/api/automations/${id}`;
+};
+
+export const updateAutomation = async (
+  id: number,
+  updateAutomationInput: UpdateAutomationInput,
+  options?: RequestInit,
+): Promise<AutomationRuleItem> => {
+  return customFetch<AutomationRuleItem>(getUpdateAutomationUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateAutomationInput),
+  });
+};
+
+export const getUpdateAutomationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAutomation>>,
+    TError,
+    { id: number; data: BodyType<UpdateAutomationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAutomation>>,
+  TError,
+  { id: number; data: BodyType<UpdateAutomationInput> },
+  TContext
+> => {
+  const mutationKey = ["updateAutomation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAutomation>>,
+    { id: number; data: BodyType<UpdateAutomationInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateAutomation(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAutomationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAutomation>>
+>;
+export type UpdateAutomationMutationBody = BodyType<UpdateAutomationInput>;
+export type UpdateAutomationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Update an automation rule
+ */
+export const useUpdateAutomation = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAutomation>>,
+    TError,
+    { id: number; data: BodyType<UpdateAutomationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAutomation>>,
+  TError,
+  { id: number; data: BodyType<UpdateAutomationInput> },
+  TContext
+> => {
+  return useMutation(getUpdateAutomationMutationOptions(options));
+};
+
+/**
+ * @summary Delete an automation rule
+ */
+export const getDeleteAutomationUrl = (id: number) => {
+  return `/api/automations/${id}`;
+};
+
+export const deleteAutomation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SuccessResult> => {
+  return customFetch<SuccessResult>(getDeleteAutomationUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAutomationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAutomation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAutomation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteAutomation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAutomation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteAutomation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAutomationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAutomation>>
+>;
+
+export type DeleteAutomationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete an automation rule
+ */
+export const useDeleteAutomation = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAutomation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAutomation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteAutomationMutationOptions(options));
+};
+
+/**
+ * @summary List message templates for the tenant
+ */
+export const getListShortcutsUrl = () => {
+  return `/api/shortcuts`;
+};
+
+export const listShortcuts = async (
+  options?: RequestInit,
+): Promise<ShortcutItem[]> => {
+  return customFetch<ShortcutItem[]>(getListShortcutsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListShortcutsQueryKey = () => {
+  return [`/api/shortcuts`] as const;
+};
+
+export const getListShortcutsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listShortcuts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listShortcuts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListShortcutsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listShortcuts>>> = ({
+    signal,
+  }) => listShortcuts({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listShortcuts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListShortcutsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listShortcuts>>
+>;
+export type ListShortcutsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List message templates for the tenant
+ */
+
+export function useListShortcuts<
+  TData = Awaited<ReturnType<typeof listShortcuts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listShortcuts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListShortcutsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new message template
+ */
+export const getCreateShortcutUrl = () => {
+  return `/api/shortcuts`;
+};
+
+export const createShortcut = async (
+  createShortcutInput: CreateShortcutInput,
+  options?: RequestInit,
+): Promise<ShortcutItem> => {
+  return customFetch<ShortcutItem>(getCreateShortcutUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createShortcutInput),
+  });
+};
+
+export const getCreateShortcutMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createShortcut>>,
+    TError,
+    { data: BodyType<CreateShortcutInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createShortcut>>,
+  TError,
+  { data: BodyType<CreateShortcutInput> },
+  TContext
+> => {
+  const mutationKey = ["createShortcut"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createShortcut>>,
+    { data: BodyType<CreateShortcutInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createShortcut(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateShortcutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createShortcut>>
+>;
+export type CreateShortcutMutationBody = BodyType<CreateShortcutInput>;
+export type CreateShortcutMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Create a new message template
+ */
+export const useCreateShortcut = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createShortcut>>,
+    TError,
+    { data: BodyType<CreateShortcutInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createShortcut>>,
+  TError,
+  { data: BodyType<CreateShortcutInput> },
+  TContext
+> => {
+  return useMutation(getCreateShortcutMutationOptions(options));
+};
+
+/**
+ * @summary Update a message template
+ */
+export const getUpdateShortcutUrl = (id: number) => {
+  return `/api/shortcuts/${id}`;
+};
+
+export const updateShortcut = async (
+  id: number,
+  updateShortcutInput: UpdateShortcutInput,
+  options?: RequestInit,
+): Promise<ShortcutItem> => {
+  return customFetch<ShortcutItem>(getUpdateShortcutUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateShortcutInput),
+  });
+};
+
+export const getUpdateShortcutMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateShortcut>>,
+    TError,
+    { id: number; data: BodyType<UpdateShortcutInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateShortcut>>,
+  TError,
+  { id: number; data: BodyType<UpdateShortcutInput> },
+  TContext
+> => {
+  const mutationKey = ["updateShortcut"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateShortcut>>,
+    { id: number; data: BodyType<UpdateShortcutInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateShortcut(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateShortcutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateShortcut>>
+>;
+export type UpdateShortcutMutationBody = BodyType<UpdateShortcutInput>;
+export type UpdateShortcutMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Update a message template
+ */
+export const useUpdateShortcut = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateShortcut>>,
+    TError,
+    { id: number; data: BodyType<UpdateShortcutInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateShortcut>>,
+  TError,
+  { id: number; data: BodyType<UpdateShortcutInput> },
+  TContext
+> => {
+  return useMutation(getUpdateShortcutMutationOptions(options));
+};
+
+/**
+ * @summary Delete a message template
+ */
+export const getDeleteShortcutUrl = (id: number) => {
+  return `/api/shortcuts/${id}`;
+};
+
+export const deleteShortcut = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SuccessResult> => {
+  return customFetch<SuccessResult>(getDeleteShortcutUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteShortcutMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteShortcut>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteShortcut>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteShortcut"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteShortcut>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteShortcut(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteShortcutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteShortcut>>
+>;
+
+export type DeleteShortcutMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete a message template
+ */
+export const useDeleteShortcut = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteShortcut>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteShortcut>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteShortcutMutationOptions(options));
+};
+
+/**
+ * @summary List opted-out phone numbers
+ */
+export const getListOptOutsUrl = () => {
+  return `/api/opt-outs`;
+};
+
+export const listOptOuts = async (
+  options?: RequestInit,
+): Promise<OptOutItem[]> => {
+  return customFetch<OptOutItem[]>(getListOptOutsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListOptOutsQueryKey = () => {
+  return [`/api/opt-outs`] as const;
+};
+
+export const getListOptOutsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listOptOuts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOptOuts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListOptOutsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listOptOuts>>> = ({
+    signal,
+  }) => listOptOuts({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listOptOuts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListOptOutsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listOptOuts>>
+>;
+export type ListOptOutsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List opted-out phone numbers
+ */
+
+export function useListOptOuts<
+  TData = Awaited<ReturnType<typeof listOptOuts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOptOuts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListOptOutsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Remove an opt-out record (re-subscribe)
+ */
+export const getDeleteOptOutUrl = (id: number) => {
+  return `/api/opt-outs/${id}`;
+};
+
+export const deleteOptOut = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SuccessResult> => {
+  return customFetch<SuccessResult>(getDeleteOptOutUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteOptOutMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteOptOut>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteOptOut>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteOptOut"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteOptOut>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteOptOut(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteOptOutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteOptOut>>
+>;
+
+export type DeleteOptOutMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Remove an opt-out record (re-subscribe)
+ */
+export const useDeleteOptOut = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteOptOut>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteOptOut>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteOptOutMutationOptions(options));
+};
