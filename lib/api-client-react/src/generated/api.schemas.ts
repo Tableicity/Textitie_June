@@ -258,6 +258,8 @@ export interface Conversation {
   contactName: string | null;
   status: ConversationStatus;
   /** @nullable */
+  tags?: string[] | null;
+  /** @nullable */
   assignedUserId: number | null;
   /** @nullable */
   assignedAt: string | null;
@@ -659,6 +661,165 @@ export interface OptOutItem {
   /** @nullable */
   reason?: string | null;
   optedOutAt: string;
+}
+
+export interface UpdateTagsInput {
+  tags: string[];
+}
+
+export interface TagsResult {
+  success: boolean;
+  tags: string[];
+}
+
+export type CampaignStatus =
+  (typeof CampaignStatus)[keyof typeof CampaignStatus];
+
+export const CampaignStatus = {
+  draft: "draft",
+  sending: "sending",
+  paused: "paused",
+  completed: "completed",
+  failed: "failed",
+} as const;
+
+/**
+ * @nullable
+ */
+export type CampaignItemSegmentFilter = { [key: string]: unknown } | null;
+
+export interface CampaignItem {
+  id: number;
+  tenantId: number;
+  name: string;
+  body: string;
+  status: CampaignStatus;
+  /** @nullable */
+  segmentFilter?: CampaignItemSegmentFilter;
+  totalRecipients: number;
+  queuedCount: number;
+  sentCount: number;
+  deliveredCount: number;
+  failedCount: number;
+  responseCount: number;
+  optOutCount: number;
+  creditsRequired: number;
+  /** @nullable */
+  createdBy?: number | null;
+  createdAt: string;
+  /** @nullable */
+  scheduledAt?: string | null;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
+}
+
+export type CreateCampaignInputSegmentFilter = {
+  tags?: string[];
+  status?: string;
+  lastInteractionBefore?: string;
+  lastInteractionAfter?: string;
+};
+
+export interface CreateCampaignInput {
+  /** @minLength 1 */
+  name: string;
+  /** @minLength 1 */
+  body: string;
+  segmentFilter?: CreateCampaignInputSegmentFilter;
+}
+
+export interface CreditBalance {
+  prepaidCredits: number;
+  includedRemaining: number;
+  totalAvailable: number;
+  overageEnabled: boolean;
+}
+
+export interface TopUpInput {
+  /** @minimum 1 */
+  credits: number;
+}
+
+export interface TopUpResult {
+  prepaidCredits: number;
+}
+
+export type AudiencePreviewInputSegmentFilter = {
+  tags?: string[];
+  status?: string;
+  lastInteractionBefore?: string;
+  lastInteractionAfter?: string;
+};
+
+export interface AudiencePreviewInput {
+  segmentFilter?: AudiencePreviewInputSegmentFilter;
+}
+
+export type AudiencePreviewResultContactsItem = {
+  id: number;
+  contactPhone: string;
+  /** @nullable */
+  contactName?: string | null;
+};
+
+export interface AudiencePreviewResult {
+  count: number;
+  contacts: AudiencePreviewResultContactsItem[];
+}
+
+export type CampaignSendResultPreFlightCheck = {
+  allowed: boolean;
+  requiredCredits: number;
+  availableCredits: number;
+  prepaidCredits: number;
+  includedRemaining: number;
+  overageEnabled: boolean;
+  shortfall: number;
+};
+
+export interface CampaignSendResult {
+  success: boolean;
+  campaignId: number;
+  recipientCount: number;
+  creditsRequired: number;
+  preFlightCheck: CampaignSendResultPreFlightCheck;
+}
+
+export interface CreditShortfallError {
+  error: string;
+  required: number;
+  available: number;
+  shortfall: number;
+  overageEnabled: boolean;
+}
+
+export type CampaignMessageItemStatus =
+  (typeof CampaignMessageItemStatus)[keyof typeof CampaignMessageItemStatus];
+
+export const CampaignMessageItemStatus = {
+  queued: "queued",
+  sending: "sending",
+  sent: "sent",
+  delivered: "delivered",
+  failed: "failed",
+} as const;
+
+export interface CampaignMessageItem {
+  id: number;
+  campaignId: number;
+  /** @nullable */
+  conversationId?: number | null;
+  contactPhone: string;
+  /** @nullable */
+  contactName?: string | null;
+  renderedBody: string;
+  status: CampaignMessageItemStatus;
+  /** @nullable */
+  sentAt?: string | null;
+  /** @nullable */
+  errorMessage?: string | null;
 }
 
 export type ListInjectionsParams = {

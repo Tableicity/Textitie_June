@@ -12,3 +12,4 @@ export * from "./billingEvents";
 export * from "./automationRules";
 export * from "./messageTemplates";
 export * from "./optOuts";
+export * from "./campaigns";

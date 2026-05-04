@@ -83,6 +83,52 @@ No specific user preferences were provided in the original document.
   - Click/select inserts full template body into composer
 - **Demo Seed Data**: 6 automation rules (welcome, 2 keyword replies, follow-up timer, auto-resolve, TCPA) and 7 shortcuts (/hello, /transfer, /hours, /bye, /escalate, /order, /refund) seeded for ACME Corp.
 
+### Phase 6 — Campaigns ("Commercial Megaphone")
+- **Schema Changes**:
+  - `tenants` table extended: `prepaid_credits` (int, default 0), `overage_enabled` (bool, default false)
+  - `conversations` table extended: `tags` (text[], default empty) for audience segmentation
+  - New `campaigns` table: id, tenant_id, name, body (template), status (draft/sending/paused/completed/failed), segment_filter (jsonb), total_recipients, queued_count, sent_count, delivered_count, failed_count, response_count, opt_out_count, credits_required, created_by, timestamps (created_at, scheduled_at, started_at, completed_at)
+  - New `campaign_messages` table: id, campaign_id, conversation_id, contact_phone, contact_name, rendered_body, status (queued/sending/sent/delivered/failed), sent_at, error_message
+- **SMS Utils** (`artifacts/api-server/src/lib/smsUtils.ts`):
+  - `calculateSegments(text)`: GSM-7 charset detection (160/153 chars per segment) vs UCS-2 for emoji/unicode (70/67 chars per segment), extended table handling
+  - `injectVariables(template, vars)`: Regex-based `{{first_name}}`, `{{full_name}}`, `{{phone}}` substitution
+  - `extractContactVars(contactName, phone)`: Derives first/last/full names from contact data
+- **Credit Engine** (`artifacts/api-server/src/lib/creditEngine.ts`):
+  - `preFlightCheck(tenantId, recipientCount, segmentsPerMessage)`: Combines prepaid_credits + remaining included credits from usage_records. Enterprise tier gets unlimited. Returns allowed/required/available/shortfall/overageEnabled
+  - `deductCampaignCredits(tenantId, creditsUsed)`: Drains prepaid first, overflow to usage_records with overage calculation ($0.03/credit)
+  - `getCreditBalance()`, `addPrepaidCredits()`: Balance queries and top-up
+- **Campaign Engine** (`artifacts/api-server/src/lib/campaignEngine.ts`):
+  - Rate-limited delivery: 10 msgs/sec via batched intervals with 1s cooldown
+  - Atomic row claiming: `FOR UPDATE SKIP LOCKED` prevents duplicate sends across concurrent executors
+  - Per-recipient: claims queued→sending, sends via getSender(), updates status to sent/failed
+  - Credit deduction uses per-rendered-message segment counting (not template segments) for accuracy
+  - Failed credit deduction marks campaign as failed (not silently ignored)
+  - `buildAudience()`: Tenant-scoped query with tag overlap (`&&`), status, and interaction time filters; excludes opted-out numbers
+  - `createCampaignMessages()`: Bulk insert with per-recipient variable injection
+- **Race Condition Protections**:
+  - Send route uses atomic `UPDATE ... WHERE status = 'draft' RETURNING id` to prevent duplicate sends from concurrent requests
+  - Batch processing uses `FOR UPDATE SKIP LOCKED` for worker-safe message claiming
+  - `executeCampaign()` only accepts `status = 'sending'` (set atomically by send route)
+- **API Endpoints** (all require tenant auth, bypassed from conductor auth):
+  - `GET /api/campaigns` — list campaigns for tenant
+  - `POST /api/campaigns` — create draft campaign
+  - `GET /api/campaigns/:id` — get campaign with stats
+  - `POST /api/campaigns/:id/send` — atomic draft→sending, pre-flight credit check, enqueue recipients, fire-and-forget execution
+  - `DELETE /api/campaigns/:id` — delete draft campaign (blocks if sending)
+  - `GET /api/campaigns/:id/messages` — list recipient statuses
+  - `POST /api/campaigns/audience-preview` — preview audience count with tag/status/interaction filters
+  - `GET /api/campaigns/credits` — current credit balance (prepaid + included + overage status)
+  - `POST /api/campaigns/top-up` — add prepaid credits
+  - `PATCH /api/conversations/:id/tags` — update conversation tags
+- **Campaigns UI** (`artifacts/user-app/src/pages/Campaigns.tsx`):
+  - Campaign list view: cards with status badges, recipient counts, credit usage
+  - 3-step create wizard: Audience (name + tag filter + live audience preview), Compose (message editor + variable buttons + live segment counter + message preview), Review (pre-flight credit check + send confirmation)
+  - Campaign detail: progress bar, recipient table with per-message status, Send Now button
+  - Credit balance card with top-up dialog
+  - Empty state for no campaigns
+  - Nav: Megaphone icon in sidebar between Automations and Billing
+- **Seed Data**: ACME seeded with 5,000 prepaid credits, overageEnabled=false. Demo conversations tagged (vip, support, sales, prospect, orders, enterprise, resolved).
+
 ### Auto-Seed Strategy
 - **Location**: `artifacts/api-server/src/lib/seedData.ts`, called from `index.ts` on every startup
 - **Idempotent**: All seed operations check for existing data before inserting — safe to run repeatedly
@@ -94,6 +140,8 @@ No specific user preferences were provided in the original document.
   - Billing demo: puts ACME on a Starter free trial with a "Trial Started" billing event and usage record reflecting actual outbound message count
   - 6 automation rules (welcome message, keyword replies for hours/pricing, 24h follow-up, 72h auto-resolve, TCPA opt-out) for ACME
   - 7 message template shortcuts (/hello, /transfer, /hours, /bye, /escalate, /order, /refund) for ACME
+  - Campaign credits: ACME gets 5,000 prepaid credits, overageEnabled=false
+  - Conversation tags: 6 demo conversations tagged with vip, support, sales, prospect, orders, enterprise, resolved
 - **Production behavior**: On first publish, the seed ensures tiers have pricing and ACME has demo data to interact with. Existing data is never overwritten.
 - **Future vision**: This seed provides a testable sandbox. Next phase will add user sign-on with seeded demo data per org and a "+Create Organization" button.
 

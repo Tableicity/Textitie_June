@@ -31,6 +31,7 @@ router.get("/conversations", requireTenantAuth, async (req, res) => {
         contactPhone: conversationsTable.contactPhone,
         contactName: conversationsTable.contactName,
         status: conversationsTable.status,
+        tags: conversationsTable.tags,
         assignedUserId: conversationsTable.assignedUserId,
         assignedAt: conversationsTable.assignedAt,
         lastMessageAt: conversationsTable.lastMessageAt,

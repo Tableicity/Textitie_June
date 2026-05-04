@@ -13,6 +13,7 @@ export const conversationsTable = pgTable("conversations", {
   contactPhone: text("contact_phone").notNull(),
   contactName: text("contact_name"),
   status: text("status").notNull().default("open"),
+  tags: text("tags").array(),
   assignedUserId: integer("assigned_user_id")
     .references(() => tenantUsersTable.id, { onDelete: "set null" }),
   assignedAt: timestamp("assigned_at", { withTimezone: true }),

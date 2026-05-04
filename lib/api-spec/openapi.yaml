@@ -40,6 +40,8 @@ tags:
     description: Message templates and shortcuts
   - name: opt-outs
     description: TCPA opt-out management
+  - name: campaigns
+    description: Bulk campaign messaging and analytics
 paths:
   /healthz:
     get:
@@ -1304,6 +1306,226 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /conversations/{id}/tags:
+    patch:
+      operationId: updateConversationTags
+      tags: [conversations]
+      summary: Update tags on a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTagsInput"
+      responses:
+        "200":
+          description: Tags updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagsResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /campaigns:
+    get:
+      operationId: listCampaigns
+      tags: [campaigns]
+      summary: List campaigns
+      responses:
+        "200":
+          description: List of campaigns
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CampaignItem"
+    post:
+      operationId: createCampaign
+      tags: [campaigns]
+      summary: Create a draft campaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCampaignInput"
+      responses:
+        "201":
+          description: Campaign created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignItem"
+
+  /campaigns/credits:
+    get:
+      operationId: getCampaignCredits
+      tags: [campaigns]
+      summary: Get current credit balance
+      responses:
+        "200":
+          description: Credit balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditBalance"
+
+  /campaigns/top-up:
+    post:
+      operationId: topUpCredits
+      tags: [campaigns]
+      summary: Add prepaid credits (stub)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopUpInput"
+      responses:
+        "200":
+          description: Credits added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopUpResult"
+
+  /campaigns/audience-preview:
+    post:
+      operationId: previewAudience
+      tags: [campaigns]
+      summary: Preview audience for a segment filter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AudiencePreviewInput"
+      responses:
+        "200":
+          description: Audience preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudiencePreviewResult"
+
+  /campaigns/{id}:
+    get:
+      operationId: getCampaign
+      tags: [campaigns]
+      summary: Get campaign details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Campaign details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteCampaign
+      tags: [campaigns]
+      summary: Delete a draft campaign
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Campaign deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /campaigns/{id}/send:
+    post:
+      operationId: sendCampaign
+      tags: [campaigns]
+      summary: Trigger campaign send with pre-flight credit check
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Campaign send triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignSendResult"
+        "402":
+          description: Insufficient credits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditShortfallError"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /campaigns/{id}/messages:
+    get:
+      operationId: listCampaignMessages
+      tags: [campaigns]
+      summary: List per-recipient campaign message statuses
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of campaign messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CampaignMessageItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -1657,6 +1879,10 @@ components:
           type: ["string", "null"]
         status:
           $ref: "#/components/schemas/ConversationStatus"
+        tags:
+          type: ["array", "null"]
+          items:
+            type: string
         assignedUserId:
           type: ["integer", "null"]
         assignedAt:
@@ -2332,3 +2558,234 @@ components:
           type: string
           format: date-time
       required: [id, tenantId, phoneNumber, optedOutAt]
+
+    UpdateTagsInput:
+      type: object
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
+      required: [tags]
+
+    TagsResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+      required: [success, tags]
+
+    CampaignStatus:
+      type: string
+      enum: [draft, sending, paused, completed, failed]
+
+    CampaignItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        name:
+          type: string
+        body:
+          type: string
+        status:
+          $ref: "#/components/schemas/CampaignStatus"
+        segmentFilter:
+          type: ["object", "null"]
+          additionalProperties: true
+        totalRecipients:
+          type: integer
+        queuedCount:
+          type: integer
+        sentCount:
+          type: integer
+        deliveredCount:
+          type: integer
+        failedCount:
+          type: integer
+        responseCount:
+          type: integer
+        optOutCount:
+          type: integer
+        creditsRequired:
+          type: integer
+        createdBy:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        scheduledAt:
+          type: ["string", "null"]
+          format: date-time
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+      required: [id, tenantId, name, body, status, totalRecipients, queuedCount, sentCount, deliveredCount, failedCount, responseCount, optOutCount, creditsRequired, createdAt]
+
+    CreateCampaignInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        body:
+          type: string
+          minLength: 1
+        segmentFilter:
+          type: object
+          properties:
+            tags:
+              type: array
+              items:
+                type: string
+            status:
+              type: string
+            lastInteractionBefore:
+              type: string
+            lastInteractionAfter:
+              type: string
+      required: [name, body]
+
+    CreditBalance:
+      type: object
+      properties:
+        prepaidCredits:
+          type: integer
+        includedRemaining:
+          type: integer
+        totalAvailable:
+          type: integer
+        overageEnabled:
+          type: boolean
+      required: [prepaidCredits, includedRemaining, totalAvailable, overageEnabled]
+
+    TopUpInput:
+      type: object
+      properties:
+        credits:
+          type: integer
+          minimum: 1
+      required: [credits]
+
+    TopUpResult:
+      type: object
+      properties:
+        prepaidCredits:
+          type: integer
+      required: [prepaidCredits]
+
+    AudiencePreviewInput:
+      type: object
+      properties:
+        segmentFilter:
+          type: object
+          properties:
+            tags:
+              type: array
+              items:
+                type: string
+            status:
+              type: string
+            lastInteractionBefore:
+              type: string
+            lastInteractionAfter:
+              type: string
+
+    AudiencePreviewResult:
+      type: object
+      properties:
+        count:
+          type: integer
+        contacts:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              contactPhone:
+                type: string
+              contactName:
+                type: ["string", "null"]
+            required: [id, contactPhone]
+      required: [count, contacts]
+
+    CampaignSendResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        campaignId:
+          type: integer
+        recipientCount:
+          type: integer
+        creditsRequired:
+          type: integer
+        preFlightCheck:
+          type: object
+          properties:
+            allowed:
+              type: boolean
+            requiredCredits:
+              type: integer
+            availableCredits:
+              type: number
+            prepaidCredits:
+              type: integer
+            includedRemaining:
+              type: number
+            overageEnabled:
+              type: boolean
+            shortfall:
+              type: integer
+          required: [allowed, requiredCredits, availableCredits, prepaidCredits, includedRemaining, overageEnabled, shortfall]
+      required: [success, campaignId, recipientCount, creditsRequired, preFlightCheck]
+
+    CreditShortfallError:
+      type: object
+      properties:
+        error:
+          type: string
+        required:
+          type: integer
+        available:
+          type: number
+        shortfall:
+          type: integer
+        overageEnabled:
+          type: boolean
+      required: [error, required, available, shortfall, overageEnabled]
+
+    CampaignMessageItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        campaignId:
+          type: integer
+        conversationId:
+          type: ["integer", "null"]
+        contactPhone:
+          type: string
+        contactName:
+          type: ["string", "null"]
+        renderedBody:
+          type: string
+        status:
+          type: string
+          enum: [queued, sending, sent, delivered, failed]
+        sentAt:
+          type: ["string", "null"]
+          format: date-time
+        errorMessage:
+          type: ["string", "null"]
+      required: [id, campaignId, contactPhone, renderedBody, status]

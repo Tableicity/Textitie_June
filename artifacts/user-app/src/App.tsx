@@ -9,6 +9,7 @@ import Inbox from "@/pages/Inbox";
 import Settings from "@/pages/Settings";
 import Billing from "@/pages/Billing";
 import Automations from "@/pages/Automations";
+import Campaigns from "@/pages/Campaigns";
 import AppShell from "@/components/AppShell";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ function Router() {
             <Route path="/settings" component={Settings} />
             <Route path="/billing" component={Billing} />
             <Route path="/automations" component={Automations} />
+            <Route path="/campaigns" component={Campaigns} />
             <Route component={NotFound} />
           </Switch>
         </AppShell>

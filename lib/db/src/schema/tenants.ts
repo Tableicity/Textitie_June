@@ -19,6 +19,8 @@ export const tenantsTable = pgTable("tenants", {
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
   currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  prepaidCredits: integer("prepaid_credits").notNull().default(0),
+  overageEnabled: boolean("overage_enabled").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

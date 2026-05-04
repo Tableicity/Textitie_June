@@ -364,6 +364,7 @@ export const ListConversationsResponseItem = zod.object({
   contactPhone: zod.string(),
   contactName: zod.string().nullable(),
   status: zod.enum(["open", "closed", "snoozed"]),
+  tags: zod.array(zod.string()).nullish(),
   assignedUserId: zod.number().nullable(),
   assignedAt: zod.coerce.date().nullable(),
   lastMessageAt: zod.coerce.date().nullable(),
@@ -387,6 +388,7 @@ export const GetConversationResponse = zod.object({
   contactPhone: zod.string(),
   contactName: zod.string().nullable(),
   status: zod.enum(["open", "closed", "snoozed"]),
+  tags: zod.array(zod.string()).nullish(),
   assignedUserId: zod.number().nullable(),
   assignedAt: zod.coerce.date().nullable(),
   lastMessageAt: zod.coerce.date().nullable(),
@@ -1045,3 +1047,194 @@ export const DeleteOptOutParams = zod.object({
 export const DeleteOptOutResponse = zod.object({
   success: zod.boolean(),
 });
+
+/**
+ * @summary Update tags on a conversation
+ */
+export const UpdateConversationTagsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateConversationTagsBody = zod.object({
+  tags: zod.array(zod.string()),
+});
+
+export const UpdateConversationTagsResponse = zod.object({
+  success: zod.boolean(),
+  tags: zod.array(zod.string()),
+});
+
+/**
+ * @summary List campaigns
+ */
+export const ListCampaignsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  body: zod.string(),
+  status: zod.enum(["draft", "sending", "paused", "completed", "failed"]),
+  segmentFilter: zod.record(zod.string(), zod.unknown()).nullish(),
+  totalRecipients: zod.number(),
+  queuedCount: zod.number(),
+  sentCount: zod.number(),
+  deliveredCount: zod.number(),
+  failedCount: zod.number(),
+  responseCount: zod.number(),
+  optOutCount: zod.number(),
+  creditsRequired: zod.number(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  scheduledAt: zod.coerce.date().nullish(),
+  startedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+});
+export const ListCampaignsResponse = zod.array(ListCampaignsResponseItem);
+
+/**
+ * @summary Create a draft campaign
+ */
+
+export const CreateCampaignBody = zod.object({
+  name: zod.string().min(1),
+  body: zod.string().min(1),
+  segmentFilter: zod
+    .object({
+      tags: zod.array(zod.string()).optional(),
+      status: zod.string().optional(),
+      lastInteractionBefore: zod.string().optional(),
+      lastInteractionAfter: zod.string().optional(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Get current credit balance
+ */
+export const GetCampaignCreditsResponse = zod.object({
+  prepaidCredits: zod.number(),
+  includedRemaining: zod.number(),
+  totalAvailable: zod.number(),
+  overageEnabled: zod.boolean(),
+});
+
+/**
+ * @summary Add prepaid credits (stub)
+ */
+
+export const TopUpCreditsBody = zod.object({
+  credits: zod.number().min(1),
+});
+
+export const TopUpCreditsResponse = zod.object({
+  prepaidCredits: zod.number(),
+});
+
+/**
+ * @summary Preview audience for a segment filter
+ */
+export const PreviewAudienceBody = zod.object({
+  segmentFilter: zod
+    .object({
+      tags: zod.array(zod.string()).optional(),
+      status: zod.string().optional(),
+      lastInteractionBefore: zod.string().optional(),
+      lastInteractionAfter: zod.string().optional(),
+    })
+    .optional(),
+});
+
+export const PreviewAudienceResponse = zod.object({
+  count: zod.number(),
+  contacts: zod.array(
+    zod.object({
+      id: zod.number(),
+      contactPhone: zod.string(),
+      contactName: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get campaign details
+ */
+export const GetCampaignParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCampaignResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  body: zod.string(),
+  status: zod.enum(["draft", "sending", "paused", "completed", "failed"]),
+  segmentFilter: zod.record(zod.string(), zod.unknown()).nullish(),
+  totalRecipients: zod.number(),
+  queuedCount: zod.number(),
+  sentCount: zod.number(),
+  deliveredCount: zod.number(),
+  failedCount: zod.number(),
+  responseCount: zod.number(),
+  optOutCount: zod.number(),
+  creditsRequired: zod.number(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  scheduledAt: zod.coerce.date().nullish(),
+  startedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Delete a draft campaign
+ */
+export const DeleteCampaignParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteCampaignResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary Trigger campaign send with pre-flight credit check
+ */
+export const SendCampaignParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SendCampaignResponse = zod.object({
+  success: zod.boolean(),
+  campaignId: zod.number(),
+  recipientCount: zod.number(),
+  creditsRequired: zod.number(),
+  preFlightCheck: zod.object({
+    allowed: zod.boolean(),
+    requiredCredits: zod.number(),
+    availableCredits: zod.number(),
+    prepaidCredits: zod.number(),
+    includedRemaining: zod.number(),
+    overageEnabled: zod.boolean(),
+    shortfall: zod.number(),
+  }),
+});
+
+/**
+ * @summary List per-recipient campaign message statuses
+ */
+export const ListCampaignMessagesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListCampaignMessagesResponseItem = zod.object({
+  id: zod.number(),
+  campaignId: zod.number(),
+  conversationId: zod.number().nullish(),
+  contactPhone: zod.string(),
+  contactName: zod.string().nullish(),
+  renderedBody: zod.string(),
+  status: zod.enum(["queued", "sending", "sent", "delivered", "failed"]),
+  sentAt: zod.coerce.date().nullish(),
+  errorMessage: zod.string().nullish(),
+});
+export const ListCampaignMessagesResponse = zod.array(
+  ListCampaignMessagesResponseItem,
+);

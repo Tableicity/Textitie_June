@@ -1,4 +1,4 @@
-import { db, tiersTable, tenantsTable, departmentsTable, conversationsTable, messagesTable, tenantUsersTable, billingEventsTable, usageRecordsTable, automationRulesTable, messageTemplatesTable } from "@workspace/db";
+import { db, tiersTable, tenantsTable, departmentsTable, conversationsTable, messagesTable, tenantUsersTable, billingEventsTable, usageRecordsTable, automationRulesTable, messageTemplatesTable, campaignsTable } from "@workspace/db";
 import { pool } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { logger } from "./logger";
@@ -57,6 +57,7 @@ const DEMO_CONVERSATIONS = [
     contactPhone: "+14155551234",
     contactName: "Sarah Johnson",
     status: "open",
+    tags: ["vip", "support"],
     messages: [
       { direction: "inbound", body: "Hi, I need help with my account settings", senderName: "Sarah Johnson" },
       { direction: "outbound", body: "Of course! What specifically do you need help with?", senderName: "ACME Agent" },
@@ -68,6 +69,7 @@ const DEMO_CONVERSATIONS = [
     contactPhone: "+14155555678",
     contactName: "Mike Chen",
     status: "open",
+    tags: ["orders", "support"],
     messages: [
       { direction: "inbound", body: "When will my order ship?", senderName: "Mike Chen" },
       { direction: "outbound", body: "Let me check that for you. What is your order number?", senderName: "ACME Agent" },
@@ -79,6 +81,7 @@ const DEMO_CONVERSATIONS = [
     contactPhone: "+14155559012",
     contactName: "Emily Davis",
     status: "closed",
+    tags: ["resolved"],
     messages: [
       { direction: "inbound", body: "Thanks for the help!", senderName: "Emily Davis" },
       { direction: "outbound", body: "You are welcome! Feel free to reach out anytime.", senderName: "ACME Agent" },
@@ -89,6 +92,7 @@ const DEMO_CONVERSATIONS = [
     contactPhone: "+14155553456",
     contactName: "James Wilson",
     status: "open",
+    tags: ["vip", "sales"],
     messages: [
       { direction: "inbound", body: "I'd like to upgrade my subscription plan", senderName: "James Wilson" },
       { direction: "outbound", body: "Great choice! Let me walk you through our available plans.", senderName: "Admin User" },
@@ -102,6 +106,7 @@ const DEMO_CONVERSATIONS = [
     contactPhone: "+14155557890",
     contactName: "Lisa Park",
     status: "open",
+    tags: ["sales", "prospect"],
     messages: [
       { direction: "inbound", body: "Hello! I saw your ad on Instagram and wanted to learn more", senderName: "Lisa Park" },
       { direction: "outbound", body: "Welcome Lisa! What product are you interested in?", senderName: "ACME Agent" },
@@ -113,6 +118,7 @@ const DEMO_CONVERSATIONS = [
     contactPhone: "+14155552468",
     contactName: "Robert Martinez",
     status: "open",
+    tags: ["enterprise", "support"],
     messages: [
       { direction: "inbound", body: "We've been having issues with message delivery to German numbers", senderName: "Robert Martinez" },
       { direction: "outbound", body: "I can help with that. Are you using our sovereign DE routing?", senderName: "Admin User" },
@@ -218,6 +224,7 @@ async function seedConversations(): Promise<void> {
         contactPhone: conv.contactPhone,
         contactName: conv.contactName,
         status: conv.status,
+        tags: conv.tags ?? [],
         lastMessageAt: now,
       })
       .returning();
@@ -265,6 +272,8 @@ async function seedBillingDemo(): Promise<void> {
       trialEndsAt: trialEnd,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
+      prepaidCredits: 5000,
+      overageEnabled: false,
     })
     .where(eq(tenantsTable.id, tenant.id));
 
@@ -300,6 +309,64 @@ async function seedBillingDemo(): Promise<void> {
   );
 
   logger.info({ tenantId: tenant.id }, "Billing demo data seeded");
+}
+
+async function seedCampaignCredits(): Promise<void> {
+  const tenants = await db
+    .select({ id: tenantsTable.id, prepaidCredits: tenantsTable.prepaidCredits })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.slug, "acme"))
+    .limit(1);
+
+  if (tenants.length === 0) return;
+  const tenant = tenants[0];
+
+  if ((tenant.prepaidCredits ?? 0) > 0) return;
+
+  await db
+    .update(tenantsTable)
+    .set({ prepaidCredits: 5000, overageEnabled: false })
+    .where(eq(tenantsTable.id, tenant.id));
+
+  logger.info({ tenantId: tenant.id, prepaidCredits: 5000 }, "Campaign prepaid credits seeded");
+}
+
+async function seedConversationTags(): Promise<void> {
+  const tenants = await db
+    .select({ id: tenantsTable.id })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.slug, "acme"))
+    .limit(1);
+
+  if (tenants.length === 0) return;
+  const tenantId = tenants[0].id;
+
+  const tagMap: Record<string, string[]> = {
+    "+14155551234": ["vip", "support"],
+    "+14155555678": ["orders", "support"],
+    "+14155559012": ["resolved"],
+    "+14155553456": ["vip", "sales"],
+    "+14155557890": ["sales", "prospect"],
+    "+14155552468": ["enterprise", "support"],
+  };
+
+  for (const [phone, tags] of Object.entries(tagMap)) {
+    const conv = await db
+      .select({ id: conversationsTable.id, tags: conversationsTable.tags })
+      .from(conversationsTable)
+      .where(and(eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.contactPhone, phone)))
+      .limit(1);
+
+    if (conv.length === 0) continue;
+    if (conv[0].tags && conv[0].tags.length > 0) continue;
+
+    await db
+      .update(conversationsTable)
+      .set({ tags })
+      .where(eq(conversationsTable.id, conv[0].id));
+  }
+
+  logger.info("Conversation tags seeded for ACME");
 }
 
 const DEMO_AUTOMATIONS = [
@@ -432,7 +499,7 @@ async function seedShortcuts(): Promise<void> {
 }
 
 export async function seedDemoData(missingTables: string[]): Promise<void> {
-  const required = ["tiers", "tenants", "departments", "conversations", "messages", "billing_events", "usage_records"];
+  const required = ["tiers", "tenants", "departments", "conversations", "messages", "billing_events", "usage_records", "campaigns", "campaign_messages"];
   const blocked = required.filter((t) => missingTables.includes(t));
   if (blocked.length > 0) {
     logger.warn({ blocked }, "Skipping demo seed — required tables missing");
@@ -450,6 +517,10 @@ export async function seedDemoData(missingTables: string[]): Promise<void> {
     }
     if (!missingTables.includes("message_templates")) {
       await seedShortcuts();
+    }
+    if (!missingTables.includes("campaigns")) {
+      await seedCampaignCredits();
+      await seedConversationTags();
     }
     logger.info("Demo data seed complete");
   } catch (err) {

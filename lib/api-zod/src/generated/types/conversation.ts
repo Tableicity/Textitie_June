@@ -17,6 +17,8 @@ export interface Conversation {
   contactName: string | null;
   status: ConversationStatus;
   /** @nullable */
+  tags?: string[] | null;
+  /** @nullable */
   assignedUserId: number | null;
   /** @nullable */
   assignedAt: Date | null;

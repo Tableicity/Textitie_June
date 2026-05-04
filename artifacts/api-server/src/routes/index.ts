@@ -15,6 +15,7 @@ import agentsRouter from "./agents";
 import billingRouter from "./billing";
 import automationsRouter from "./automations";
 import shortcutsRouter from "./shortcuts";
+import campaignsRouter from "./campaigns";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(agentsRouter);
 router.use(billingRouter);
 router.use(automationsRouter);
 router.use(shortcutsRouter);
+router.use(campaignsRouter);
 
 export default router;
