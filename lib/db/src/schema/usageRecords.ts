@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { tenantsTable } from "./tenants";
 
 export const usageRecordsTable = pgTable("usage_records", {
@@ -16,6 +16,8 @@ export const usageRecordsTable = pgTable("usage_records", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("uq_usage_tenant_period").on(table.tenantId, table.periodStart),
+]);
 
 export type UsageRecord = typeof usageRecordsTable.$inferSelect;

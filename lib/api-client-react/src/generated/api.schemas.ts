@@ -468,6 +468,105 @@ export interface AgentStatusResult {
   status: string;
 }
 
+export interface BillingPlanItem {
+  tierCode: TierCode;
+  name: string;
+  description: string;
+  features: string[];
+  monthlyPriceCents: number;
+  monthlyPriceFormatted: string;
+  includedCredits: number;
+  isUnlimitedCredits: boolean;
+  trialDays: number;
+  /** @nullable */
+  maxAgents?: number | null;
+  /** @nullable */
+  maxPhoneNumbers?: number | null;
+  overageRateCents: number;
+  phoneAddonCents: number;
+}
+
+export type SubscriptionDetailStatus =
+  (typeof SubscriptionDetailStatus)[keyof typeof SubscriptionDetailStatus];
+
+export const SubscriptionDetailStatus = {
+  none: "none",
+  trialing: "trialing",
+  active: "active",
+  past_due: "past_due",
+  canceled: "canceled",
+} as const;
+
+export interface SubscriptionDetail {
+  /** @nullable */
+  subscriptionId?: string | null;
+  /** @nullable */
+  customerId?: string | null;
+  status: SubscriptionDetailStatus;
+  /** @nullable */
+  planTierCode?: string | null;
+  /** @nullable */
+  planName?: string | null;
+  monthlyPriceCents: number;
+  includedCredits: number;
+  /** @nullable */
+  trialEndsAt?: string | null;
+  /** @nullable */
+  currentPeriodStart?: string | null;
+  /** @nullable */
+  currentPeriodEnd?: string | null;
+}
+
+export interface SubscribeInput {
+  tierCode: TierCode;
+}
+
+export interface ChangePlanInput {
+  tierCode: TierCode;
+}
+
+export interface SubscriptionResult {
+  subscriptionId: string;
+  status: string;
+  /** @nullable */
+  trialEndsAt?: string | null;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+}
+
+export interface CancelResult {
+  status: string;
+}
+
+export interface UsageStats {
+  messagesSent: number;
+  creditsUsed: number;
+  creditsIncluded: number;
+  overageCredits: number;
+  overageAmountCents: number;
+  overageRateCents: number;
+  isUnlimited: boolean;
+  /** @nullable */
+  periodStart?: string | null;
+  /** @nullable */
+  periodEnd?: string | null;
+}
+
+export interface BillingEventItem {
+  id: number;
+  tenantId: number;
+  eventType: string;
+  /** @nullable */
+  fromTier?: string | null;
+  /** @nullable */
+  toTier?: string | null;
+  /** @nullable */
+  amountCents?: number | null;
+  /** @nullable */
+  metadata?: string | null;
+  createdAt: string;
+}
+
 export type ListInjectionsParams = {
   /**
    * @minimum 1

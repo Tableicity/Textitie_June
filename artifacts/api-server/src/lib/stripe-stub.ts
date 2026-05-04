@@ -1,5 +1,6 @@
 import { db, tenantsTable, tiersTable, billingEventsTable, usageRecordsTable } from "@workspace/db";
-import { eq, and, lte, gte } from "drizzle-orm";
+import { pool } from "@workspace/db";
+import { eq, and, lte, gte, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 const OVERAGE_RATE_CENTS = 3;
@@ -50,11 +51,6 @@ export async function startSubscription(
 
   const tier = tiers[0];
   const subscriptionId = generateId("sub");
-  const now = new Date();
-  const trialEnd = tier.trialDays > 0
-    ? new Date(now.getTime() + tier.trialDays * 24 * 60 * 60 * 1000)
-    : null;
-  const status = trialEnd ? "trialing" : "active";
   const pStart = periodStart();
   const pEnd = periodEnd();
 
@@ -64,22 +60,43 @@ export async function startSubscription(
     .where(eq(tenantsTable.id, tenantId))
     .limit(1);
 
-  let customerId = tenant[0]?.stripeCustomerId;
+  if (tenant.length === 0) throw new Error("Tenant not found");
+  const t = tenant[0];
+
+  let customerId = t.stripeCustomerId;
   if (!customerId) {
     customerId = await createStubCustomer(tenantId);
   }
 
-  await db
+  const canTrial = !t.trialUsed && tier.trialDays > 0;
+  const now = new Date();
+  const trialEnd = canTrial
+    ? new Date(now.getTime() + tier.trialDays * 24 * 60 * 60 * 1000)
+    : null;
+  const status = trialEnd ? "trialing" : "active";
+
+  const updated = await db
     .update(tenantsTable)
     .set({
       stripeSubscriptionId: subscriptionId,
       subscriptionStatus: status,
       planTierCode: tierCode,
+      trialUsed: canTrial ? true : t.trialUsed,
       trialEndsAt: trialEnd,
       currentPeriodStart: pStart,
       currentPeriodEnd: pEnd,
     })
-    .where(eq(tenantsTable.id, tenantId));
+    .where(
+      and(
+        eq(tenantsTable.id, tenantId),
+        sql`${tenantsTable.subscriptionStatus} IN ('none', 'canceled')`,
+      ),
+    )
+    .returning();
+
+  if (updated.length === 0) {
+    throw new Error("Subscription state changed concurrently. Please retry.");
+  }
 
   await ensureUsageRecord(tenantId, tier.includedCredits);
 
@@ -88,7 +105,7 @@ export async function startSubscription(
     eventType: trialEnd ? "trial_started" : "subscribed",
     toTier: tierCode,
     amountCents: tier.monthlyPriceCents,
-    metadata: JSON.stringify({ subscriptionId, trialDays: tier.trialDays }),
+    metadata: JSON.stringify({ subscriptionId, trialDays: canTrial ? tier.trialDays : 0 }),
   });
 
   logger.info({ tenantId, tierCode, status, subscriptionId }, "Stub subscription created");
@@ -135,13 +152,23 @@ export async function changePlan(
   const pStart = t.currentPeriodStart ?? periodStart();
   const pEnd = t.currentPeriodEnd ?? periodEnd();
 
-  await db
+  const updated = await db
     .update(tenantsTable)
     .set({
       planTierCode: newTierCode,
       subscriptionStatus: "active",
     })
-    .where(eq(tenantsTable.id, tenantId));
+    .where(
+      and(
+        eq(tenantsTable.id, tenantId),
+        sql`${tenantsTable.subscriptionStatus} IN ('active', 'trialing')`,
+      ),
+    )
+    .returning();
+
+  if (updated.length === 0) {
+    throw new Error("Subscription state changed concurrently. Please retry.");
+  }
 
   await db.insert(billingEventsTable).values({
     tenantId,
@@ -170,23 +197,25 @@ export async function changePlan(
 }
 
 export async function cancelSubscription(tenantId: number): Promise<void> {
-  const tenant = await db
-    .select()
-    .from(tenantsTable)
-    .where(eq(tenantsTable.id, tenantId))
-    .limit(1);
-
-  if (tenant.length === 0) throw new Error("Tenant not found");
-
-  const oldTier = tenant[0].planTierCode;
-
-  await db
+  const updated = await db
     .update(tenantsTable)
     .set({
       subscriptionStatus: "canceled",
       stripeSubscriptionId: null,
     })
-    .where(eq(tenantsTable.id, tenantId));
+    .where(
+      and(
+        eq(tenantsTable.id, tenantId),
+        sql`${tenantsTable.subscriptionStatus} IN ('active', 'trialing')`,
+      ),
+    )
+    .returning();
+
+  if (updated.length === 0) {
+    throw new Error("No active subscription to cancel or state changed concurrently.");
+  }
+
+  const oldTier = updated[0].planTierCode;
 
   await db.insert(billingEventsTable).values({
     tenantId,
@@ -204,17 +233,15 @@ async function ensureUsageRecord(tenantId: number, creditsIncluded: number) {
   const pStart = periodStart();
   const pEnd = periodEnd();
 
-  const rows = await db
-    .insert(usageRecordsTable)
-    .values({
-      tenantId,
-      periodStart: pStart,
-      periodEnd: pEnd,
-      creditsIncluded,
-    })
-    .returning();
+  const result = await pool.query(
+    `INSERT INTO usage_records (tenant_id, period_start, period_end, credits_included)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (tenant_id, period_start) DO UPDATE SET credits_included = $4
+     RETURNING *`,
+    [tenantId, pStart, pEnd, creditsIncluded],
+  );
 
-  return rows[0];
+  return result.rows[0];
 }
 
 export async function getCurrentUsageRecord(tenantId: number) {
@@ -260,30 +287,36 @@ export async function recordMessageUsage(tenantId: number): Promise<{
   const includedCredits = tier[0]?.includedCredits ?? 0;
   const isUnlimited = includedCredits === 0 && t.planTierCode === "enterprise";
 
-  let record = await getCurrentUsageRecord(tenantId);
-  if (!record) {
-    record = await ensureUsageRecord(tenantId, includedCredits);
+  await ensureUsageRecord(tenantId, includedCredits);
+
+  const result = await pool.query(
+    `UPDATE usage_records
+     SET messages_sent = messages_sent + 1,
+         credits_used = credits_used + 1,
+         overage_credits = CASE
+           WHEN $2 THEN 0
+           ELSE GREATEST(0, credits_used + 1 - credits_included)
+         END,
+         overage_amount_cents = CASE
+           WHEN $2 THEN 0
+           ELSE GREATEST(0, credits_used + 1 - credits_included) * $3
+         END
+     WHERE tenant_id = $1
+       AND period_start <= NOW()
+       AND period_end >= NOW()
+     RETURNING credits_used, credits_included, overage_credits`,
+    [tenantId, isUnlimited, OVERAGE_RATE_CENTS],
+  );
+
+  if (result.rows.length === 0) {
+    return { creditsUsed: 0, creditsIncluded: 0, overageCredits: 0 };
   }
 
-  const newMessagesSent = record.messagesSent + 1;
-  const newCreditsUsed = record.creditsUsed + 1;
-  const newOverage = isUnlimited ? 0 : Math.max(0, newCreditsUsed - record.creditsIncluded);
-  const overageAmountCents = newOverage * OVERAGE_RATE_CENTS;
-
-  await db
-    .update(usageRecordsTable)
-    .set({
-      messagesSent: newMessagesSent,
-      creditsUsed: newCreditsUsed,
-      overageCredits: newOverage,
-      overageAmountCents: overageAmountCents,
-    })
-    .where(eq(usageRecordsTable.id, record.id));
-
+  const row = result.rows[0];
   return {
-    creditsUsed: newCreditsUsed,
-    creditsIncluded: record.creditsIncluded,
-    overageCredits: newOverage,
+    creditsUsed: row.credits_used,
+    creditsIncluded: row.credits_included,
+    overageCredits: row.overage_credits,
   };
 }
 

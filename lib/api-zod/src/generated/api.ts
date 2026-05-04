@@ -769,3 +769,100 @@ export const AssignPhoneNumberResponse = zod.object({
   routingStrategy: zod.string(),
   createdAt: zod.coerce.date(),
 });
+
+/**
+ * @summary List available subscription plans
+ */
+export const ListBillingPlansResponseItem = zod.object({
+  tierCode: zod.enum(["starter", "growth", "enterprise"]),
+  name: zod.string(),
+  description: zod.string(),
+  features: zod.array(zod.string()),
+  monthlyPriceCents: zod.number(),
+  monthlyPriceFormatted: zod.string(),
+  includedCredits: zod.number(),
+  isUnlimitedCredits: zod.boolean(),
+  trialDays: zod.number(),
+  maxAgents: zod.number().nullish(),
+  maxPhoneNumbers: zod.number().nullish(),
+  overageRateCents: zod.number(),
+  phoneAddonCents: zod.number(),
+});
+export const ListBillingPlansResponse = zod.array(ListBillingPlansResponseItem);
+
+/**
+ * @summary Get current tenant subscription details
+ */
+export const GetSubscriptionResponse = zod.object({
+  subscriptionId: zod.string().nullish(),
+  customerId: zod.string().nullish(),
+  status: zod.enum(["none", "trialing", "active", "past_due", "canceled"]),
+  planTierCode: zod.string().nullish(),
+  planName: zod.string().nullish(),
+  monthlyPriceCents: zod.number(),
+  includedCredits: zod.number(),
+  trialEndsAt: zod.coerce.date().nullish(),
+  currentPeriodStart: zod.coerce.date().nullish(),
+  currentPeriodEnd: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Start a new subscription (with trial if eligible)
+ */
+export const SubscribeBody = zod.object({
+  tierCode: zod.enum(["starter", "growth", "enterprise"]),
+});
+
+/**
+ * @summary Upgrade or downgrade the subscription plan
+ */
+export const ChangePlanBody = zod.object({
+  tierCode: zod.enum(["starter", "growth", "enterprise"]),
+});
+
+export const ChangePlanResponse = zod.object({
+  subscriptionId: zod.string(),
+  status: zod.string(),
+  trialEndsAt: zod.coerce.date().nullish(),
+  currentPeriodStart: zod.coerce.date(),
+  currentPeriodEnd: zod.coerce.date(),
+});
+
+/**
+ * @summary Cancel the current subscription
+ */
+export const CancelSubscriptionResponse = zod.object({
+  status: zod.string(),
+});
+
+/**
+ * @summary Get current period usage stats
+ */
+export const GetBillingUsageResponse = zod.object({
+  messagesSent: zod.number(),
+  creditsUsed: zod.number(),
+  creditsIncluded: zod.number(),
+  overageCredits: zod.number(),
+  overageAmountCents: zod.number(),
+  overageRateCents: zod.number(),
+  isUnlimited: zod.boolean(),
+  periodStart: zod.coerce.date().nullish(),
+  periodEnd: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Get billing event history
+ */
+export const GetBillingHistoryResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  eventType: zod.string(),
+  fromTier: zod.string().nullish(),
+  toTier: zod.string().nullish(),
+  amountCents: zod.number().nullish(),
+  metadata: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const GetBillingHistoryResponse = zod.array(
+  GetBillingHistoryResponseItem,
+);

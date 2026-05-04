@@ -15,6 +15,7 @@ export const tenantsTable = pgTable("tenants", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").notNull().default("none"),
   planTierCode: text("plan_tier_code"),
+  trialUsed: boolean("trial_used").notNull().default(false),
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
   currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),

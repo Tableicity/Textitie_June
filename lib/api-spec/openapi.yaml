@@ -32,6 +32,8 @@ tags:
     description: Phone number provisioning
   - name: agents
     description: Agent management and status
+  - name: billing
+    description: Subscription billing and usage
 paths:
   /healthz:
     get:
@@ -941,6 +943,131 @@ paths:
               schema:
                 $ref: "#/components/schemas/DepartmentItem"
 
+  /billing/plans:
+    get:
+      operationId: listBillingPlans
+      tags: [billing]
+      summary: List available subscription plans
+      responses:
+        "200":
+          description: List of plans with pricing
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BillingPlanItem"
+
+  /billing/subscription:
+    get:
+      operationId: getSubscription
+      tags: [billing]
+      summary: Get current tenant subscription details
+      responses:
+        "200":
+          description: Subscription details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionDetail"
+
+  /billing/subscribe:
+    post:
+      operationId: subscribe
+      tags: [billing]
+      summary: Start a new subscription (with trial if eligible)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscribeInput"
+      responses:
+        "201":
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionResult"
+        "409":
+          description: Already subscribed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /billing/change-plan:
+    post:
+      operationId: changePlan
+      tags: [billing]
+      summary: Upgrade or downgrade the subscription plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePlanInput"
+      responses:
+        "200":
+          description: Plan changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionResult"
+        "409":
+          description: Already on this plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /billing/cancel:
+    post:
+      operationId: cancelSubscription
+      tags: [billing]
+      summary: Cancel the current subscription
+      responses:
+        "200":
+          description: Subscription canceled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelResult"
+        "409":
+          description: No active subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /billing/usage:
+    get:
+      operationId: getBillingUsage
+      tags: [billing]
+      summary: Get current period usage stats
+      responses:
+        "200":
+          description: Usage stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageStats"
+
+  /billing/history:
+    get:
+      operationId: getBillingHistory
+      tags: [billing]
+      summary: Get billing event history
+      responses:
+        "200":
+          description: List of billing events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BillingEventItem"
+
 components:
   schemas:
     HealthStatus:
@@ -1660,3 +1787,172 @@ components:
         status:
           type: string
       required: [id, status]
+
+    BillingPlanItem:
+      type: object
+      properties:
+        tierCode:
+          $ref: "#/components/schemas/TierCode"
+        name:
+          type: string
+        description:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        monthlyPriceCents:
+          type: integer
+        monthlyPriceFormatted:
+          type: string
+        includedCredits:
+          type: integer
+        isUnlimitedCredits:
+          type: boolean
+        trialDays:
+          type: integer
+        maxAgents:
+          type: ["integer", "null"]
+        maxPhoneNumbers:
+          type: ["integer", "null"]
+        overageRateCents:
+          type: integer
+        phoneAddonCents:
+          type: integer
+      required:
+        - tierCode
+        - name
+        - description
+        - features
+        - monthlyPriceCents
+        - monthlyPriceFormatted
+        - includedCredits
+        - isUnlimitedCredits
+        - trialDays
+        - overageRateCents
+        - phoneAddonCents
+
+    SubscriptionDetail:
+      type: object
+      properties:
+        subscriptionId:
+          type: ["string", "null"]
+        customerId:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [none, trialing, active, past_due, canceled]
+        planTierCode:
+          type: ["string", "null"]
+        planName:
+          type: ["string", "null"]
+        monthlyPriceCents:
+          type: integer
+        includedCredits:
+          type: integer
+        trialEndsAt:
+          type: ["string", "null"]
+          format: date-time
+        currentPeriodStart:
+          type: ["string", "null"]
+          format: date-time
+        currentPeriodEnd:
+          type: ["string", "null"]
+          format: date-time
+      required:
+        - status
+        - monthlyPriceCents
+        - includedCredits
+
+    SubscribeInput:
+      type: object
+      properties:
+        tierCode:
+          $ref: "#/components/schemas/TierCode"
+      required: [tierCode]
+
+    ChangePlanInput:
+      type: object
+      properties:
+        tierCode:
+          $ref: "#/components/schemas/TierCode"
+      required: [tierCode]
+
+    SubscriptionResult:
+      type: object
+      properties:
+        subscriptionId:
+          type: string
+        status:
+          type: string
+        trialEndsAt:
+          type: ["string", "null"]
+          format: date-time
+        currentPeriodStart:
+          type: string
+          format: date-time
+        currentPeriodEnd:
+          type: string
+          format: date-time
+      required: [subscriptionId, status, currentPeriodStart, currentPeriodEnd]
+
+    CancelResult:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    UsageStats:
+      type: object
+      properties:
+        messagesSent:
+          type: integer
+        creditsUsed:
+          type: integer
+        creditsIncluded:
+          type: integer
+        overageCredits:
+          type: integer
+        overageAmountCents:
+          type: integer
+        overageRateCents:
+          type: integer
+        isUnlimited:
+          type: boolean
+        periodStart:
+          type: ["string", "null"]
+          format: date-time
+        periodEnd:
+          type: ["string", "null"]
+          format: date-time
+      required:
+        - messagesSent
+        - creditsUsed
+        - creditsIncluded
+        - overageCredits
+        - overageAmountCents
+        - overageRateCents
+        - isUnlimited
+
+    BillingEventItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        eventType:
+          type: string
+        fromTier:
+          type: ["string", "null"]
+        toTier:
+          type: ["string", "null"]
+        amountCents:
+          type: ["integer", "null"]
+        metadata:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, tenantId, eventType, createdAt]

@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import Inbox from "@/pages/Inbox";
 import Settings from "@/pages/Settings";
+import Billing from "@/pages/Billing";
 import AppShell from "@/components/AppShell";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ function Router() {
           <Switch>
             <Route path="/" component={Inbox} />
             <Route path="/settings" component={Settings} />
+            <Route path="/billing" component={Billing} />
             <Route component={NotFound} />
           </Switch>
         </AppShell>
