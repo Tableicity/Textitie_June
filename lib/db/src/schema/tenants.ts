@@ -21,6 +21,14 @@ export const tenantsTable = pgTable("tenants", {
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   prepaidCredits: integer("prepaid_credits").notNull().default(0),
   overageEnabled: boolean("overage_enabled").notNull().default(false),
+  quietHoursStart: integer("quiet_hours_start"),
+  quietHoursEnd: integer("quiet_hours_end"),
+  quietHoursTz: text("quiet_hours_tz").notNull().default("America/New_York"),
+  frequencyCapPerDay: integer("frequency_cap_per_day").notNull().default(0),
+  requireDoubleOptIn: boolean("require_double_opt_in").notNull().default(false),
+  hipaaEnabled: boolean("hipaa_enabled").notNull().default(false),
+  baaAcknowledgedAt: timestamp("baa_acknowledged_at", { withTimezone: true }),
+  baaAcknowledgedBy: integer("baa_acknowledged_by"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

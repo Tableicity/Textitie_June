@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean } from "drizzle-orm/pg-core";
 
 export const tiersTable = pgTable("tiers", {
   id: serial("id").primaryKey(),
@@ -11,6 +11,7 @@ export const tiersTable = pgTable("tiers", {
   trialDays: integer("trial_days").notNull().default(14),
   maxAgents: integer("max_agents").notNull().default(1),
   maxPhoneNumbers: integer("max_phone_numbers").notNull().default(1),
+  hipaaEligible: boolean("hipaa_eligible").notNull().default(false),
 });
 
 export type Tier = typeof tiersTable.$inferSelect;

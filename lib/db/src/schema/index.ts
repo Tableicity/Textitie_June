@@ -16,3 +16,7 @@ export * from "./campaigns";
 export * from "./dispositions";
 export * from "./contacts";
 export * from "./reminders";
+export * from "./auditLogs";
+export * from "./optIns";
+export * from "./integrations";
+export * from "./crmSyncQueue";
