@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { checkSchema } from "./lib/schemaCheck";
 import { seedSuperuser } from "./lib/seedSuperuser";
 import { seedTenantUsers } from "./lib/seedTenantUsers";
+import { seedDemoData } from "./lib/seedData";
 
 const rawPort = process.env["PORT"];
 
@@ -25,8 +26,9 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  checkSchema().then((missing) => {
-    seedSuperuser(missing);
-    seedTenantUsers(missing);
+  checkSchema().then(async (missing) => {
+    await seedSuperuser(missing);
+    await seedTenantUsers(missing);
+    await seedDemoData(missing);
   });
 });

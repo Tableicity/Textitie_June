@@ -47,6 +47,18 @@ No specific user preferences were provided in the original document.
 - **Tier Pricing**: Starter $29/mo (1,000 credits, 3 agents, 1 phone), Growth $79/mo (5,000 credits, 10 agents, 5 phones), Enterprise $199/mo (unlimited credits/agents/phones). Overage: $0.03/credit. Phone add-on: $5/mo.
 - **Billing Dashboard UI** (`artifacts/user-app/src/pages/Billing.tsx`): Current plan card with status badge + trial countdown, usage meter with progress bar, plan comparison cards with upgrade/downgrade, billing history timeline, confirmation dialogs, toast notifications for success/error.
 
+### Auto-Seed Strategy
+- **Location**: `artifacts/api-server/src/lib/seedData.ts`, called from `index.ts` on every startup
+- **Idempotent**: All seed operations check for existing data before inserting — safe to run repeatedly
+- **What it seeds**:
+  - Tier pricing (Starter/Growth/Enterprise with monthly prices, credit limits, trial days, agent/phone caps)
+  - Demo tenants (ACME Corp, Orbital Logistics, Helvetia Privatbank) if missing
+  - Departments for ACME (Customer Support, Sales, Marketing) if missing
+  - 6 demo conversations with realistic message threads (account help, order tracking, subscription upgrade, sales inquiry, German routing) if missing
+  - Billing demo: puts ACME on a Starter free trial with a "Trial Started" billing event and usage record reflecting actual outbound message count
+- **Production behavior**: On first publish, the seed ensures tiers have pricing and ACME has demo data to interact with. Existing data is never overwritten.
+- **Future vision**: This seed provides a testable sandbox. Next phase will add user sign-on with seeded demo data per org and a "+Create Organization" button.
+
 ## External Dependencies
 
 - **Twilio**: For direct message sending, inbound routing, and 10DLC compliance monitoring (Trust Hub APIs).
