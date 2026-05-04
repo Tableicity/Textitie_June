@@ -13,13 +13,19 @@ import {
   useUpdateAgent,
   useDeleteAgent,
   useTenantMe,
+  useListDispositions,
+  useCreateDisposition,
+  useUpdateDisposition,
+  useArchiveDisposition,
   getListDepartmentsQueryKey,
   getListPhoneNumbersQueryKey,
   getListAgentsQueryKey,
   getTenantMeQueryKey,
+  getListDispositionsQueryKey,
   type DepartmentItem,
   type AvailableNumberItem,
   type AgentItem,
+  type Disposition,
 } from "@workspace/api-client-react";
 import { getTenantToken } from "@/lib/auth";
 import {
@@ -37,6 +43,7 @@ import {
   UserPlus,
   Mail,
   CheckCircle2,
+  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +87,10 @@ export default function Settings() {
                 <Users className="w-4 h-4" />
                 Team
               </TabsTrigger>
+              <TabsTrigger value="dispositions" className="flex items-center gap-2" data-testid="tab-dispositions">
+                <Tag className="w-4 h-4" />
+                Dispositions
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="departments">
@@ -92,6 +103,10 @@ export default function Settings() {
 
             <TabsContent value="team">
               <TeamSection />
+            </TabsContent>
+
+            <TabsContent value="dispositions">
+              <DispositionsSection />
             </TabsContent>
           </Tabs>
         </div>
@@ -1111,6 +1126,243 @@ function AgentCard({ agent, isAdmin }: { agent: AgentItem; isAdmin: boolean }) {
               Delete
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+const DEFAULT_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
+
+function DispositionsSection() {
+  const queryClient = useQueryClient();
+  const { data: dispositions, isLoading } = useListDispositions({
+    query: { queryKey: getListDispositionsQueryKey() },
+  });
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<Disposition | null>(null);
+  const [draftLabel, setDraftLabel] = useState("");
+  const [draftColor, setDraftColor] = useState(DEFAULT_COLORS[0]);
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: getListDispositionsQueryKey() });
+  };
+
+  const createMutation = useCreateDisposition({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        setCreating(false);
+        setDraftLabel("");
+        setDraftColor(DEFAULT_COLORS[0]);
+      },
+    },
+  });
+
+  const updateMutation = useUpdateDisposition({
+    mutation: {
+      onSuccess: () => {
+        invalidate();
+        setEditing(null);
+      },
+    },
+  });
+
+  const archiveMutation = useArchiveDisposition({ mutation: { onSuccess: invalidate } });
+
+  const startEdit = (d: Disposition) => {
+    setEditing(d);
+    setDraftLabel(d.label);
+    setDraftColor(d.color || DEFAULT_COLORS[0]);
+  };
+
+  const active = dispositions?.filter((d) => !d.archived) ?? [];
+  const archived = dispositions?.filter((d) => d.archived) ?? [];
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <Tag className="w-5 h-5" />
+            Dispositions
+          </CardTitle>
+          <CardDescription>
+            Resolution categories agents pick when closing a conversation.
+          </CardDescription>
+        </div>
+        <Button
+          className="bg-blue-600 hover:bg-blue-700"
+          onClick={() => {
+            setDraftLabel("");
+            setDraftColor(DEFAULT_COLORS[0]);
+            setCreating(true);
+          }}
+          data-testid="button-new-disposition"
+        >
+          <Plus className="w-4 h-4 mr-2" /> New disposition
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : active.length === 0 ? (
+          <div className="text-center py-12 text-slate-400 text-sm">
+            No dispositions yet. Add categories like "Resolved", "Spam", or "Sales lead" to track outcomes.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {active.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between p-3 border border-slate-200 rounded-lg bg-white"
+                data-testid={`disposition-row-${d.id}`}
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className="w-4 h-4 rounded-full border border-slate-200"
+                    style={{ backgroundColor: d.color }}
+                  />
+                  <span className="font-medium text-slate-900">{d.label}</span>
+                </div>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => startEdit(d)}>
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:bg-red-50"
+                    onClick={() => archiveMutation.mutate({ id: d.id })}
+                    disabled={archiveMutation.isPending}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {archived.length > 0 && (
+          <div className="mt-6 pt-6 border-t border-slate-200">
+            <Label className="text-xs uppercase tracking-wider text-slate-400 mb-2 block">
+              Archived
+            </Label>
+            <div className="space-y-1">
+              {archived.map((d) => (
+                <div
+                  key={d.id}
+                  className="flex items-center justify-between px-3 py-2 text-xs text-slate-400"
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-3 h-3 rounded-full opacity-50"
+                      style={{ backgroundColor: d.color }}
+                    />
+                    <span className="line-through">{d.label}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={() =>
+                      updateMutation.mutate({ id: d.id, data: { archived: false } })
+                    }
+                  >
+                    Restore
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog
+        open={creating || !!editing}
+        onOpenChange={(o) => {
+          if (!o) {
+            setCreating(false);
+            setEditing(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit disposition" : "New disposition"}</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!draftLabel.trim()) return;
+              if (editing) {
+                updateMutation.mutate({
+                  id: editing.id,
+                  data: { label: draftLabel.trim(), color: draftColor },
+                });
+              } else {
+                createMutation.mutate({
+                  data: { label: draftLabel.trim(), color: draftColor },
+                });
+              }
+            }}
+            className="space-y-4 py-2"
+          >
+            <div>
+              <Label className="mb-1.5 block">Label</Label>
+              <Input
+                value={draftLabel}
+                onChange={(e) => setDraftLabel(e.target.value)}
+                placeholder="Resolved, Spam, Sales lead..."
+                required
+                maxLength={80}
+                data-testid="input-disposition-label"
+              />
+            </div>
+            <div>
+              <Label className="mb-1.5 block">Color</Label>
+              <div className="flex gap-2 flex-wrap">
+                {DEFAULT_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setDraftColor(c)}
+                    className={`w-8 h-8 rounded-full border-2 transition ${
+                      draftColor === c ? "border-slate-900 scale-110" : "border-slate-200"
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCreating(false);
+                  setEditing(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-blue-600 hover:bg-blue-700"
+                disabled={createMutation.isPending || updateMutation.isPending || !draftLabel.trim()}
+                data-testid="button-save-disposition"
+              >
+                {(createMutation.isPending || updateMutation.isPending) && (
+                  <Loader2 className="w-3 h-3 animate-spin mr-2" />
+                )}
+                {editing ? "Save" : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </Card>

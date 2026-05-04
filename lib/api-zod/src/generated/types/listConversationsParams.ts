@@ -5,10 +5,22 @@
  * SAMA Control Plane API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListConversationsStatus } from "./listConversationsStatus";
 
 export type ListConversationsParams = {
   /**
    * Filter by department ID. Pass 0 for unassigned conversations.
    */
   departmentId?: number;
+  /**
+   * Search by contact name, phone, or message body
+   */
+  q?: string;
+  status?: ListConversationsStatus;
+  /**
+   * Filter by assigned agent. Pass 0 for unassigned.
+   */
+  assignedUserId?: number;
+  from?: Date;
+  to?: Date;
 };

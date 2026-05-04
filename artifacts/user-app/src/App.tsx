@@ -6,6 +6,7 @@ import NotFound from "@/pages/not-found";
 
 import Login from "@/pages/Login";
 import Inbox from "@/pages/Inbox";
+import Contacts from "@/pages/Contacts";
 import Settings from "@/pages/Settings";
 import Billing from "@/pages/Billing";
 import Automations from "@/pages/Automations";
@@ -23,6 +24,7 @@ function Router() {
         <AppShell>
           <Switch>
             <Route path="/" component={Inbox} />
+            <Route path="/contacts" component={Contacts} />
             <Route path="/settings" component={Settings} />
             <Route path="/billing" component={Billing} />
             <Route path="/automations" component={Automations} />

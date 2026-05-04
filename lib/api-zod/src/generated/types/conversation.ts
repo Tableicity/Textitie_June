@@ -12,10 +12,16 @@ export interface Conversation {
   tenantId: number;
   /** @nullable */
   departmentId: number | null;
+  /** @nullable */
+  contactId?: number | null;
   contactPhone: string;
   /** @nullable */
   contactName: string | null;
   status: ConversationStatus;
+  /** @nullable */
+  dispositionId?: number | null;
+  /** @nullable */
+  resolutionNote?: string | null;
   /** @nullable */
   tags?: string[] | null;
   /** @nullable */

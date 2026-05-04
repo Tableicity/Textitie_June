@@ -12,4 +12,5 @@ export type MessageDirection =
 export const MessageDirection = {
   inbound: "inbound",
   outbound: "outbound",
+  internal: "internal",
 } as const;

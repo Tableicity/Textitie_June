@@ -44,6 +44,12 @@ tags:
     description: Bulk campaign messaging and analytics
   - name: analytics
     description: Tenant inbox analytics and KPI reporting
+  - name: dispositions
+    description: Resolution categories for closed conversations
+  - name: contacts
+    description: Contact records, tags, and history
+  - name: reminders
+    description: Per-conversation reminders for agents
 paths:
   /healthz:
     get:
@@ -364,6 +370,36 @@ paths:
           schema:
             type: integer
           description: Filter by department ID. Pass 0 for unassigned conversations.
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Search by contact name, phone, or message body
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, closed]
+        - name: assignedUserId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filter by assigned agent. Pass 0 for unassigned.
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
       responses:
         "200":
           description: List of conversations
@@ -394,6 +430,41 @@ paths:
                 $ref: "#/components/schemas/Conversation"
         "404":
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateConversation
+      tags: [conversations]
+      summary: Update conversation status, disposition, or resolution note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConversationInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Conversation not found
           content:
             application/json:
               schema:
@@ -1702,6 +1773,394 @@ paths:
               schema:
                 type: string
 
+  /conversations/{id}/whisper:
+    post:
+      operationId: postWhisper
+      tags: [conversations]
+      summary: Post an internal note (whisper) on a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageInput"
+      responses:
+        "201":
+          description: Whisper created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /dispositions:
+    get:
+      operationId: listDispositions
+      tags: [dispositions]
+      summary: List dispositions
+      responses:
+        "200":
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Disposition"
+    post:
+      operationId: createDisposition
+      tags: [dispositions]
+      summary: Create a disposition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDispositionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Disposition"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Duplicate label
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /dispositions/{id}:
+    patch:
+      operationId: updateDisposition
+      tags: [dispositions]
+      summary: Update a disposition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDispositionInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Disposition"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: archiveDisposition
+      tags: [dispositions]
+      summary: Archive a disposition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /contacts:
+    get:
+      operationId: listContacts
+      tags: [contacts]
+      summary: List/search contacts
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: tag
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Contact"
+    post:
+      operationId: createContact
+      tags: [contacts]
+      summary: Create a contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContactInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Duplicate phone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /contacts/tags:
+    get:
+      operationId: listContactTags
+      tags: [contacts]
+      summary: Distinct contact tags for the tenant
+      responses:
+        "200":
+          description: List of tag strings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /contacts/{id}:
+    get:
+      operationId: getContact
+      tags: [contacts]
+      summary: Get a contact with conversation history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Contact detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactWithHistory"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateContact
+      tags: [contacts]
+      summary: Update a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateContactInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteContact
+      tags: [contacts]
+      summary: Delete a contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /reminders:
+    get:
+      operationId: listReminders
+      tags: [reminders]
+      summary: List reminders for the current agent
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, due, pending]
+      responses:
+        "200":
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Reminder"
+    post:
+      operationId: createReminder
+      tags: [reminders]
+      summary: Create a reminder on a conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReminderInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reminder"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /reminders/{id}/dismiss:
+    patch:
+      operationId: dismissReminder
+      tags: [reminders]
+      summary: Dismiss a reminder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dismissed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reminder"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /reminders/{id}:
+    delete:
+      operationId: deleteReminder
+      tags: [reminders]
+      summary: Delete a reminder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -2049,12 +2508,18 @@ components:
           type: integer
         departmentId:
           type: ["integer", "null"]
+        contactId:
+          type: ["integer", "null"]
         contactPhone:
           type: string
         contactName:
           type: ["string", "null"]
         status:
           $ref: "#/components/schemas/ConversationStatus"
+        dispositionId:
+          type: ["integer", "null"]
+        resolutionNote:
+          type: ["string", "null"]
         tags:
           type: ["array", "null"]
           items:
@@ -2084,7 +2549,7 @@ components:
 
     MessageDirection:
       type: string
-      enum: [inbound, outbound]
+      enum: [inbound, outbound, internal]
 
     Message:
       type: object
@@ -3038,3 +3503,133 @@ components:
         avgResolutionSeconds: { type: ["number", "null"] }
         resolvedCount: { type: integer }
       required: [departmentName, conversations, resolvedCount]
+
+    UpdateConversationInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [open, closed]
+        dispositionId:
+          type: ["integer", "null"]
+        resolutionNote:
+          type: ["string", "null"]
+
+    Disposition:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        label: { type: string }
+        color: { type: string }
+        sortOrder: { type: integer }
+        archived: { type: boolean }
+        createdAt: { type: string, format: date-time }
+      required: [id, tenantId, label, color, sortOrder, archived, createdAt]
+
+    CreateDispositionInput:
+      type: object
+      properties:
+        label: { type: string, minLength: 1, maxLength: 80 }
+        color: { type: string }
+        sortOrder: { type: integer }
+      required: [label]
+
+    UpdateDispositionInput:
+      type: object
+      properties:
+        label: { type: string }
+        color: { type: string }
+        sortOrder: { type: integer }
+        archived: { type: boolean }
+
+    Contact:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        phone: { type: string }
+        name: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        tags:
+          type: ["array", "null"]
+          items: { type: string }
+        firstSeenAt: { type: string, format: date-time }
+        lastInteractionAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, tenantId, phone, name, email, notes, firstSeenAt, lastInteractionAt, createdAt, updatedAt]
+
+    ContactConversationSummary:
+      type: object
+      properties:
+        id: { type: integer }
+        status: { type: string }
+        contactPhone: { type: string }
+        lastMessageAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, status, contactPhone, lastMessageAt, createdAt]
+
+    ContactWithHistory:
+      allOf:
+        - $ref: "#/components/schemas/Contact"
+        - type: object
+          properties:
+            conversations:
+              type: array
+              items:
+                $ref: "#/components/schemas/ContactConversationSummary"
+          required: [conversations]
+
+    CreateContactInput:
+      type: object
+      properties:
+        phone: { type: string, minLength: 1 }
+        name: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        tags:
+          type: ["array", "null"]
+          items: { type: string }
+      required: [phone]
+
+    UpdateContactInput:
+      type: object
+      properties:
+        name: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        tags:
+          type: ["array", "null"]
+          items: { type: string }
+
+    Reminder:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        conversationId: { type: integer }
+        userId: { type: integer }
+        remindAt: { type: string, format: date-time }
+        note: { type: ["string", "null"] }
+        firedAt: { type: ["string", "null"], format: date-time }
+        dismissedAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        contactPhone: { type: ["string", "null"] }
+        contactName: { type: ["string", "null"] }
+      required: [id, tenantId, conversationId, userId, remindAt, note, firedAt, dismissedAt, createdAt]
+
+    CreateReminderInput:
+      type: object
+      properties:
+        conversationId: { type: integer }
+        remindAt: { type: string, format: date-time }
+        note: { type: ["string", "null"] }
+      required: [conversationId, remindAt]
+
+    SuccessResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+      required: [success]

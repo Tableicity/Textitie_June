@@ -13,3 +13,6 @@ export * from "./automationRules";
 export * from "./messageTemplates";
 export * from "./optOuts";
 export * from "./campaigns";
+export * from "./dispositions";
+export * from "./contacts";
+export * from "./reminders";

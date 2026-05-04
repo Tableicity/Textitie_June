@@ -355,15 +355,29 @@ export const ListConversationsQueryParams = zod.object({
     .number()
     .optional()
     .describe("Filter by department ID. Pass 0 for unassigned conversations."),
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe("Search by contact name, phone, or message body"),
+  status: zod.enum(["open", "closed"]).optional(),
+  assignedUserId: zod.coerce
+    .number()
+    .optional()
+    .describe("Filter by assigned agent. Pass 0 for unassigned."),
+  from: zod.date().optional(),
+  to: zod.date().optional(),
 });
 
 export const ListConversationsResponseItem = zod.object({
   id: zod.number(),
   tenantId: zod.number(),
   departmentId: zod.number().nullable(),
+  contactId: zod.number().nullish(),
   contactPhone: zod.string(),
   contactName: zod.string().nullable(),
   status: zod.enum(["open", "closed", "snoozed"]),
+  dispositionId: zod.number().nullish(),
+  resolutionNote: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
   assignedUserId: zod.number().nullable(),
   assignedAt: zod.coerce.date().nullable(),
@@ -385,9 +399,42 @@ export const GetConversationResponse = zod.object({
   id: zod.number(),
   tenantId: zod.number(),
   departmentId: zod.number().nullable(),
+  contactId: zod.number().nullish(),
   contactPhone: zod.string(),
   contactName: zod.string().nullable(),
   status: zod.enum(["open", "closed", "snoozed"]),
+  dispositionId: zod.number().nullish(),
+  resolutionNote: zod.string().nullish(),
+  tags: zod.array(zod.string()).nullish(),
+  assignedUserId: zod.number().nullable(),
+  assignedAt: zod.coerce.date().nullable(),
+  lastMessageAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update conversation status, disposition, or resolution note
+ */
+export const UpdateConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateConversationBody = zod.object({
+  status: zod.enum(["open", "closed"]).optional(),
+  dispositionId: zod.number().nullish(),
+  resolutionNote: zod.string().nullish(),
+});
+
+export const UpdateConversationResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  departmentId: zod.number().nullable(),
+  contactId: zod.number().nullish(),
+  contactPhone: zod.string(),
+  contactName: zod.string().nullable(),
+  status: zod.enum(["open", "closed", "snoozed"]),
+  dispositionId: zod.number().nullish(),
+  resolutionNote: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
   assignedUserId: zod.number().nullable(),
   assignedAt: zod.coerce.date().nullable(),
@@ -405,7 +452,7 @@ export const ListMessagesParams = zod.object({
 export const ListMessagesResponseItem = zod.object({
   id: zod.number(),
   conversationId: zod.number(),
-  direction: zod.enum(["inbound", "outbound"]),
+  direction: zod.enum(["inbound", "outbound", "internal"]),
   body: zod.string(),
   senderName: zod.string().nullable(),
   read: zod.boolean(),
@@ -1401,4 +1448,254 @@ export const GetAnalyticsDepartmentsResponse = zod.array(
 export const ExportAnalyticsConversationsQueryParams = zod.object({
   from: zod.date().optional(),
   to: zod.date().optional(),
+});
+
+/**
+ * @summary Post an internal note (whisper) on a conversation
+ */
+export const PostWhisperParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const PostWhisperBody = zod.object({
+  body: zod.string().min(1),
+});
+
+/**
+ * @summary List dispositions
+ */
+export const ListDispositionsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  label: zod.string(),
+  color: zod.string(),
+  sortOrder: zod.number(),
+  archived: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const ListDispositionsResponse = zod.array(ListDispositionsResponseItem);
+
+/**
+ * @summary Create a disposition
+ */
+export const createDispositionBodyLabelMax = 80;
+
+export const CreateDispositionBody = zod.object({
+  label: zod.string().min(1).max(createDispositionBodyLabelMax),
+  color: zod.string().optional(),
+  sortOrder: zod.number().optional(),
+});
+
+/**
+ * @summary Update a disposition
+ */
+export const UpdateDispositionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateDispositionBody = zod.object({
+  label: zod.string().optional(),
+  color: zod.string().optional(),
+  sortOrder: zod.number().optional(),
+  archived: zod.boolean().optional(),
+});
+
+export const UpdateDispositionResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  label: zod.string(),
+  color: zod.string(),
+  sortOrder: zod.number(),
+  archived: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Archive a disposition
+ */
+export const ArchiveDispositionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ArchiveDispositionResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List/search contacts
+ */
+export const ListContactsQueryParams = zod.object({
+  q: zod.coerce.string().optional(),
+  tag: zod.coerce.string().optional(),
+  limit: zod.coerce.number().optional(),
+});
+
+export const ListContactsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  phone: zod.string(),
+  name: zod.string().nullable(),
+  email: zod.string().nullable(),
+  notes: zod.string().nullable(),
+  tags: zod.array(zod.string()).nullish(),
+  firstSeenAt: zod.coerce.date(),
+  lastInteractionAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListContactsResponse = zod.array(ListContactsResponseItem);
+
+/**
+ * @summary Create a contact
+ */
+
+export const CreateContactBody = zod.object({
+  phone: zod.string().min(1),
+  name: zod.string().nullish(),
+  email: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  tags: zod.array(zod.string()).nullish(),
+});
+
+/**
+ * @summary Distinct contact tags for the tenant
+ */
+export const ListContactTagsResponseItem = zod.string();
+export const ListContactTagsResponse = zod.array(ListContactTagsResponseItem);
+
+/**
+ * @summary Get a contact with conversation history
+ */
+export const GetContactParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetContactResponse = zod
+  .object({
+    id: zod.number(),
+    tenantId: zod.number(),
+    phone: zod.string(),
+    name: zod.string().nullable(),
+    email: zod.string().nullable(),
+    notes: zod.string().nullable(),
+    tags: zod.array(zod.string()).nullish(),
+    firstSeenAt: zod.coerce.date(),
+    lastInteractionAt: zod.coerce.date().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      conversations: zod.array(
+        zod.object({
+          id: zod.number(),
+          status: zod.string(),
+          contactPhone: zod.string(),
+          lastMessageAt: zod.coerce.date().nullable(),
+          createdAt: zod.coerce.date(),
+        }),
+      ),
+    }),
+  );
+
+/**
+ * @summary Update a contact
+ */
+export const UpdateContactParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateContactBody = zod.object({
+  name: zod.string().nullish(),
+  email: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  tags: zod.array(zod.string()).nullish(),
+});
+
+export const UpdateContactResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  phone: zod.string(),
+  name: zod.string().nullable(),
+  email: zod.string().nullable(),
+  notes: zod.string().nullable(),
+  tags: zod.array(zod.string()).nullish(),
+  firstSeenAt: zod.coerce.date(),
+  lastInteractionAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a contact
+ */
+export const DeleteContactParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteContactResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List reminders for the current agent
+ */
+export const ListRemindersQueryParams = zod.object({
+  status: zod.enum(["all", "due", "pending"]).optional(),
+});
+
+export const ListRemindersResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  conversationId: zod.number(),
+  userId: zod.number(),
+  remindAt: zod.coerce.date(),
+  note: zod.string().nullable(),
+  firedAt: zod.coerce.date().nullable(),
+  dismissedAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+  contactPhone: zod.string().nullish(),
+  contactName: zod.string().nullish(),
+});
+export const ListRemindersResponse = zod.array(ListRemindersResponseItem);
+
+/**
+ * @summary Create a reminder on a conversation
+ */
+export const CreateReminderBody = zod.object({
+  conversationId: zod.number(),
+  remindAt: zod.coerce.date(),
+  note: zod.string().nullish(),
+});
+
+/**
+ * @summary Dismiss a reminder
+ */
+export const DismissReminderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DismissReminderResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  conversationId: zod.number(),
+  userId: zod.number(),
+  remindAt: zod.coerce.date(),
+  note: zod.string().nullable(),
+  firedAt: zod.coerce.date().nullable(),
+  dismissedAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+  contactPhone: zod.string().nullish(),
+  contactName: zod.string().nullish(),
+});
+
+/**
+ * @summary Delete a reminder
+ */
+export const DeleteReminderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteReminderResponse = zod.object({
+  success: zod.boolean(),
 });

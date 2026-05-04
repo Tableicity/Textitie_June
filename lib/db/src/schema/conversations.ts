@@ -12,9 +12,12 @@ export const conversationsTable = pgTable(
       .references(() => tenantsTable.id),
     departmentId: integer("department_id")
       .references(() => departmentsTable.id, { onDelete: "set null" }),
+    contactId: integer("contact_id"),
     contactPhone: text("contact_phone").notNull(),
     contactName: text("contact_name"),
     status: text("status").notNull().default("open"),
+    dispositionId: integer("disposition_id"),
+    resolutionNote: text("resolution_note"),
     tags: text("tags").array(),
     assignedUserId: integer("assigned_user_id")
       .references(() => tenantUsersTable.id, { onDelete: "set null" }),

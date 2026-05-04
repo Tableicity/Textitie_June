@@ -253,10 +253,16 @@ export interface Conversation {
   tenantId: number;
   /** @nullable */
   departmentId: number | null;
+  /** @nullable */
+  contactId?: number | null;
   contactPhone: string;
   /** @nullable */
   contactName: string | null;
   status: ConversationStatus;
+  /** @nullable */
+  dispositionId?: number | null;
+  /** @nullable */
+  resolutionNote?: string | null;
   /** @nullable */
   tags?: string[] | null;
   /** @nullable */
@@ -274,6 +280,7 @@ export type MessageDirection =
 export const MessageDirection = {
   inbound: "inbound",
   outbound: "outbound",
+  internal: "internal",
 } as const;
 
 export interface Message {
@@ -890,6 +897,135 @@ export interface AnalyticsDepartmentKpi {
   resolvedCount: number;
 }
 
+export type UpdateConversationInputStatus =
+  (typeof UpdateConversationInputStatus)[keyof typeof UpdateConversationInputStatus];
+
+export const UpdateConversationInputStatus = {
+  open: "open",
+  closed: "closed",
+} as const;
+
+export interface UpdateConversationInput {
+  status?: UpdateConversationInputStatus;
+  /** @nullable */
+  dispositionId?: number | null;
+  /** @nullable */
+  resolutionNote?: string | null;
+}
+
+export interface Disposition {
+  id: number;
+  tenantId: number;
+  label: string;
+  color: string;
+  sortOrder: number;
+  archived: boolean;
+  createdAt: string;
+}
+
+export interface CreateDispositionInput {
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  label: string;
+  color?: string;
+  sortOrder?: number;
+}
+
+export interface UpdateDispositionInput {
+  label?: string;
+  color?: string;
+  sortOrder?: number;
+  archived?: boolean;
+}
+
+export interface Contact {
+  id: number;
+  tenantId: number;
+  phone: string;
+  /** @nullable */
+  name: string | null;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  notes: string | null;
+  /** @nullable */
+  tags?: string[] | null;
+  firstSeenAt: string;
+  /** @nullable */
+  lastInteractionAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContactConversationSummary {
+  id: number;
+  status: string;
+  contactPhone: string;
+  /** @nullable */
+  lastMessageAt: string | null;
+  createdAt: string;
+}
+
+export type ContactWithHistory = Contact & {
+  conversations: ContactConversationSummary[];
+};
+
+export interface CreateContactInput {
+  /** @minLength 1 */
+  phone: string;
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  tags?: string[] | null;
+}
+
+export interface UpdateContactInput {
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  tags?: string[] | null;
+}
+
+export interface Reminder {
+  id: number;
+  tenantId: number;
+  conversationId: number;
+  userId: number;
+  remindAt: string;
+  /** @nullable */
+  note: string | null;
+  /** @nullable */
+  firedAt: string | null;
+  /** @nullable */
+  dismissedAt: string | null;
+  createdAt: string;
+  /** @nullable */
+  contactPhone?: string | null;
+  /** @nullable */
+  contactName?: string | null;
+}
+
+export interface CreateReminderInput {
+  conversationId: number;
+  remindAt: string;
+  /** @nullable */
+  note?: string | null;
+}
+
+export interface SuccessResponse {
+  success: boolean;
+}
+
 export type ListInjectionsParams = {
   /**
    * @minimum 1
@@ -911,7 +1047,26 @@ export type ListConversationsParams = {
    * Filter by department ID. Pass 0 for unassigned conversations.
    */
   departmentId?: number;
+  /**
+   * Search by contact name, phone, or message body
+   */
+  q?: string;
+  status?: ListConversationsStatus;
+  /**
+   * Filter by assigned agent. Pass 0 for unassigned.
+   */
+  assignedUserId?: number;
+  from?: string;
+  to?: string;
 };
+
+export type ListConversationsStatus =
+  (typeof ListConversationsStatus)[keyof typeof ListConversationsStatus];
+
+export const ListConversationsStatus = {
+  open: "open",
+  closed: "closed",
+} as const;
 
 export type SearchAvailableNumbersParams = {
   country?: string;
@@ -944,3 +1099,22 @@ export type ExportAnalyticsConversationsParams = {
   from?: string;
   to?: string;
 };
+
+export type ListContactsParams = {
+  q?: string;
+  tag?: string;
+  limit?: number;
+};
+
+export type ListRemindersParams = {
+  status?: ListRemindersStatus;
+};
+
+export type ListRemindersStatus =
+  (typeof ListRemindersStatus)[keyof typeof ListRemindersStatus];
+
+export const ListRemindersStatus = {
+  all: "all",
+  due: "due",
+  pending: "pending",
+} as const;

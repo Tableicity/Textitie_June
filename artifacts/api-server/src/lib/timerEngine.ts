@@ -3,6 +3,7 @@ import { eq, and, lt, asc, sql } from "drizzle-orm";
 import { pool } from "@workspace/db";
 import { logger } from "./logger";
 import { activateScheduledCampaign } from "./campaignEngine";
+import { processDueReminders } from "../routes/reminders";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -27,6 +28,10 @@ async function runTimerCycle(): Promise<void> {
   await processFollowUpTimers();
   await processAutoResolve();
   await processScheduledCampaigns();
+  const fired = await processDueReminders();
+  if (fired > 0) {
+    logger.info({ count: fired }, "Reminders fired");
+  }
 }
 
 /**

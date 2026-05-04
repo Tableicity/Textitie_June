@@ -10,12 +10,19 @@ import {
   useUnassignConversation,
   useListConversationEvents,
   useListShortcuts,
+  usePostWhisper,
+  useUpdateConversation,
+  useListDispositions,
+  useCreateReminder,
   getListMessagesQueryKey,
   getListConversationsQueryKey,
   getGetConversationQueryKey,
   getListConversationEventsQueryKey,
   getListShortcutsQueryKey,
+  getListDispositionsQueryKey,
+  getListRemindersQueryKey,
 } from "@workspace/api-client-react";
+import { useSearch } from "wouter";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import {
@@ -34,7 +41,12 @@ import {
   History,
   Loader2,
   Circle,
+  StickyNote,
+  CheckSquare,
+  BellPlus,
+  X as XIcon,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,9 +73,14 @@ import { useQueryClient } from "@tanstack/react-query";
 
 export default function Inbox() {
   const queryClient = useQueryClient();
+  const searchString = useSearch();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [composeText, setComposeText] = useState("");
+  const [isWhisperMode, setIsWhisperMode] = useState(false);
   const [deptFilter, setDeptFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("open");
+  const [searchQ, setSearchQ] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [showTransfer, setShowTransfer] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string>("");
   const [transferNote, setTransferNote] = useState("");
@@ -71,8 +88,30 @@ export default function Inbox() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [shortcutFilter, setShortcutFilter] = useState("");
   const [shortcutIndex, setShortcutIndex] = useState(0);
+  const [showResolve, setShowResolve] = useState(false);
+  const [resolveDispId, setResolveDispId] = useState<string>("");
+  const [resolveNote, setResolveNote] = useState("");
+  const [showRemind, setShowRemind] = useState(false);
+  const [remindAt, setRemindAt] = useState("");
+  const [remindNote, setRemindNote] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-select conversation from URL param (e.g. from reminder bell jump)
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const cid = params.get("conversation");
+    if (cid) {
+      const n = parseInt(cid);
+      if (!Number.isNaN(n)) setSelectedId(n);
+    }
+  }, [searchString]);
+
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQ(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   const { data: departments } = useListDepartments();
   const { data: agents } = useListAgents();
@@ -90,8 +129,13 @@ export default function Inbox() {
     return map;
   }, [agents]);
 
-  const filterParams =
-    deptFilter === "all" ? undefined : { departmentId: Number(deptFilter) };
+  const filterParams = useMemo(() => {
+    const p: Record<string, string | number> = {};
+    if (deptFilter !== "all") p.departmentId = Number(deptFilter);
+    if (statusFilter !== "all") p.status = statusFilter;
+    if (searchQ) p.q = searchQ;
+    return Object.keys(p).length ? (p as { departmentId?: number; status?: "open" | "closed"; q?: string }) : undefined;
+  }, [deptFilter, statusFilter, searchQ]);
 
   const { data: conversations, isLoading: loadingConversations } =
     useListConversations(filterParams, {
@@ -100,6 +144,10 @@ export default function Inbox() {
         refetchInterval: 10000,
       },
     });
+
+  const { data: dispositions } = useListDispositions({
+    query: { queryKey: getListDispositionsQueryKey() },
+  });
 
   const { data: selectedConv, isLoading: loadingConv } = useGetConversation(
     selectedId as number,
@@ -155,6 +203,41 @@ export default function Inbox() {
             queryKey: getListConversationsQueryKey(),
           });
         }
+      },
+    },
+  });
+
+  const whisperMutation = usePostWhisper({
+    mutation: {
+      onSuccess: () => {
+        setComposeText("");
+        if (selectedId) {
+          queryClient.invalidateQueries({
+            queryKey: getListMessagesQueryKey(selectedId),
+          });
+        }
+      },
+    },
+  });
+
+  const updateConv = useUpdateConversation({
+    mutation: {
+      onSuccess: () => {
+        invalidateConv();
+        setShowResolve(false);
+        setResolveDispId("");
+        setResolveNote("");
+      },
+    },
+  });
+
+  const createReminder = useCreateReminder({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListRemindersQueryKey() });
+        setShowRemind(false);
+        setRemindAt("");
+        setRemindNote("");
       },
     },
   });
@@ -242,12 +325,20 @@ export default function Inbox() {
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!composeText.trim() || !selectedId) return;
-
-    sendMessage.mutate({
-      id: selectedId,
-      data: { body: composeText },
-    });
+    if (isWhisperMode) {
+      whisperMutation.mutate({ id: selectedId, data: { body: composeText } });
+    } else {
+      sendMessage.mutate({ id: selectedId, data: { body: composeText } });
+    }
   };
+
+  const dispMap = useMemo(() => {
+    const m = new Map<number, { label: string; color: string }>();
+    dispositions?.forEach((d) => m.set(d.id, { label: d.label, color: d.color }));
+    return m;
+  }, [dispositions]);
+
+  const composerBusy = sendMessage.isPending || whisperMutation.isPending;
 
   const statusColor = (s: string) => {
     if (s === "online") return "bg-emerald-500";
@@ -263,10 +354,38 @@ export default function Inbox() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
-              placeholder="Search conversations..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search name, phone, or message..."
               className="pl-9 bg-slate-50 border-slate-200 focus-visible:ring-blue-500"
+              data-testid="input-conversation-search"
             />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+              >
+                <XIcon className="w-3 h-3" />
+              </button>
+            )}
           </div>
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => {
+              setStatusFilter(v);
+              setSelectedId(null);
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs bg-slate-50 border-slate-200">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open conversations</SelectItem>
+              <SelectItem value="closed">Closed conversations</SelectItem>
+              <SelectItem value="all">All conversations</SelectItem>
+            </SelectContent>
+          </Select>
           {departments && departments.length > 0 && (
             <Select
               value={deptFilter}
@@ -579,6 +698,54 @@ export default function Inbox() {
                 )}
 
                 <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-medium gap-1.5"
+                  onClick={() => {
+                    const def = new Date(Date.now() + 60 * 60 * 1000);
+                    const pad = (n: number) => String(n).padStart(2, "0");
+                    setRemindAt(
+                      `${def.getFullYear()}-${pad(def.getMonth() + 1)}-${pad(def.getDate())}T${pad(def.getHours())}:${pad(def.getMinutes())}`,
+                    );
+                    setShowRemind(true);
+                  }}
+                  title="Remind me about this conversation"
+                  data-testid="button-remind-me"
+                >
+                  <BellPlus className="w-3 h-3" /> Remind
+                </Button>
+
+                {selectedConv?.status === "open" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-medium gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                    onClick={() => {
+                      setResolveDispId("");
+                      setResolveNote("");
+                      setShowResolve(true);
+                    }}
+                    data-testid="button-resolve"
+                  >
+                    <CheckSquare className="w-3 h-3" /> Resolve
+                  </Button>
+                )}
+
+                {selectedConv?.status === "closed" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-medium gap-1.5"
+                    onClick={() =>
+                      updateConv.mutate({ id: selectedId, data: { status: "open" } })
+                    }
+                    disabled={updateConv.isPending}
+                  >
+                    Reopen
+                  </Button>
+                )}
+
+                <Button
                   variant="ghost"
                   size="sm"
                   className={`h-8 w-8 p-0 ${showEvents ? "bg-slate-100" : ""}`}
@@ -589,6 +756,29 @@ export default function Inbox() {
                 </Button>
               </div>
             </div>
+
+            {selectedConv?.status === "closed" && (
+              <div className="border-b border-slate-200 bg-emerald-50 px-6 py-2 flex items-center gap-3 text-xs">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="font-semibold text-emerald-800">Resolved</span>
+                {selectedConv.dispositionId && dispMap.get(selectedConv.dispositionId) && (
+                  <Badge
+                    variant="outline"
+                    style={{
+                      borderColor: dispMap.get(selectedConv.dispositionId)!.color,
+                      color: dispMap.get(selectedConv.dispositionId)!.color,
+                    }}
+                  >
+                    {dispMap.get(selectedConv.dispositionId)!.label}
+                  </Badge>
+                )}
+                {selectedConv.resolutionNote && (
+                  <span className="text-emerald-700 italic truncate">
+                    "{selectedConv.resolutionNote}"
+                  </span>
+                )}
+              </div>
+            )}
 
             {showEvents && events && events.length > 0 && (
               <div className="border-b border-slate-200 bg-slate-50 px-6 py-3 max-h-40 overflow-auto">
@@ -650,7 +840,27 @@ export default function Inbox() {
               ) : (
                 <div className="space-y-6 pb-4">
                   {messages?.map((msg) => {
+                    const isInternal = msg.direction === "internal";
                     const isOutbound = msg.direction === "outbound";
+                    if (isInternal) {
+                      return (
+                        <div key={msg.id} className="flex justify-center" data-testid={`whisper-${msg.id}`}>
+                          <div className="max-w-[80%] bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 shadow-sm">
+                            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-700 uppercase tracking-wider mb-1">
+                              <StickyNote className="w-3 h-3" />
+                              Internal note
+                              {msg.senderName && (
+                                <span className="text-amber-500 font-normal normal-case ml-1">· {msg.senderName}</span>
+                              )}
+                              <span className="text-amber-500 font-normal normal-case ml-1">
+                                · {format(new Date(msg.createdAt), "h:mm a")}
+                              </span>
+                            </div>
+                            <div className="text-sm text-amber-900 whitespace-pre-wrap">{msg.body}</div>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <div
                         key={msg.id}
@@ -719,21 +929,42 @@ export default function Inbox() {
                   </div>
                 )}
                 <form onSubmit={handleSend} className="flex items-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsWhisperMode((m) => !m)}
+                    className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 transition-colors border ${
+                      isWhisperMode
+                        ? "bg-amber-100 border-amber-300 text-amber-700"
+                        : "bg-white border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                    }`}
+                    title={isWhisperMode ? "Whisper mode: only your team will see this" : "Click to leave an internal note"}
+                    data-testid="button-toggle-whisper"
+                  >
+                    <StickyNote className="w-4 h-4" />
+                  </button>
                   <div className="flex-1 relative">
                     <Input
                       ref={inputRef}
                       value={composeText}
                       onChange={(e) => handleComposeChange(e.target.value)}
                       onKeyDown={handleComposeKeyDown}
-                      placeholder='Type a message... (type "/" for shortcuts)'
-                      className="pr-12 py-3 bg-slate-50 border-slate-200 focus-visible:ring-blue-500 rounded-xl"
+                      placeholder={
+                        isWhisperMode
+                          ? "Internal note (only your team will see this)..."
+                          : 'Type a message... (type "/" for shortcuts)'
+                      }
+                      className={`pr-12 py-3 border-slate-200 focus-visible:ring-blue-500 rounded-xl ${
+                        isWhisperMode ? "bg-amber-50" : "bg-slate-50"
+                      }`}
                     />
                   </div>
                   <Button
                     type="submit"
                     size="icon"
-                    className="rounded-xl h-11 w-11 bg-blue-600 hover:bg-blue-700 shrink-0"
-                    disabled={!composeText.trim() || sendMessage.isPending}
+                    className={`rounded-xl h-11 w-11 shrink-0 ${
+                      isWhisperMode ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"
+                    }`}
+                    disabled={!composeText.trim() || composerBusy}
                   >
                     <Send className="h-4 w-4" />
                   </Button>
@@ -741,7 +972,9 @@ export default function Inbox() {
               </div>
               <div className="flex justify-between items-center mt-2 px-1">
                 <span className="text-[10px] text-slate-400 font-medium">
-                  Press Enter to send · Type / for shortcuts
+                  {isWhisperMode
+                    ? "Internal note · only visible to your team"
+                    : "Press Enter to send · Type / for shortcuts"}
                 </span>
               </div>
             </div>
@@ -757,6 +990,172 @@ export default function Inbox() {
           </div>
         )}
       </div>
+
+      {/* Resolve dialog */}
+      <Dialog open={showResolve} onOpenChange={setShowResolve}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resolve conversation</DialogTitle>
+            <DialogDescription>
+              Mark this conversation as resolved. You can reopen it later.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="mb-1.5 block">Disposition (optional)</Label>
+              <Select value={resolveDispId} onValueChange={setResolveDispId}>
+                <SelectTrigger data-testid="select-disposition">
+                  <SelectValue placeholder="No disposition" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— No disposition —</SelectItem>
+                  {dispositions?.map((d) => (
+                    <SelectItem key={d.id} value={d.id.toString()}>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: d.color }}
+                        />
+                        {d.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {dispositions?.length === 0 && (
+                <p className="text-xs text-slate-400 mt-1">
+                  No dispositions configured yet. Add some in Settings → Dispositions.
+                </p>
+              )}
+            </div>
+            <div>
+              <Label className="mb-1.5 block">Resolution note (optional)</Label>
+              <Textarea
+                value={resolveNote}
+                onChange={(e) => setResolveNote(e.target.value)}
+                placeholder="What was the outcome?"
+                rows={3}
+                data-testid="textarea-resolution-note"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResolve(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700"
+              disabled={updateConv.isPending || !selectedId}
+              onClick={() => {
+                if (!selectedId) return;
+                updateConv.mutate({
+                  id: selectedId,
+                  data: {
+                    status: "closed",
+                    dispositionId:
+                      resolveDispId && resolveDispId !== "none"
+                        ? Number(resolveDispId)
+                        : null,
+                    resolutionNote: resolveNote.trim() || null,
+                  },
+                });
+              }}
+              data-testid="button-confirm-resolve"
+            >
+              {updateConv.isPending && <Loader2 className="w-3 h-3 animate-spin mr-2" />}
+              Resolve
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reminder dialog */}
+      <Dialog open={showRemind} onOpenChange={setShowRemind}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set a reminder</DialogTitle>
+            <DialogDescription>
+              We'll surface this conversation in your reminder bell when due.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="mb-1.5 block">Remind me at</Label>
+              <Input
+                type="datetime-local"
+                value={remindAt}
+                onChange={(e) => setRemindAt(e.target.value)}
+                data-testid="input-remind-at"
+              />
+              <div className="flex gap-1.5 mt-2">
+                {[
+                  { label: "+15m", min: 15 },
+                  { label: "+1h", min: 60 },
+                  { label: "+4h", min: 240 },
+                  { label: "Tomorrow 9am", min: -1 },
+                ].map((q) => (
+                  <Button
+                    key={q.label}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      const d =
+                        q.min === -1
+                          ? (() => {
+                              const t = new Date();
+                              t.setDate(t.getDate() + 1);
+                              t.setHours(9, 0, 0, 0);
+                              return t;
+                            })()
+                          : new Date(Date.now() + q.min * 60 * 1000);
+                      const pad = (n: number) => String(n).padStart(2, "0");
+                      setRemindAt(
+                        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+                      );
+                    }}
+                  >
+                    {q.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label className="mb-1.5 block">Note (optional)</Label>
+              <Textarea
+                value={remindNote}
+                onChange={(e) => setRemindNote(e.target.value)}
+                placeholder="Follow up about pricing..."
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRemind(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={createReminder.isPending || !remindAt || !selectedId}
+              onClick={() => {
+                if (!selectedId || !remindAt) return;
+                createReminder.mutate({
+                  data: {
+                    conversationId: selectedId,
+                    remindAt: new Date(remindAt).toISOString(),
+                    note: remindNote.trim() || null,
+                  },
+                });
+              }}
+              data-testid="button-confirm-remind"
+            >
+              {createReminder.isPending && <Loader2 className="w-3 h-3 animate-spin mr-2" />}
+              Set reminder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -17,6 +17,9 @@ import automationsRouter from "./automations";
 import shortcutsRouter from "./shortcuts";
 import campaignsRouter from "./campaigns";
 import analyticsRouter from "./analytics";
+import dispositionsRouter from "./dispositions";
+import contactsRouter from "./contacts";
+import remindersRouter from "./reminders";
 
 const router: IRouter = Router();
 
@@ -38,5 +41,8 @@ router.use(automationsRouter);
 router.use(shortcutsRouter);
 router.use(campaignsRouter);
 router.use(analyticsRouter);
+router.use(dispositionsRouter);
+router.use(contactsRouter);
+router.use(remindersRouter);
 
 export default router;
