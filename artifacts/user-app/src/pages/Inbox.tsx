@@ -926,7 +926,7 @@ export default function Inbox() {
                                 <span className="text-amber-500 font-normal normal-case ml-1">· {msg.senderName}</span>
                               )}
                               <span className="text-amber-500 font-normal normal-case ml-1">
-                                · {format(new Date(msg.createdAt), "h:mm a")}
+                                · {format(new Date(msg.createdAt), "MMM d, h:mm a")}
                               </span>
                             </div>
                             <div className="text-sm text-amber-900 whitespace-pre-wrap">{msg.body}</div>
@@ -952,16 +952,8 @@ export default function Inbox() {
                         </div>
                         <div className="flex items-center gap-1.5 mt-1.5 px-1">
                           <span className="text-[10px] font-medium text-slate-400">
-                            {format(new Date(msg.createdAt), "h:mm a")}
+                            {format(new Date(msg.createdAt), "MMM d, h:mm a")}
                           </span>
-                          {isOutbound && msg.senderName && (
-                            <>
-                              <span className="w-0.5 h-0.5 rounded-full bg-slate-300"></span>
-                              <span className="text-[10px] text-slate-400">
-                                {msg.senderName}
-                              </span>
-                            </>
-                          )}
                         </div>
                       </div>
                     );
