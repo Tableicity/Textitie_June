@@ -482,10 +482,10 @@ export default function Inbox() {
                     <span className="font-semibold text-sm text-slate-900 truncate pr-2">
                       {conv.contactName || formatPhone(conv.contactPhone)}
                     </span>
-                    {conv.lastMessageAt && (
+                    {(conv.lastMessageAt || conv.createdAt) && (
                       <span className="text-xs text-slate-400 flex-shrink-0 whitespace-nowrap">
                         {format(
-                          new Date(conv.lastMessageAt),
+                          new Date(conv.lastMessageAt ?? conv.createdAt),
                           "MMM d, h:mm a",
                         )}
                       </span>
