@@ -156,6 +156,14 @@ export default function Inbox() {
       },
     });
 
+  // Auto-select the first (most recent) conversation if none is selected,
+  // so the conversation header + action buttons are always visible.
+  useEffect(() => {
+    if (selectedId == null && conversations && conversations.length > 0) {
+      setSelectedId(conversations[0].id);
+    }
+  }, [conversations, selectedId]);
+
   const { data: dispositions } = useListDispositions({
     query: { queryKey: getListDispositionsQueryKey() },
   });
