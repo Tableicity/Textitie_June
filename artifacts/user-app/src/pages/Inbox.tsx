@@ -51,6 +51,7 @@ import {
   X as XIcon,
   Sparkles,
   Fuel,
+  Paperclip,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -116,6 +117,7 @@ export default function Inbox() {
     "❤️","💙","💯","⭐","☀️","🚗","📞","📅",
   ];
   const [showEmoji, setShowEmoji] = useState(false);
+  const [showAttach, setShowAttach] = useState(false);
 
   // Auto-select conversation from URL param (e.g. from reminder bell jump)
   useEffect(() => {
@@ -1059,6 +1061,15 @@ export default function Inbox() {
                       </div>
                     </PopoverContent>
                   </Popover>
+                  <button
+                    type="button"
+                    onClick={() => setShowAttach(true)}
+                    className="h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                    title="Attach photo or PDF"
+                    data-testid="button-attach"
+                  >
+                    <Paperclip className="w-5 h-5" />
+                  </button>
                   <div className="flex-1 relative">
                     <Textarea
                       ref={inputRef}
@@ -1222,6 +1233,27 @@ export default function Inbox() {
           </DialogHeader>
           <DialogFooter>
             <Button onClick={() => setShowHaloAi(false)}>Got it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Attach (placeholder) */}
+      <Dialog open={showAttach} onOpenChange={setShowAttach}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Paperclip className="w-4 h-4 text-slate-600" />
+              Attach photo or PDF
+            </DialogTitle>
+            <DialogDescription>
+              MMS attachments (photos and PDFs) are coming soon. We're wiring up
+              secure storage and Twilio MMS so you can send and receive images
+              and documents right inside the conversation. Pricing will be
+              tier-based with a per-attachment surcharge.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowAttach(false)}>Got it</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
