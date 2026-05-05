@@ -15,7 +15,7 @@ import { processDeliveryStatus } from "../lib/deliveryStatus";
 import { resolveTenantByPhoneNumber } from "../lib/tenantPhoneLookup";
 import { eventBus } from "../lib/eventBus";
 import { logger } from "../lib/logger";
-import { requireTwilioSignature } from "../lib/twilioSignature";
+import { checkTwilioSignature, requireTwilioSignature } from "../lib/twilioSignature";
 
 const router: IRouter = Router();
 
@@ -33,6 +33,24 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
       : {};
 
   let payload: Record<string, unknown> = rawBody;
+
+  // ---- Twilio signature gate ----
+  // Inbound SMS is the only path where a public attacker can usefully forge
+  // a request — they can spoof inbound texts, trigger AI replies on a
+  // tenant's dime, and pollute conversation history. We can't apply
+  // requireTwilioSignature() as middleware because chatwoot/n8n share this
+  // route, so gate inline once the source is known.
+  if (params.data.source === "twilio") {
+    const sig = checkTwilioSignature(req);
+    if (!sig.ok) {
+      const error =
+        sig.reason === "missing-header"
+          ? "Missing Twilio signature"
+          : "Invalid Twilio signature";
+      res.status(sig.status).json({ error });
+      return;
+    }
+  }
 
   // ---- Inbound Router (Gate 3) ----
   // Only Twilio inbound SMS gets routed; chatwoot/n8n events are recorded as-is.
