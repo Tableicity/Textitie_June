@@ -1107,13 +1107,6 @@ export default function Inbox() {
                   </Button>
                 </form>
               </div>
-              <div className="flex justify-between items-center mt-2 px-1">
-                <span className="text-[10px] text-slate-400 font-medium">
-                  {isWhisperMode
-                    ? "Internal note · only visible to your team"
-                    : "Press Enter to send · Type / for shortcuts"}
-                </span>
-              </div>
             </div>
           </>
         ) : (
