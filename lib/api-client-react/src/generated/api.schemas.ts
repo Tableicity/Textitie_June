@@ -294,6 +294,35 @@ export interface Message {
   senderName: string | null;
   read: boolean;
   createdAt: string;
+  /**
+   * Outbound delivery state from the carrier (set on the messages row,
+updated by the Twilio status-callback webhook). One of:
+`pending` | `sent` | `delivered` | `failed`. Inbound messages
+leave this null.
+
+   * @nullable
+   */
+  status?: string | null;
+  /**
+   * Provider-side message id (e.g. Twilio MessageSid).
+   * @nullable
+   */
+  externalId?: string | null;
+  /**
+   * Twilio error code when status is `failed` (e.g. `30034`).
+   * @nullable
+   */
+  errorCode?: string | null;
+  /**
+   * Human-readable failure reason rendered in the inbox.
+   * @nullable
+   */
+  errorMessage?: string | null;
+  /**
+   * Timestamp the carrier confirmed delivery, if any.
+   * @nullable
+   */
+  deliveredAt?: string | null;
 }
 
 export interface SendMessageInput {

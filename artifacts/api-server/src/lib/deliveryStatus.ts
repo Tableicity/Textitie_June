@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { describeTwilioError } from "./twilioErrors";
 
 /**
  * Twilio delivery-status webhook handler logic.
@@ -80,9 +81,7 @@ export async function processDeliveryStatus(
     }
     if (isTerminalFailure) {
       const code = errorCode ?? null;
-      const errMsg =
-        [errorCode, errorMessage].filter(Boolean).join(": ") ||
-        `Twilio status: ${status}`;
+      const errMsg = describeTwilioError(errorCode, errorMessage, status);
       await db.execute(sql`
         UPDATE messages
            SET status = 'failed',
@@ -145,9 +144,7 @@ export async function processDeliveryStatus(
   }
 
   if (isTerminalFailure) {
-    const errMsg =
-      [errorCode, errorMessage].filter(Boolean).join(": ") ||
-      `Twilio status: ${status}`;
+    const errMsg = describeTwilioError(errorCode, errorMessage, status);
     await db.execute(sql`
       UPDATE campaign_messages
          SET status = 'failed', error_message = ${errMsg}

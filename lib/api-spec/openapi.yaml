@@ -2600,6 +2600,26 @@ components:
         createdAt:
           type: string
           format: date-time
+        status:
+          type: ["string", "null"]
+          description: |
+            Outbound delivery state from the carrier (set on the messages row,
+            updated by the Twilio status-callback webhook). One of:
+            `pending` | `sent` | `delivered` | `failed`. Inbound messages
+            leave this null.
+        externalId:
+          type: ["string", "null"]
+          description: Provider-side message id (e.g. Twilio MessageSid).
+        errorCode:
+          type: ["string", "null"]
+          description: Twilio error code when status is `failed` (e.g. `30034`).
+        errorMessage:
+          type: ["string", "null"]
+          description: Human-readable failure reason rendered in the inbox.
+        deliveredAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Timestamp the carrier confirmed delivery, if any.
       required: [id, conversationId, direction, body, senderName, read, createdAt]
 
     SendMessageInput:

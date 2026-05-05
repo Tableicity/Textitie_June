@@ -949,7 +949,9 @@ export default function Inbox() {
                           <div
                             className={`px-4 py-2.5 text-sm ${
                               isOutbound
-                                ? "bg-blue-600 text-white rounded-2xl rounded-br-sm"
+                                ? msg.status === "failed"
+                                  ? "bg-red-100 border border-red-300 text-red-900 rounded-2xl rounded-br-sm"
+                                  : "bg-blue-600 text-white rounded-2xl rounded-br-sm"
                                 : "bg-white border border-slate-200 text-slate-900 rounded-2xl rounded-bl-sm shadow-sm"
                             }`}
                           >
@@ -960,7 +962,28 @@ export default function Inbox() {
                           <span className="text-[10px] font-medium text-slate-400">
                             {format(new Date(msg.createdAt), "MMM d, yyyy h:mma")}
                           </span>
+                          {isOutbound && msg.status === "failed" && (
+                            <span
+                              className="text-[10px] font-semibold text-red-600 uppercase tracking-wide"
+                              data-testid={`msg-failed-${msg.id}`}
+                            >
+                              · Not delivered
+                            </span>
+                          )}
+                          {isOutbound && msg.status === "delivered" && (
+                            <span className="text-[10px] font-medium text-emerald-600">
+                              · Delivered
+                            </span>
+                          )}
                         </div>
+                        {isOutbound && msg.status === "failed" && msg.errorMessage && (
+                          <div
+                            className="mt-1 px-3 py-1.5 max-w-[75%] text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-md"
+                            data-testid={`msg-error-${msg.id}`}
+                          >
+                            {msg.errorMessage}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -488,6 +488,28 @@ export const ListMessagesResponseItem = zod.object({
   senderName: zod.string().nullable(),
   read: zod.boolean(),
   createdAt: zod.coerce.date(),
+  status: zod
+    .string()
+    .nullish()
+    .describe(
+      "Outbound delivery state from the carrier (set on the messages row,\nupdated by the Twilio status-callback webhook). One of:\n`pending` | `sent` | `delivered` | `failed`. Inbound messages\nleave this null.\n",
+    ),
+  externalId: zod
+    .string()
+    .nullish()
+    .describe("Provider-side message id (e.g. Twilio MessageSid)."),
+  errorCode: zod
+    .string()
+    .nullish()
+    .describe("Twilio error code when status is `failed` (e.g. `30034`)."),
+  errorMessage: zod
+    .string()
+    .nullish()
+    .describe("Human-readable failure reason rendered in the inbox."),
+  deliveredAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Timestamp the carrier confirmed delivery, if any."),
 });
 export const ListMessagesResponse = zod.array(ListMessagesResponseItem);
 
