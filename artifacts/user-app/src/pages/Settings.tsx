@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListDepartments,
@@ -61,7 +62,31 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 
+const TAB_VALUES = [
+  "departments",
+  "phone-numbers",
+  "team",
+  "dispositions",
+  "compliance",
+  "integrations",
+  "surveys",
+  "audit-log",
+] as const;
+
 export default function Settings() {
+  const search = useSearch();
+  const tabFromUrl = new URLSearchParams(search).get("tab") ?? "";
+  const initialTab = (TAB_VALUES as readonly string[]).includes(tabFromUrl)
+    ? tabFromUrl
+    : "departments";
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
+
+  useEffect(() => {
+    if ((TAB_VALUES as readonly string[]).includes(tabFromUrl)) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
+
   return (
     <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
       <div className="border-b border-slate-200 bg-white px-8 py-6 flex-shrink-0">
@@ -78,7 +103,7 @@ export default function Settings() {
 
       <div className="flex-1 overflow-auto p-8">
         <div className="max-w-6xl mx-auto">
-          <Tabs defaultValue="departments" className="w-full">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="mb-8">
               <TabsTrigger value="departments" className="flex items-center gap-2">
                 <Building2 className="w-4 h-4" />

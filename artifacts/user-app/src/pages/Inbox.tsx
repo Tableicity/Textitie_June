@@ -23,7 +23,7 @@ import {
   getListDispositionsQueryKey,
   getListRemindersQueryKey,
 } from "@workspace/api-client-react";
-import { useSearch } from "wouter";
+import { useSearch, Link } from "wouter";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import {
@@ -48,6 +48,8 @@ import {
   CheckSquare,
   BellPlus,
   X as XIcon,
+  Sparkles,
+  Fuel,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -99,6 +101,8 @@ export default function Inbox() {
   const [remindAt, setRemindAt] = useState("");
   const [remindNote, setRemindNote] = useState("");
   const [showNewMessage, setShowNewMessage] = useState(false);
+  const [showHaloAi, setShowHaloAi] = useState(false);
+  const [showBuyGas, setShowBuyGas] = useState(false);
   const [newPhone, setNewPhone] = useState("");
   const [newName, setNewName] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -577,6 +581,38 @@ export default function Inbox() {
               </div>
 
               <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-medium gap-1.5 border-violet-200 text-violet-700 hover:bg-violet-50"
+                  onClick={() => setShowHaloAi(true)}
+                  data-testid="button-halo-ai"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Halo AI
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-medium gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50"
+                  onClick={() => setShowBuyGas(true)}
+                  data-testid="button-buy-gas"
+                >
+                  <Fuel className="w-3 h-3" />
+                  Buy Gas
+                </Button>
+                <Link href="/settings?tab=phone-numbers">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-slate-600 hover:bg-slate-50"
+                    title="Phone Numbers"
+                    aria-label="Phone Numbers"
+                    data-testid="button-phone-numbers"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1124,6 +1160,44 @@ export default function Inbox() {
               {updateConv.isPending && <Loader2 className="w-3 h-3 animate-spin mr-2" />}
               Resolve
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Halo AI (placeholder) */}
+      <Dialog open={showHaloAi} onOpenChange={setShowHaloAi}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-violet-600" />
+              Halo AI
+            </DialogTitle>
+            <DialogDescription>
+              Halo AI is coming soon. We'll surface AI-assisted replies, summaries,
+              and lead intelligence right inside your inbox.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowHaloAi(false)}>Got it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Buy Gas (placeholder) */}
+      <Dialog open={showBuyGas} onOpenChange={setShowBuyGas}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Fuel className="w-4 h-4 text-amber-600" />
+              Buy Gas
+            </DialogTitle>
+            <DialogDescription>
+              Top up your messaging credit ("gas"). This will let you keep sending
+              messages once your monthly allowance is used. Coming soon.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowBuyGas(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
