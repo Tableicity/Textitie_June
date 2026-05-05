@@ -487,7 +487,7 @@ export default function Inbox() {
                       <span className="text-xs text-slate-400 flex-shrink-0 whitespace-nowrap">
                         {format(
                           new Date(conv.lastMessageAt ?? conv.createdAt),
-                          "MMM d, h:mm a",
+                          "MMM d, yyyy h:mma",
                         )}
                       </span>
                     )}
@@ -637,25 +637,6 @@ export default function Inbox() {
                   <PencilLine className="w-3 h-3" />
                   New Message
                 </Button>
-                {!selectedConv?.assignedUserId && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs font-medium gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                    disabled={claimMutation.isPending}
-                    onClick={() =>
-                      claimMutation.mutate({ id: selectedId })
-                    }
-                  >
-                    {claimMutation.isPending ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Hand className="w-3 h-3" />
-                    )}
-                    Claim
-                  </Button>
-                )}
-
                 {selectedConv?.assignedUserId && (
                   <>
                     <Dialog
@@ -865,7 +846,7 @@ export default function Inbox() {
                       className="flex items-center gap-2 text-xs text-slate-500"
                     >
                       <span className="text-[10px] text-slate-400 w-16 flex-shrink-0">
-                        {format(new Date(evt.createdAt), "h:mm a")}
+                        {format(new Date(evt.createdAt), "MMM d, yyyy h:mma")}
                       </span>
                       <span className="font-medium capitalize">
                         {evt.eventType.replace("_", " ")}
@@ -926,7 +907,7 @@ export default function Inbox() {
                                 <span className="text-amber-500 font-normal normal-case ml-1">· {msg.senderName}</span>
                               )}
                               <span className="text-amber-500 font-normal normal-case ml-1">
-                                · {format(new Date(msg.createdAt), "MMM d, h:mm a")}
+                                · {format(new Date(msg.createdAt), "MMM d, yyyy h:mma")}
                               </span>
                             </div>
                             <div className="text-sm text-amber-900 whitespace-pre-wrap">{msg.body}</div>
@@ -952,7 +933,7 @@ export default function Inbox() {
                         </div>
                         <div className="flex items-center gap-1.5 mt-1.5 px-1">
                           <span className="text-[10px] font-medium text-slate-400">
-                            {format(new Date(msg.createdAt), "MMM d, h:mm a")}
+                            {format(new Date(msg.createdAt), "MMM d, yyyy h:mma")}
                           </span>
                         </div>
                       </div>
@@ -994,10 +975,30 @@ export default function Inbox() {
                   </div>
                 )}
                 <form onSubmit={handleSend} className="flex items-end gap-2">
+                  {!selectedConv?.assignedUserId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-[66px] px-3 text-xs font-medium gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 shrink-0 rounded-xl"
+                      disabled={claimMutation.isPending}
+                      onClick={() =>
+                        claimMutation.mutate({ id: selectedId })
+                      }
+                      data-testid="button-claim"
+                    >
+                      {claimMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Hand className="w-4 h-4" />
+                      )}
+                      Claim
+                    </Button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setIsWhisperMode((m) => !m)}
-                    className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 transition-colors border ${
+                    className={`h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors border ${
                       isWhisperMode
                         ? "bg-amber-100 border-amber-300 text-amber-700"
                         : "bg-white border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"
@@ -1005,7 +1006,7 @@ export default function Inbox() {
                     title={isWhisperMode ? "Whisper mode: only your team will see this" : "Click to leave an internal note"}
                     data-testid="button-toggle-whisper"
                   >
-                    <StickyNote className="w-4 h-4" />
+                    <StickyNote className="w-5 h-5" />
                   </button>
                   <div className="flex-1 relative">
                     <Input
@@ -1018,7 +1019,7 @@ export default function Inbox() {
                           ? "Internal note (only your team will see this)..."
                           : 'Type a message... (type "/" for shortcuts)'
                       }
-                      className={`pr-12 py-3 border-slate-200 focus-visible:ring-blue-500 rounded-xl ${
+                      className={`pr-12 h-[66px] text-base border-slate-200 focus-visible:ring-blue-500 rounded-xl ${
                         isWhisperMode ? "bg-amber-50" : "bg-slate-50"
                       }`}
                     />
@@ -1026,12 +1027,12 @@ export default function Inbox() {
                   <Button
                     type="submit"
                     size="icon"
-                    className={`rounded-xl h-11 w-11 shrink-0 ${
+                    className={`rounded-xl h-[66px] w-[66px] shrink-0 ${
                       isWhisperMode ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"
                     }`}
                     disabled={!composeText.trim() || composerBusy}
                   >
-                    <Send className="h-4 w-4" />
+                    <Send className="h-5 w-5" />
                   </Button>
                 </form>
               </div>
