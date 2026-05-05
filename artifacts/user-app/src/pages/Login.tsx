@@ -64,15 +64,39 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* LEFT: Marketing pitch — solid blue, content TBD */}
-      <div className="lg:w-1/2 bg-blue-600 flex items-center justify-center p-8 min-h-[40vh] lg:min-h-screen">
+      {/* LEFT: Marketing pitch + sign-up links */}
+      <div className="lg:w-1/2 bg-blue-600 flex flex-col items-center justify-center p-8 min-h-[40vh] lg:min-h-screen">
         <div className="text-center text-white/90 max-w-md">
           <div className="mx-auto w-16 h-16 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center mb-6">
             <MessageSquare className="w-8 h-8" />
           </div>
           <h1 className="text-4xl font-bold tracking-tight">Textitie</h1>
-          <p className="mt-3 text-white/70 text-sm">Marketing pitch — content coming soon</p>
         </div>
+
+        <div className="mt-10 text-center text-sm text-white/85 space-y-1">
+          <p>
+            Don't have an account?{" "}
+            <button
+              type="button"
+              onClick={() => setLocation("/signup")}
+              className="text-white underline-offset-4 hover:underline font-semibold"
+            >
+              Create one
+            </button>
+          </p>
+          <p>
+            Or{" "}
+            <button
+              type="button"
+              onClick={() => setLocation("/signup/trial")}
+              className="text-white underline-offset-4 hover:underline font-semibold"
+            >
+              Start a Free Trial
+            </button>
+          </p>
+        </div>
+
+        <p className="mt-5 text-center text-xs text-white/60">info@textitie.com</p>
       </div>
 
       {/* RIGHT: Layered peek view + login card */}
@@ -89,7 +113,7 @@ export default function Login() {
 
         {/* Layer C: glass card stack */}
         <div className="relative z-10 w-full max-w-[460px]">
-          <div className="bg-slate-900/85 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl p-8 text-white">
+          <div className="bg-slate-900/85 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl px-8 py-12 text-white">
             {/* Header */}
             <div className="text-center mb-5">
               <div className="inline-flex items-center gap-2 mb-3">
@@ -155,31 +179,6 @@ export default function Login() {
               </form>
             </Form>
 
-            {/* Sign up + Free Trial links */}
-            <div className="mt-5 text-center text-sm text-slate-400 space-y-1">
-              <p>
-                Don't have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => setLocation("/signup")}
-                  className="text-blue-400 hover:text-blue-300 font-medium"
-                >
-                  Create one
-                </button>
-              </p>
-              <p>
-                Or{" "}
-                <button
-                  type="button"
-                  onClick={() => setLocation("/signup/trial")}
-                  className="text-blue-400 hover:text-blue-300 font-medium"
-                >
-                  Start a Free Trial
-                </button>
-              </p>
-            </div>
-
-            <p className="mt-5 text-center text-xs text-slate-500">info@textitie.com</p>
           </div>
         </div>
       </div>
