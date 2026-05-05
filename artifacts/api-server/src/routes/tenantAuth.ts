@@ -88,6 +88,121 @@ async function issueLabCode(tenantUserId: number, email: string): Promise<void> 
   logger.info({ email, scope: "mfa" }, "Lab code issued");
 }
 
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "tenant";
+}
+
+async function uniqueSlug(base: string): Promise<string> {
+  const slug = slugify(base);
+  for (let i = 0; i < 100; i++) {
+    const candidate = i === 0 ? slug : `${slug}-${i + 1}`;
+    const existing = await db
+      .select({ id: tenantsTable.id })
+      .from(tenantsTable)
+      .where(eq(tenantsTable.slug, candidate))
+      .limit(1);
+    if (existing.length === 0) return candidate;
+  }
+  throw new Error("Could not generate a unique slug");
+}
+
+router.post("/tenant-auth/register", async (req, res) => {
+  const { companyName, email, password, plan } = req.body ?? {};
+  if (!companyName || !email || !password) {
+    res.status(400).json({ error: "Company name, email, and password are required" });
+    return;
+  }
+  if (typeof password !== "string" || password.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    res.status(400).json({ error: "Please enter a valid email address" });
+    return;
+  }
+
+  const isTrial = plan === "trial";
+  const normalizedEmail = String(email).trim().toLowerCase();
+
+  try {
+    // Reject duplicate emails up front (table also has unique constraint as a backstop)
+    const existingUser = await db
+      .select({ id: tenantUsersTable.id })
+      .from(tenantUsersTable)
+      .where(eq(tenantUsersTable.email, normalizedEmail))
+      .limit(1);
+    if (existingUser.length > 0) {
+      res.status(409).json({ error: "An account with that email already exists" });
+      return;
+    }
+
+    const slug = await uniqueSlug(companyName);
+    const passwordHash = await hashPassword(password);
+
+    const result = await db.transaction(async (tx) => {
+      const [tenant] = await tx
+        .insert(tenantsTable)
+        .values({
+          slug,
+          name: String(companyName).trim(),
+          region: "us",
+          tierCode: "starter",
+          planTierCode: "starter",
+          subscriptionStatus: isTrial ? "trialing" : "none",
+          trialUsed: isTrial,
+          trialEndsAt: isTrial
+            ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+            : null,
+        })
+        .returning();
+
+      const [user] = await tx
+        .insert(tenantUsersTable)
+        .values({
+          tenantId: tenant.id,
+          email: normalizedEmail,
+          passwordHash,
+          name: normalizedEmail.split("@")[0],
+          role: "owner",
+        })
+        .returning();
+
+      return { tenant, user };
+    });
+
+    logger.info(
+      { email: normalizedEmail, tenantSlug: result.tenant.slug, plan: isTrial ? "trial" : "paid" },
+      "New tenant registered",
+    );
+
+    // Funnel new signups through the same MFA flow as login.
+    await issueLabCode(result.user.id, result.user.email);
+
+    const pendingToken = signToken({
+      tenantUserId: result.user.id,
+      tenantId: result.tenant.id,
+      email: result.user.email,
+      scope: "mfa-pending",
+      iat: Date.now(),
+      exp: Date.now() + MFA_PENDING_TTL_MS,
+    });
+
+    res.json({
+      requiresMfa: true,
+      pendingToken,
+      maskedEmail: maskEmail(result.user.email),
+    });
+  } catch (err) {
+    logger.error({ err }, "Tenant registration error");
+    res.status(500).json({ error: "Could not create account" });
+  }
+});
+
 router.post("/tenant-auth/login", async (req, res) => {
   const { email, password } = req.body ?? {};
   if (!email || !password) {

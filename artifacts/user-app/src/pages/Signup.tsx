@@ -1,4 +1,4 @@
-import { useLocation } from "wouter";
+import { useLocation, useRoute } from "wouter";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,63 +9,55 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { MessageSquare, Cookie } from "lucide-react";
+import { MessageSquare, Sparkles } from "lucide-react";
 import peekImage from "@assets/landing-peek.png";
 
-const loginSchema = z.object({
+const signupSchema = z.object({
+  companyName: z.string().min(2, "Company name is required"),
   email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(1, "Password is required"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
-export default function Login() {
+export default function Signup() {
   const [, setLocation] = useLocation();
+  const [matchTrial] = useRoute("/signup/trial");
+  const isTrial = matchTrial;
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [cookiesAcknowledged, setCookiesAcknowledged] = useState(false);
+  const [cookiesAcknowledged, setCookiesAcknowledged] = useState(true);
 
-  const form = useForm<z.infer<typeof loginSchema>>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+  const form = useForm<z.infer<typeof signupSchema>>({
+    resolver: zodResolver(signupSchema),
+    defaultValues: { companyName: "", email: "", password: "" },
   });
 
-  async function onSubmit(values: z.infer<typeof loginSchema>) {
+  async function onSubmit(values: z.infer<typeof signupSchema>) {
     try {
       setIsLoading(true);
-      const res = await fetch("/api/tenant-auth/login", {
+      const res = await fetch("/api/tenant-auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ ...values, plan: isTrial ? "trial" : "paid" }),
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Login failed");
-      }
-
       const data = await res.json();
-      if (data.requiresMfa) {
-        setMfaPending(data.pendingToken, data.maskedEmail);
-        toast({ title: "Code sent", description: "Check your server logs for the lab code." });
-        setLocation("/verify");
-        return;
-      }
-      toast({ title: "Welcome back", description: `Logged in as ${data.user?.name ?? "user"}` });
-      setLocation("/");
-    } catch (error: any) {
+      if (!res.ok) throw new Error(data.error || "Sign up failed");
+
+      setMfaPending(data.pendingToken, data.maskedEmail);
       toast({
-        title: "Authentication failed",
-        description: error.message || "Invalid credentials",
-        variant: "destructive",
+        title: isTrial ? "Free trial started" : "Account created",
+        description: "Check your server logs for the lab code.",
       });
+      setLocation("/verify");
+    } catch (err: any) {
+      toast({ title: "Sign up failed", description: err.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   }
 
-
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* LEFT: Marketing pitch — solid blue, content TBD */}
+      {/* LEFT */}
       <div className="lg:w-1/2 bg-blue-600 flex items-center justify-center p-8 min-h-[40vh] lg:min-h-screen">
         <div className="text-center text-white/90 max-w-md">
           <div className="mx-auto w-16 h-16 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center mb-6">
@@ -76,72 +68,60 @@ export default function Login() {
         </div>
       </div>
 
-      {/* RIGHT: Layered peek view + login card */}
+      {/* RIGHT */}
       <div className="lg:w-1/2 relative bg-slate-900 min-h-[60vh] lg:min-h-screen overflow-hidden flex items-center justify-center p-6">
-        {/* Layer A: peek PNG */}
         <img
           src={peekImage}
           alt=""
           aria-hidden="true"
           className="absolute inset-0 w-full h-full object-cover object-center"
         />
-        {/* Layer B: blue opacity filter */}
         <div className="absolute inset-0 bg-blue-900/60 backdrop-blur-[2px]" />
 
-        {/* Layer C: glass card stack */}
         <div className="relative z-10 w-full max-w-sm">
           <div className="bg-slate-900/85 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl p-6 text-white">
-            {/* Header */}
             <div className="text-center mb-5">
               <div className="inline-flex items-center gap-2 mb-3">
                 <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <MessageSquare className="w-5 h-5 text-white" />
+                  {isTrial ? (
+                    <Sparkles className="w-5 h-5 text-white" />
+                  ) : (
+                    <MessageSquare className="w-5 h-5 text-white" />
+                  )}
                 </div>
                 <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 text-xs font-semibold">
-                  Beta 1.01
+                  {isTrial ? "14-Day Free Trial" : "Beta 1.01"}
                 </span>
               </div>
-              <h2 className="text-2xl font-bold tracking-tight">TEXTITIE</h2>
-              <p className="text-slate-400 text-xs mt-1">Two-way SMS for teams that actually answer</p>
+              <h2 className="text-2xl font-bold tracking-tight">
+                {isTrial ? "Start your trial" : "Create your account"}
+              </h2>
+              <p className="text-slate-400 text-xs mt-1">
+                {isTrial
+                  ? "No credit card required · Cancel any time"
+                  : "Two-way SMS for teams that actually answer"}
+              </p>
             </div>
 
-            {/* Layer D: nested cookie card (dismissible) */}
-            {!cookiesAcknowledged && (
-              <div className="mb-5 bg-slate-800/80 border border-white/10 rounded-lg p-3">
-                <div className="flex items-start gap-2 mb-2">
-                  <Cookie className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold">We value your privacy</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      We use cookies to enhance your browsing experience. By clicking "Accept", you consent to our use of cookies.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 h-8 text-xs bg-transparent border-white/20 text-white hover:bg-white/10 hover:text-white"
-                    onClick={() => setCookiesAcknowledged(true)}
-                  >
-                    Reject All
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="flex-1 h-8 text-xs bg-blue-600 hover:bg-blue-700"
-                    onClick={() => setCookiesAcknowledged(true)}
-                  >
-                    Accept All
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Login form */}
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="companyName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <Label className="text-slate-300 text-xs">Company name</Label>
+                      <FormControl>
+                        <Input
+                          placeholder="Acme Corp"
+                          className="bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="email"
@@ -159,7 +139,6 @@ export default function Login() {
                     </FormItem>
                   )}
                 />
-
                 <FormField
                   control={form.control}
                   name="password"
@@ -169,7 +148,7 @@ export default function Login() {
                       <FormControl>
                         <Input
                           type="password"
-                          placeholder="••••••••"
+                          placeholder="At least 8 characters"
                           className="bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
                           {...field}
                         />
@@ -185,33 +164,38 @@ export default function Login() {
                   size="lg"
                   disabled={isLoading}
                 >
-                  {isLoading ? "Signing in..." : "Sign In"}
+                  {isLoading
+                    ? "Creating..."
+                    : isTrial
+                    ? "Start Free Trial"
+                    : "Create Account"}
                 </Button>
               </form>
             </Form>
 
-            {/* Sign up + Free Trial links */}
-            <div className="mt-5 text-center text-sm text-slate-400 space-y-1">
+            <div className="mt-5 text-center text-sm text-slate-400">
               <p>
-                Don't have an account?{" "}
+                Already have an account?{" "}
                 <button
                   type="button"
-                  onClick={() => setLocation("/signup")}
+                  onClick={() => setLocation("/login")}
                   className="text-blue-400 hover:text-blue-300 font-medium"
                 >
-                  Create one
+                  Sign in
                 </button>
               </p>
-              <p>
-                Or{" "}
-                <button
-                  type="button"
-                  onClick={() => setLocation("/signup/trial")}
-                  className="text-blue-400 hover:text-blue-300 font-medium"
-                >
-                  Start a Free Trial
-                </button>
-              </p>
+              {!isTrial && (
+                <p className="mt-1">
+                  Or{" "}
+                  <button
+                    type="button"
+                    onClick={() => setLocation("/signup/trial")}
+                    className="text-blue-400 hover:text-blue-300 font-medium"
+                  >
+                    Start a Free Trial
+                  </button>
+                </p>
+              )}
             </div>
 
             <p className="mt-5 text-center text-xs text-slate-500">info@textitie.com</p>
