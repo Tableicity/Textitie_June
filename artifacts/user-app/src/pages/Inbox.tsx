@@ -73,6 +73,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
+import { formatPhone, cityStateForPhone } from "@/lib/phone";
 
 export default function Inbox() {
   const queryClient = useQueryClient();
@@ -451,20 +452,23 @@ export default function Inbox() {
               No conversations found.
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
-              {conversations?.map((conv) => (
+            <div>
+              {conversations?.map((conv) => {
+                const cityState = cityStateForPhone(conv.contactPhone);
+                const isSelected = selectedId === conv.id;
+                return (
                 <button
                   key={conv.id}
                   onClick={() => setSelectedId(conv.id)}
-                  className={`w-full text-left p-4 hover:bg-blue-50/50 transition-colors ${
-                    selectedId === conv.id
-                      ? "bg-blue-50 border-l-4 border-blue-500"
-                      : "border-l-4 border-transparent"
+                  className={`w-full text-left p-4 hover:bg-blue-50/50 transition-colors border-b ${
+                    isSelected
+                      ? "bg-blue-50 border-l-4 border-l-blue-500 border-b-blue-500"
+                      : "border-l-4 border-l-transparent border-b-slate-200"
                   }`}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="font-semibold text-sm text-slate-900 truncate pr-2">
-                      {conv.contactName || conv.contactPhone}
+                      {conv.contactName || formatPhone(conv.contactPhone)}
                     </span>
                     {conv.lastMessageAt && (
                       <span className="text-xs text-slate-400 flex-shrink-0 whitespace-nowrap">
@@ -476,13 +480,18 @@ export default function Inbox() {
                     )}
                   </div>
                   <div className="flex items-center justify-between text-xs text-slate-500">
-                    <span className="truncate pr-4">{conv.contactPhone}</span>
+                    <span className="truncate pr-4">{formatPhone(conv.contactPhone)}</span>
                     {conv.status === "open" ? (
                       <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                     ) : (
                       <CheckCircle2 className="w-3 h-3 text-slate-400" />
                     )}
                   </div>
+                  {cityState && (
+                    <div className="text-[11px] text-slate-400 mt-0.5 truncate">
+                      {cityState}
+                    </div>
+                  )}
                   <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                     {conv.departmentId &&
                       deptMap.get(conv.departmentId) && (
@@ -504,7 +513,8 @@ export default function Inbox() {
                       )}
                   </div>
                 </button>
-              ))}
+                );
+              })}
             </div>
           )}
         </ScrollArea>
@@ -525,12 +535,12 @@ export default function Inbox() {
                     {loadingConv ? (
                       <Skeleton className="h-5 w-32" />
                     ) : (
-                      selectedConv?.contactName || selectedConv?.contactPhone
+                      selectedConv?.contactName || formatPhone(selectedConv?.contactPhone)
                     )}
                   </h2>
                   <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                     <Phone className="w-3 h-3" />
-                    {selectedConv?.contactPhone}
+                    {formatPhone(selectedConv?.contactPhone)}
                     <span className="w-1 h-1 rounded-full bg-slate-300 mx-1"></span>
                     <span className="capitalize">{selectedConv?.status}</span>
                     {selectedConv?.departmentId &&
