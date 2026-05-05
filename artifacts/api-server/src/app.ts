@@ -12,10 +12,13 @@ app.use(
     logger,
     serializers: {
       req(req) {
+        const rawUrl = req.url?.split("?")[0] ?? "";
+        // Redact survey response tokens so they never appear in logs.
+        const url = rawUrl.replace(/^(\/api)?\/s\/[^/?#]+/, "$1/s/[REDACTED]");
         return {
           id: req.id,
           method: req.method,
-          url: req.url?.split("?")[0],
+          url,
         };
       },
       res(res) {

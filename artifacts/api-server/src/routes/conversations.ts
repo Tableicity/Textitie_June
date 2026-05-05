@@ -9,6 +9,7 @@ import { recordMessageUsage } from "../lib/stripe-stub";
 import { checkOutboundCompliance } from "../lib/compliance";
 import { recordAudit } from "../lib/audit";
 import { enqueueSync } from "../lib/integrations/syncWorker";
+import { maybeEnqueueSurveyForClose } from "../lib/surveyDispatcher";
 
 const router = Router();
 
@@ -285,6 +286,12 @@ router.patch("/conversations/:id", requireTenantAuth, async (req, res) => {
           body: `Conversation #${id} resolved. Disposition: ${dispLabel ?? "n/a"}. Note: ${patch.resolutionNote ?? conv[0].resolutionNote ?? ""}`,
           metadata: { conversationId: id, disposition: dispLabel },
         },
+      });
+
+      await maybeEnqueueSurveyForClose({
+        tenantId,
+        conversationId: id,
+        contactPhone: conv[0].contactPhone,
       });
     }
 

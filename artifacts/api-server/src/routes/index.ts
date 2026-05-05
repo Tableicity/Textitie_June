@@ -24,6 +24,8 @@ import auditLogsRouter from "./auditLogs";
 import optInsRouter from "./optIns";
 import integrationsRouter from "./integrations";
 import tenantSettingsRouter from "./tenantSettings";
+import surveysRouter from "./surveys";
+import surveysPublicRouter from "./surveysPublic";
 
 const router: IRouter = Router();
 
@@ -52,5 +54,7 @@ router.use(auditLogsRouter);
 router.use(optInsRouter);
 router.use(integrationsRouter);
 router.use(tenantSettingsRouter);
+router.use(surveysRouter);
+router.use(surveysPublicRouter);
 
 export default router;

@@ -52,7 +52,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AuditLogSection from "@/components/settings/AuditLogSection";
 import ComplianceSection from "@/components/settings/ComplianceSection";
 import IntegrationsSection from "@/components/settings/IntegrationsSection";
-import { ScrollText, Shield, Plug } from "lucide-react";
+import SurveysSection from "@/components/settings/SurveysSection";
+import { ScrollText, Shield, Plug, Star } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -103,6 +104,10 @@ export default function Settings() {
                 <Plug className="w-4 h-4" />
                 Integrations
               </TabsTrigger>
+              <TabsTrigger value="surveys" className="flex items-center gap-2" data-testid="tab-surveys">
+                <Star className="w-4 h-4" />
+                Surveys
+              </TabsTrigger>
               <TabsTrigger value="audit-log" className="flex items-center gap-2" data-testid="tab-audit-log">
                 <ScrollText className="w-4 h-4" />
                 Audit Log
@@ -131,6 +136,10 @@ export default function Settings() {
 
             <TabsContent value="integrations">
               <IntegrationsSection />
+            </TabsContent>
+
+            <TabsContent value="surveys">
+              <SurveysSection />
             </TabsContent>
 
             <TabsContent value="audit-log">

@@ -5,6 +5,7 @@ import { logger } from "./logger";
 import { activateScheduledCampaign } from "./campaignEngine";
 import { processDueReminders } from "../routes/reminders";
 import { processCrmSyncQueue } from "./integrations/syncWorker";
+import { processPendingSurveys } from "./surveyDispatcher";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -40,6 +41,14 @@ async function runTimerCycle(): Promise<void> {
     }
   } catch (err) {
     logger.error({ err }, "processCrmSyncQueue failed");
+  }
+  try {
+    const dispatched = await processPendingSurveys();
+    if (dispatched > 0) {
+      logger.info({ count: dispatched }, "Surveys dispatched");
+    }
+  } catch (err) {
+    logger.error({ err }, "processPendingSurveys failed");
   }
 }
 

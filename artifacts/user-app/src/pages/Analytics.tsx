@@ -1,4 +1,6 @@
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
 import {
   useGetAnalyticsOverview,
   useGetAnalyticsVolume,
@@ -29,6 +31,7 @@ import {
   TrendingUp,
   Download,
   Loader2,
+  Star,
 } from "lucide-react";
 import { getTenantToken } from "@/lib/auth";
 
@@ -101,6 +104,12 @@ export default function Analytics() {
   });
   const departments = useGetAnalyticsDepartments(params, {
     query: { queryKey: getGetAnalyticsDepartmentsQueryKey(params) },
+  });
+
+  const csat = useQuery<{ avg: number | null; count: number; sentCount: number; responseRate: number }>({
+    queryKey: ["analytics", "csat", range.from, range.to],
+    queryFn: () =>
+      apiFetch(`/analytics/csat?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`),
   });
 
   const handleExport = async () => {
@@ -181,7 +190,7 @@ export default function Analytics() {
           <div className="text-center py-16 text-slate-500">Loading analytics…</div>
         ) : (
           <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               <KpiCard
                 icon={MessageSquare}
                 label="Conversations"
@@ -209,6 +218,21 @@ export default function Analytics() {
                 value={String((o?.inboundMessages ?? 0) + (o?.outboundMessages ?? 0))}
                 sub={`${o?.inboundMessages ?? 0} in · ${o?.outboundMessages ?? 0} out`}
                 accent="bg-violet-600"
+              />
+              <KpiCard
+                icon={Star}
+                label="CSAT (avg)"
+                value={
+                  csat.data?.avg !== null && csat.data?.avg !== undefined
+                    ? `${csat.data.avg.toFixed(2)} ★`
+                    : "—"
+                }
+                sub={
+                  csat.data
+                    ? `${csat.data.count}/${csat.data.sentCount} responded · ${Math.round(csat.data.responseRate * 100)}%`
+                    : "No survey data"
+                }
+                accent="bg-amber-600"
               />
             </div>
 

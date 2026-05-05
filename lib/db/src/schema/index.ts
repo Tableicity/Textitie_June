@@ -20,3 +20,6 @@ export * from "./auditLogs";
 export * from "./optIns";
 export * from "./integrations";
 export * from "./crmSyncQueue";
+export * from "./surveys";
+export * from "./surveySends";
+export * from "./surveyResponses";
