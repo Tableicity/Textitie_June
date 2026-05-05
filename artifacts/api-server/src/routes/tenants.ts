@@ -95,6 +95,20 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: body.error.message });
     return;
   }
+  // Server-side E.164 guard: an invalid phone here would silently break
+  // resolveTenantByPhoneNumber() and inbound texts would never route.
+  if (
+    "phoneNumber" in body.data &&
+    body.data.phoneNumber !== null &&
+    body.data.phoneNumber !== undefined &&
+    body.data.phoneNumber !== "" &&
+    !/^\+[1-9]\d{6,14}$/.test(body.data.phoneNumber)
+  ) {
+    res
+      .status(400)
+      .json({ error: "phoneNumber must be E.164 format, e.g. +19094904265" });
+    return;
+  }
   const patch: Record<string, unknown> = {};
   for (const k of [
     "name",

@@ -10,13 +10,6 @@ if (!process.env.DATABASE_URL) {
 
 export type TenantDb = NodePgDatabase<typeof schema>;
 
-interface CachedPool {
-  pool: pg.Pool;
-  db: TenantDb;
-}
-
-const tenantPools = new Map<string, CachedPool>();
-
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function assertSafeSlug(slug: string): void {
@@ -27,59 +20,59 @@ function assertSafeSlug(slug: string): void {
   }
 }
 
-function schemaFor(slug: string): string {
+export function tenantSchemaName(slug: string): string {
   assertSafeSlug(slug);
   return `tenant_${slug.replace(/-/g, "_")}`;
 }
 
-export function tenantSchemaName(slug: string): string {
-  return schemaFor(slug);
+/**
+ * Stage-4 cleanup (deferred): Per-tenant Postgres schemas were originally
+ * intended to give each customer their own `tenant_<slug>.*` namespace, but
+ * only the *write* side of the inbound pipeline was migrated. The *read* side
+ * (the inbox UI in artifacts/user-app) still queries `public.*` directly,
+ * which created a split-brain where inbound messages, auto-replies, and
+ * campaign attribution writes vanished from the inbox in any environment
+ * where the tenant schema actually existed.
+ *
+ * Until we genuinely need cross-customer DB-level isolation (a SOC2 / HIPAA
+ * / sovereign-data driver), every code path uses the global `db` / `pool`
+ * with explicit `tenantId` scoping on each table. All tables that need
+ * per-tenant scoping (`opt_outs`, `automation_rules`, `campaigns`,
+ * `reminders`, `audit_logs`, `conversations`, …) carry a `tenant_id` FK,
+ * and `messages` inherits scoping via `conversation_id`.
+ *
+ * `getTenantDb` and `getTenantPool` therefore return the global pool. The
+ * `slug` parameter is preserved (and still validated) so call sites don't
+ * need to change and so we can re-enable per-tenant routing later by simply
+ * changing this file.
+ */
+
+let cachedPool: pg.Pool | null = null;
+let cachedDb: TenantDb | null = null;
+
+function ensureGlobal(): { pool: pg.Pool; db: TenantDb } {
+  if (cachedPool && cachedDb) return { pool: cachedPool, db: cachedDb };
+  cachedPool = new Pool({ connectionString: process.env.DATABASE_URL });
+  cachedDb = drizzle(cachedPool, { schema });
+  return { pool: cachedPool, db: cachedDb };
 }
 
-/**
- * Returns a Drizzle instance whose underlying connections always run with
- * `search_path = tenant_<slug>, public`. Cached per slug for the process
- * lifetime — first call lazily builds the pool.
- */
 export function getTenantDb(slug: string): TenantDb {
-  const cached = tenantPools.get(slug);
-  if (cached) return cached.db;
-
-  const schemaName = schemaFor(slug);
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-  // Set search_path for every new connection in this pool.
-  pool.on("connect", (client) => {
-    // Identifiers can't be parameterised, but schemaName is validated above.
-    client.query(`SET search_path TO "${schemaName}", public`).catch(() => {
-      /* connection error is surfaced elsewhere */
-    });
-  });
-
-  const db = drizzle(pool, { schema });
-  tenantPools.set(slug, { pool, db });
-  return db;
+  assertSafeSlug(slug);
+  return ensureGlobal().db;
 }
 
-/**
- * Returns the raw pg.Pool whose connections always run with
- * `search_path = tenant_<slug>, public`. Use this for raw SQL paths
- * (`pool.query("...")`) that previously hit the global pool. Cached per
- * slug — same pool that backs `getTenantDb(slug)`.
- */
 export function getTenantPool(slug: string): pg.Pool {
-  // Force pool creation via getTenantDb so the on-connect search_path hook
-  // is registered exactly once per slug.
-  getTenantDb(slug);
-  // Safe: guaranteed present after getTenantDb above.
-  return tenantPools.get(slug)!.pool;
+  assertSafeSlug(slug);
+  return ensureGlobal().pool;
 }
 
 /**
- * Closes all cached tenant pools. Used by tests and graceful shutdown.
+ * Closes the cached pool. Used by tests and graceful shutdown.
  */
 export async function closeAllTenantPools(): Promise<void> {
-  const pools = Array.from(tenantPools.values());
-  tenantPools.clear();
-  await Promise.all(pools.map(({ pool }) => pool.end()));
+  const pool = cachedPool;
+  cachedPool = null;
+  cachedDb = null;
+  if (pool) await pool.end();
 }

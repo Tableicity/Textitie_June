@@ -11,7 +11,7 @@ No specific user preferences were provided in the original document.
 ### Core Architecture
 -   **Monorepo**: Utilizes a pnpm workspace.
 -   **Contract-first API Design**: OpenAPI (`lib/api-spec/openapi.yaml`) defines API specifications, generating client code and Zod schemas.
--   **Database**: PostgreSQL with Drizzle ORM. **Schema-per-tenant isolation (Stage 4)**: each tenant's per-tenant data lives in a dedicated `tenant_<slug>` Postgres schema. Globals (`tenants`, `tenant_users`, `tiers`, `users`, `email_verifications`, `webhook_events`, `injections`) remain in `public`. The middleware `requireTenantAuth` resolves the tenant slug from the JWT and runs the rest of the request inside an `AsyncLocalStorage` context (`tenantSlugStore`); the `db`/`pool` exports from `@workspace/db` are Proxies that read that context, so route-level direct queries route to the correct schema with no per-call edits. Library functions that run outside a request (workers, fire-and-forget jobs) accept an explicit `tenantSlug` and use `getTenantDb(slug)` / `getTenantPool(slug)` directly. Schema provisioning is handled by `ensureTenantSchema(slug)` and the `scripts/provision-tenant-schemas` / `scripts/backfill-tenant-schemas` scripts (idempotent).
+-   **Database**: PostgreSQL with Drizzle ORM. **All data lives in the `public` schema** with explicit `tenant_id` scoping on every per-tenant table (`conversations`, `opt_outs`, `automation_rules`, `campaigns`, `reminders`, `audit_logs`, …); `messages` inherits scoping via `conversation_id`. Stage 4 schema-per-tenant isolation was attempted but only the inbound write path was migrated — the inbox UI continued reading `public.*`, which silently lost auto-replies and campaign attribution writes in any environment where the tenant schema actually existed. **Stage 4 is deferred** until we have a real isolation driver (SOC2/HIPAA/sovereign-data). `getTenantDb(slug)` and `getTenantPool(slug)` in `lib/db/src/tenant-db.ts` are now thin wrappers that return the global pool, so call sites do not need to change when we re-enable schema isolation later.
 -   **API Server**: Express.js application (`artifacts/api-server`).
 -   **Admin UI**: React application (`artifacts/eng-architect`) using Vite, wouter, and shadcn, served at `/admin/`.
 -   **User UI**: React application (`artifacts/user-app`) using Vite, wouter, and shadcn, providing a Textline-style messaging inbox, served at `/` (root).
@@ -50,27 +50,20 @@ No specific user preferences were provided in the original document.
 -   **OpenAI**: `gpt-4o-mini` for the AI Student Whisperer.
 -   **PostgreSQL**: Primary database.
 -   **pdfjs-dist**: Used for text extraction from PDF files for the knowledge base.
-## Stage 4 Multi-Tenancy Migration (in progress)
+## Stage 4 Multi-Tenancy Migration (DEFERRED)
 
-**Architecture:** Schema-per-tenant. Each tenant gets a `tenant_<slug>` Postgres schema; one Drizzle table-def set is reused with `search_path` per pooled connection. Cross-schema FKs into `public.tenants` and `public.tenant_users` are preserved.
+**Status:** Rolled back at the data layer. Schema-per-tenant was a half-finished migration: webhook writes went through `tenant_<slug>.*` while the inbox kept reading `public.*`, so auto-replies, opt-outs, and campaign attribution silently disappeared whenever the tenant schema actually existed. Production "worked" only because the prod database never had `tenant_<slug>` schemas, so `search_path` fell through to `public`. Dev kept breaking because the schemas existed.
 
-**Phase 4A — Plumbing (DONE, verified)**
-- `lib/db/src/tenant-db.ts` — `getTenantDb(slug)` factory, per-slug pool cache, validates slug shape, sets `search_path = tenant_<slug>, public` on every new connection.
-- `lib/db/src/tenant-provisioner.ts` — `provisionTenantSchema(slug)` / `ensureTenantSchema(slug)` / `tenantSchemaExists(slug)`. Reads `tenant-schema-template.sql` and substitutes `__SCHEMA__`.
-- `lib/db/src/tenant-schema-template.sql` — generated from `pg_dump --schema-only` of all 22 per-tenant tables in one invocation (so FKs resolve correctly), then sed-transformed: `public.X` → `__SCHEMA__.X`, with `public.tenants` and `public.tenant_users` restored.
-- `middleware/tenantAuth.ts` — payload now includes `tenantSlug`, attaches `req.tenantDb` to every request, has 1-hour slug cache for legacy tokens (backward compat with sessions issued before 4A).
-- `routes/tenantAuth.ts` — login/verify-mfa/register tokens all carry `tenantSlug`. Register calls `ensureTenantSchema(slug)` after tenant creation (catches errors so a provisioner failure doesn't block signup).
-- `scripts/src/provision-tenant-schemas.ts` + npm script `provision-tenant-schemas`. All 4 existing tenants provisioned (acme, orbital, helvetia, orbital-test), 22 tables each.
-- `scripts/src/backfill-tenant-schemas.ts` + npm script `backfill-tenant-schemas`. Idempotent INSERT...ON CONFLICT DO NOTHING with parent-before-child ordering and per-schema sequence advance (`setval` to MAX(id)+1).
-- `John/pre-stage4-backup-schema.sql` + `John/pre-stage4-backup-data.sql` — full pg_dump backup taken before backfill.
+**Current state:** `lib/db/src/tenant-db.ts` `getTenantDb`/`getTenantPool` return the global pool. All call sites (`webhooks.ts`, `automationEngine.ts`, `campaignAttribution.ts`, audit, routing, sync worker, surveys) now read and write the same `public.*` rows, scoped by `tenant_id`. The slug parameter is preserved and still validated so we can re-enable per-tenant routing by changing only `tenant-db.ts` if a future compliance requirement demands DB-level isolation.
 
-**ACME backfill verified:** 94 rows copied, every one of 18 tenant tables shows public count == tenant_acme count.
+**Original plumbing (still on disk, unused — kept for the future re-enablement path):**
+- `lib/db/src/tenant-provisioner.ts` + `tenant-schema-template.sql` — schema cloning machinery.
+- `scripts/src/provision-tenant-schemas.ts` + `scripts/src/backfill-tenant-schemas.ts` — npm scripts to clone/backfill `tenant_<slug>.*` from `public.*`. Safe to run, but the app no longer reads from those schemas.
+- `John/pre-stage4-backup-schema.sql` + `John/pre-stage4-backup-data.sql` — pg_dump backup taken before the backfill.
+- The `tenant_acme`, `tenant_orbital`, `tenant_helvetia`, `tenant_orbital_test` schemas in dev are dormant — they hold a snapshot of pre-rollback data and can be dropped at any time.
 
-**Phase 4B/4C — Route refactor (NOT STARTED)**
-- 28 files in `artifacts/api-server/src/` reference per-tenant tables (`conversations.ts` alone has 151 references). Each must switch from `db.X.where(eq(X.tenantId, ...))` → `req.tenantDb.X` (no tenantId filter; schema isolation handles it).
-- Webhook + survey-public routes (no `requireTenantAuth`) need to look up tenant from public, then call `getTenantDb(slug)`.
-- Lib files (`automationEngine`, `timerEngine`, `audit`, `compliance`, `routing`, `surveyDispatcher`, `creditEngine`, `campaignEngine`, `seedData`, `stripe-stub`, `integrations/syncWorker`) need to accept slug and use `getTenantDb(slug)`.
-- Estimated: 2–3 focused sessions; biggest files (`conversations.ts`, `campaigns.ts`, `automations.ts`, `automationEngine.ts`, `timerEngine.ts`, `surveyDispatcher.ts`, `syncWorker.ts`) should be split into separate sessions for review.
-- DO NOT drop `tenant_id` columns from public tables yet; we still read from public until 4B is done.
-
-**Files NOT in `public` per current plan:** tenants, tenant_users, email_verifications, tiers, users (legacy), webhook_events, injections.
+**Re-enablement checklist (when isolation is actually required):**
+1. Restore the `search_path` logic in `lib/db/src/tenant-db.ts` (one file).
+2. Re-run `provision-tenant-schemas` + `backfill-tenant-schemas` against the target environment.
+3. Switch the inbox read path (`routes/conversations.ts`, `routes/messages.ts`) to use `getTenantDb(slug)` so reads and writes hit the same schema.
+4. Drop the now-redundant `tenant_id` filters in queries that move into a tenant schema.

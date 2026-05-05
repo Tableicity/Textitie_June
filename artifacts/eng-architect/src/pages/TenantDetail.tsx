@@ -30,6 +30,13 @@ const kbSchema = z.object({
   knowledgeBase: z.string(),
 });
 
+const phoneSchema = z.object({
+  phoneNumber: z
+    .string()
+    .trim()
+    .regex(/^\+[1-9]\d{6,14}$|^$/, "Must be E.164 format (e.g. +19094904265) or empty"),
+});
+
 export default function TenantDetail() {
   const params = useParams();
   const tenantId = params.id ? parseInt(params.id, 10) : 0;
@@ -58,14 +65,45 @@ export default function TenantDetail() {
     defaultValues: { knowledgeBase: "" },
   });
 
+  const phoneForm = useForm<z.infer<typeof phoneSchema>>({
+    resolver: zodResolver(phoneSchema),
+    defaultValues: { phoneNumber: "" },
+  });
+
   const [kbDirty, setKbDirty] = useState(false);
+  const [phoneDirty, setPhoneDirty] = useState(false);
   useEffect(() => {
     if (tenant) {
       kbForm.reset({ knowledgeBase: tenant.knowledgeBase ?? "" });
       setKbDirty(false);
+      phoneForm.reset({ phoneNumber: tenant.phoneNumber ?? "" });
+      setPhoneDirty(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenant?.id, tenant?.knowledgeBase]);
+  }, [tenant?.id, tenant?.knowledgeBase, tenant?.phoneNumber]);
+
+  const onSavePhone = (values: z.infer<typeof phoneSchema>) => {
+    if (!tenant) return;
+    const next = values.phoneNumber.trim() || null;
+    updateTenant.mutate(
+      { id: tenant.id, data: { phoneNumber: next } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
+          setPhoneDirty(false);
+          toast({
+            title: "Tenant Number Saved",
+            description: next
+              ? `Inbound texts to ${next} now route to ${tenant.name}.`
+              : `${tenant.name} no longer has an assigned number.`,
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
 
   const onInject = (values: z.infer<typeof injectSchema>) => {
     if (!tenant) return;
@@ -213,11 +251,42 @@ export default function TenantDetail() {
               <Phone size={16} /> Telephony
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Tenant Number</span>
+              <span className="text-muted-foreground">Current</span>
               <span className="font-mono">{tenant.phoneNumber ?? <em className="text-muted-foreground">unset</em>}</span>
             </div>
+            <Form {...phoneForm}>
+              <form
+                onSubmit={phoneForm.handleSubmit(onSavePhone)}
+                onChange={() => setPhoneDirty(true)}
+                className="space-y-2"
+              >
+                <FormField
+                  control={phoneForm.control}
+                  name="phoneNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-muted-foreground">
+                        Twilio number (E.164, e.g. +19094904265)
+                      </FormLabel>
+                      <FormControl>
+                        <Input placeholder="+1XXXXXXXXXX" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={updateTenant.isPending || !phoneDirty}
+                  className="w-full"
+                >
+                  {updateTenant.isPending ? "Saving..." : "Save Tenant Number"}
+                </Button>
+              </form>
+            </Form>
           </CardContent>
         </Card>
         <Card>

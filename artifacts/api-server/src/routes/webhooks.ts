@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { desc, eq, and } from "drizzle-orm";
-import { db, getTenantDb, webhookEventsTable, tenantsTable, conversationsTable, messagesTable } from "@workspace/db";
+import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable } from "@workspace/db";
 import {
   ReceiveWebhookParams,
   ListWebhookEventsQueryParams,
@@ -129,7 +129,12 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
 
         // ---- Automation Engine (Phase 5) ----
         if (fromNumber) {
-          const tdb = getTenantDb(tenant.slug);
+          // Stage 4 cleanup: write inbound messages through the global `db`
+          // (public.* with explicit tenantId) so the read path in
+          // routes/conversations.ts and the write path in this webhook see
+          // the same rows. Per-tenant schemas are deferred until we actually
+          // need cross-customer isolation at the DB level.
+          const tdb = db;
           const tenantSlug = tenant.slug;
           void (async () => {
             try {
