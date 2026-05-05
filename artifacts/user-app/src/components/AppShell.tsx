@@ -131,18 +131,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <Link
-            href="/settings"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/settings"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
-            title="Settings"
-          >
-            <Settings className="w-5 h-5" />
-          </Link>
-
-          <Link
             href="/automations"
             className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
               location === "/automations"
@@ -176,6 +164,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             title="Billing"
           >
             <CreditCard className="w-5 h-5" />
+          </Link>
+
+          <Link
+            href="/settings"
+            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
+              location === "/settings"
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+            title="Workspace Settings"
+          >
+            <Settings className="w-5 h-5" />
           </Link>
         </div>
 
