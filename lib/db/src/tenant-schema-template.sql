@@ -558,6 +558,11 @@ CREATE TABLE __SCHEMA__.messages (
     body text NOT NULL,
     sender_name text,
     read boolean DEFAULT false NOT NULL,
+    external_id text,
+    status text DEFAULT 'sent' NOT NULL,
+    error_code text,
+    error_message text,
+    delivered_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 

@@ -45,6 +45,11 @@ export const messagesTable = pgTable(
     body: text("body").notNull(),
     senderName: text("sender_name"),
     read: boolean("read").notNull().default(false),
+    externalId: text("external_id"),
+    status: text("status").notNull().default("sent"),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -12,6 +12,7 @@ import { studentWhisper } from "@workspace/ai-student";
 import { processInboundMessage } from "../lib/automationEngine";
 import { attributeInboundResponse } from "../lib/campaignAttribution";
 import { processDeliveryStatus } from "../lib/deliveryStatus";
+import { resolveTenantByPhoneNumber } from "../lib/tenantPhoneLookup";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -39,10 +40,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
     const messageBody = pickString(rawBody, ["Body", "body"]) ?? "";
 
     if (toNumber) {
-      const [tenant] = await db
-        .select()
-        .from(tenantsTable)
-        .where(eq(tenantsTable.phoneNumber, toNumber));
+      const tenant = await resolveTenantByPhoneNumber(toNumber);
 
       if (tenant) {
         let chatwootResult = null;

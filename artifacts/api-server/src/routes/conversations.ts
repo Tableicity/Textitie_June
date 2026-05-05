@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable, contactsTable } from "@workspace/db";
+import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable, contactsTable, tenantsTable } from "@workspace/db";
+import { getSender } from "../lib/senders";
 import { eq, and, desc, isNull, ilike, or, gte, lte, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
@@ -476,6 +477,7 @@ router.post(
         .select({
           id: conversationsTable.id,
           contactPhone: conversationsTable.contactPhone,
+          departmentId: conversationsTable.departmentId,
         })
         .from(conversationsTable)
         .where(
@@ -491,14 +493,38 @@ router.post(
         return;
       }
 
-      const compliance = await checkOutboundCompliance(tenantId, req.tenantUser!.tenantSlug, convRows[0].contactPhone);
+      const conv = convRows[0];
+      const compliance = await checkOutboundCompliance(tenantId, req.tenantUser!.tenantSlug, conv.contactPhone);
       if (!compliance.ok) {
         res.status(422).json({ error: compliance.message, reason: compliance.reason });
         return;
       }
 
+      // Resolve From: prefer department.phone_number, fall back to tenant.phone_number,
+      // then global SAMA_FROM_NUMBER (handled inside TwilioSender).
+      let fromOverride: string | null = null;
+      if (conv.departmentId) {
+        const dept = await db
+          .select({ phoneNumber: departmentsTable.phoneNumber })
+          .from(departmentsTable)
+          .where(eq(departmentsTable.id, conv.departmentId))
+          .limit(1);
+        fromOverride = dept[0]?.phoneNumber ?? null;
+      }
+      if (!fromOverride) {
+        const tenant = await db
+          .select({ phoneNumber: tenantsTable.phoneNumber })
+          .from(tenantsTable)
+          .where(eq(tenantsTable.id, tenantId))
+          .limit(1);
+        fromOverride = tenant[0]?.phoneNumber ?? null;
+      }
+
+      // Persist-first: insert as 'pending' BEFORE calling carrier so a crash
+      // between Twilio acceptance and DB write can never leave a delivered
+      // message unrecorded. Reconciliation can sweep stale 'pending' rows.
       const now = new Date();
-      const rows = await db
+      const [pendingRow] = await db
         .insert(messagesTable)
         .values({
           conversationId,
@@ -506,8 +532,42 @@ router.post(
           body: body.trim(),
           senderName: req.tenantUser!.email,
           read: true,
+          status: "pending",
         })
         .returning();
+
+      const sender = getSender();
+      const sendResult = await sender.send({
+        to: conv.contactPhone,
+        body: body.trim(),
+        tenantId,
+        conductorAuthorized: true,
+        fromOverride,
+      });
+
+      const finalStatus = sendResult.status === "sent" ? "sent" : "failed";
+      const [updatedRow] = await db
+        .update(messagesTable)
+        .set({
+          status: finalStatus,
+          externalId: sendResult.externalId ?? null,
+          errorMessage: sendResult.status === "sent" ? null : sendResult.responseSummary,
+        })
+        .where(eq(messagesTable.id, pendingRow.id))
+        .returning();
+
+      if (sendResult.status !== "sent") {
+        logger.warn(
+          { conversationId, tenantId, messageId: pendingRow.id, summary: sendResult.responseSummary },
+          "Outbound send failed; message persisted with status=failed",
+        );
+        res.status(502).json({
+          error: "Carrier rejected the message",
+          detail: sendResult.responseSummary,
+          message: updatedRow,
+        });
+        return;
+      }
 
       await db
         .update(conversationsTable)
@@ -518,7 +578,7 @@ router.post(
         logger.warn({ err: usageErr, tenantId }, "Usage tracking failed (non-blocking)");
       });
 
-      res.status(201).json(rows[0]);
+      res.status(201).json(updatedRow);
     } catch (err) {
       logger.error({ err }, "Send message error");
       res.status(500).json({ error: "Internal server error" });
