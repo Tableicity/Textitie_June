@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
 import Login from "@/pages/Login";
+import Verify from "@/pages/Verify";
 import Inbox from "@/pages/Inbox";
 import Contacts from "@/pages/Contacts";
 import Settings from "@/pages/Settings";
@@ -20,6 +21,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/verify" component={Verify} />
       <Route>
         <AppShell>
           <Switch>

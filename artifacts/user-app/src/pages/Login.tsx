@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
-import { setTenantToken } from "@/lib/auth";
+import { setMfaPending } from "@/pages/Verify";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,8 +43,13 @@ export default function Login() {
       }
 
       const data = await res.json();
-      setTenantToken(data.token);
-      toast({ title: "Welcome back", description: `Logged in as ${data.user.name}` });
+      if (data.requiresMfa) {
+        setMfaPending(data.pendingToken, data.maskedEmail);
+        toast({ title: "Code sent", description: "Check your server logs for the lab code." });
+        setLocation("/verify");
+        return;
+      }
+      toast({ title: "Welcome back", description: `Logged in as ${data.user?.name ?? "user"}` });
       setLocation("/");
     } catch (error: any) {
       toast({
