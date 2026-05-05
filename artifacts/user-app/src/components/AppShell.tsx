@@ -112,7 +112,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 ? "bg-blue-600 text-white shadow-md"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
-            title="Inbox"
+            title="Messages"
           >
             <MessageSquare className="w-5 h-5" />
           </Link>

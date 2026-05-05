@@ -1223,7 +1223,7 @@ export default function Inbox() {
             </DialogTitle>
             <DialogDescription>
               Halo AI is coming soon. We'll surface AI-assisted replies, summaries,
-              and lead intelligence right inside your inbox.
+              and lead intelligence right inside your conversations.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
