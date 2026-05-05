@@ -16,5 +16,7 @@ export interface CreateContactInput {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
+  location?: string | null;
+  /** @nullable */
   tags?: string[] | null;
 }

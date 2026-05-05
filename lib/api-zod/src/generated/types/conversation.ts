@@ -31,4 +31,6 @@ export interface Conversation {
   /** @nullable */
   lastMessageAt: Date | null;
   createdAt: Date;
+  /** @nullable */
+  contactLocation?: string | null;
 }

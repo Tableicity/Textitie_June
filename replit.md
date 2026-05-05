@@ -1,7 +1,7 @@
 # Project SAMA — Control Plane & User Messaging
 
 ## Overview
-Project SAMA (Simple but Advanced Messaging Alternative) is a multi-tenant control plane designed to manage communication flows. It features a Master Conductor for overseeing tenants, injecting messages into the SAMA pipe, and monitoring inbound webhooks. SAMA aims to provide a robust, scalable, and intelligent messaging solution for businesses, offering multi-tenant management, AI-powered knowledge bases, and a user-friendly messaging inbox for customer agents.
+Project SAMA (Simple but Advanced Messaging Alternative) is a multi-tenant control plane designed for robust, scalable, and intelligent communication management. It features a Master Conductor for overseeing tenants, injecting messages, and monitoring webhooks. Key capabilities include multi-tenant management, an AI-powered knowledge base, a user-friendly messaging inbox for customer agents, and comprehensive compliance features. SAMA aims to revolutionize business communication by offering a sophisticated yet easy-to-use platform.
 
 ## User Preferences
 No specific user preferences were provided in the original document.
@@ -9,55 +9,44 @@ No specific user preferences were provided in the original document.
 ## System Architecture
 
 ### Core Architecture
-- **Monorepo**: Utilizes a pnpm workspace.
-- **Contract-first API Design**: API specifications defined using OpenAPI (`lib/api-spec/openapi.yaml`), generating client code and Zod schemas.
-- **Database**: PostgreSQL with Drizzle ORM for managing core entities like tenants, users, and conversations.
-- **API Server**: An Express.js application (`artifacts/api-server`).
-- **Admin UI**: A React application (`artifacts/eng-architect`) with Vite, wouter, and shadcn. Served at `/admin/`.
-- **User UI**: A React application (`artifacts/user-app`) with Vite, wouter, and shadcn, providing a Textline-style messaging inbox. Served at `/` (root — the front door).
+-   **Monorepo**: Utilizes a pnpm workspace.
+-   **Contract-first API Design**: OpenAPI (`lib/api-spec/openapi.yaml`) defines API specifications, generating client code and Zod schemas.
+-   **Database**: PostgreSQL with Drizzle ORM.
+-   **API Server**: Express.js application (`artifacts/api-server`).
+-   **Admin UI**: React application (`artifacts/eng-architect`) using Vite, wouter, and shadcn, served at `/admin/`.
+-   **User UI**: React application (`artifacts/user-app`) using Vite, wouter, and shadcn, providing a Textline-style messaging inbox, served at `/` (root).
 
 ### Key Features & Implementations
-- **Modular Sender Pipeline**: Pluggable message sender interface.
-- **Conductor Authentication**: HTTP Basic Auth for admin APIs, with bypasses for public and tenant-scoped routes.
-- **Multi-Tenant Intelligence**: Inbound routing by tenant phone numbers, per-tenant `From` numbers for outbound messages, and Chatwoot integration.
-- **AI Student & Knowledge Base**: Tenants upload documents (PDF/TXT/MD/CSV) for an AI Student (GPT-4o-mini) to use for RAG-contextualized responses, provided as private notes in Chatwoot.
-- **10DLC Compliance Monitoring**: Integrates with Twilio Trust Hub APIs for real-time compliance status.
-- **User & Tenant Authentication**: Separate mechanisms for admin (Bearer tokens) and tenant agents (JWTs).
-- **Conversation Management**: Features for claiming, transferring, unassigning conversations, and managing events.
-- **Department & Agent Management**: Functionality for creating departments, assigning phone numbers, managing agent roles, statuses, skills, and languages, including routing strategies.
-- **UI/UX**: React-based UIs with Vite, wouter, and shadcn, distinct branding, and themes. The User UI offers a two-panel inbox and agent status indicators.
-- **Billing & Subscriptions**: Stripe billing with a stub implementation, supporting subscription plans (starter/growth/enterprise), a per-message credit model, usage metering, and a free trial flow. The architecture is swap-ready for real Stripe integration.
-- **Automations & Shortcuts**: Includes automation rules (keyword replies, follow-up timers, auto-resolve, welcome messages, opt-out management) and message templates (shortcuts) with a UI for management and an inbox picker.
-- **Analytics & Insights (Phase 7)**: Tenant-facing dashboard at `/analytics` with date-range selector (7/30/90 days). Five endpoints under `/api/analytics/*`: `overview` (total/open/closed conversations, avg+median+p90 first-response time, avg+median resolution time, resolution rate, inbound/outbound message counts), `volume` (daily time-series of new conversations and messages), `agents` (per-agent KPIs: handled, sent, resolved, avg TTFR), `departments` (per-department metrics with avg TTFR + avg resolution), and `export` (CSV download of all conversations in range with computed metrics). All KPIs computed on-the-fly from `conversations` + `messages` + `conversation_events` via parameterized SQL with tenant scoping. Performance indexes: `conversations(tenant_id, created_at)`, `messages(conversation_id, direction, created_at)`, `messages(conversation_id, created_at)`. CSV serializer defuses Excel/Sheets formula-injection by prefixing cells starting with `= + - @ \t \r`. UI uses Recharts (line for volume, bar for departments) with shadcn/Tailwind cards.
-- **Phase 7.1 — Advanced Inbox Features**: Five new agent-productivity tools.
-  - **Whispers (internal notes)**: Composer toggle in `Inbox.tsx` writes `messages.direction='internal'` via `POST /conversations/:id/whisper`. Internal messages render as amber sticky-note bubbles in the thread, are never sent to Twilio (only `outbound` direction is dispatched), and do not bump `lastMessageAt`.
-  - **Dispositions**: Tenant-scoped resolution categories (`dispositions` table with label/color/sort/archived). Full CRUD at `/api/dispositions` with soft-archive. Managed in **Settings → Dispositions** tab. Selected when resolving a conversation via the close-with-disposition modal.
-  - **Contact management & tagging**: Tenant-scoped `contacts` table (phone unique per tenant, name/email/notes/tags). New **Contacts** sidebar nav with two-pane page (`Contacts.tsx`): searchable list + tag filter (powered by `/api/contacts/tags` distinct endpoint), detail view shows tags/notes + conversation history (joined via `conversations.contact_id`). Endpoints: `GET/POST /contacts`, `GET/PATCH/DELETE /contacts/:id`, `GET /contacts/tags`.
-  - **Conversation search & filtering**: `GET /conversations` extended with `q` (ILIKE on contact name/phone + EXISTS subquery on `messages.body`), `status` (open/closed), `assignedUserId`, `from`, `to` query params. Inbox left panel wires up debounced search input + status select.
-  - **Reminders**: Tenant-scoped `reminders` table (per-user, conversation-linked). Endpoints: `GET/POST /reminders`, `POST /reminders/:id/dismiss`, `DELETE /reminders/:id`. Inbox header has **Remind** button (modal with datetime picker + quick presets +15m/+1h/+4h/Tomorrow 9am). `ReminderBell` in `AppShell` polls `/reminders?status=due` every 30s with badge count; clicking a due reminder jumps to that conversation. `timerEngine.ts` calls `processDueReminders()` each 60s cycle to atomically mark `firedAt` when `remindAt <= now`.
-  - **Schema additions on `conversations`**: `contact_id`, `disposition_id`, `resolution_note` (all nullable). `PATCH /conversations/:id` handles status (open/closed) + disposition (tenant-validated) + resolution note, emitting a `resolved` conversation event on close.
-  - **Deferred to next session**: MMS attachments, Group messaging.
-- **Phase 7.2 — Surveys (CSAT)**: One-tap (1–5) customer satisfaction surveys delivered by SMS after a conversation closes.
-  - **Schema**: `surveys` (one row per tenant per type, default type `csat`, with `enabled`, `prompt`, `thankYou`, `sendAfterClose`, `sendDelayMinutes`), `survey_sends` (token-keyed, references conversation, status pending/sent/responded/failed/expired, 14-day expiry), `survey_responses` (1:1 with send via unique constraint, score 1–5, optional comment, IP/UA captured).
-  - **Auto-send**: `PATCH /conversations/:id` close handler calls `maybeEnqueueSurveyForClose()` after the existing CRM enqueue. It runs the standard `checkOutboundCompliance()` (opt-out / quiet hours / cap / consent) and inserts a pending `survey_sends` row with a 18-byte base64url token. The 60s `timerEngine` cycle runs `processPendingSurveys()` which respects `sendDelayMinutes`, formats the message as `${prompt} ${publicUrl}`, dispatches via the existing `getSender()` (Stub or Twilio), marks `status=sent` with `sentAt`, and a sweep marks expired sent rows `expired`.
-  - **Public response page**: `GET/POST /api/s/:token` (whitelisted in `conductorAuth`) renders self-contained HTML with inline CSS/JS — no auth, no React, no external assets. 1–5 button rating, optional comment textarea (max 1000 chars). POST writes to `survey_responses` (unique on `send_id` defends races) and flips the send to `status=responded`. Tokens that are 404, expired, or already responded show graceful pages.
-  - **Endpoints**: `GET/PUT /api/surveys` (admin/owner only on PUT, audited via `survey.updated`), `GET /api/surveys/responses` (paginated, joined to conversation for contact name), `GET /api/surveys/sends` (status visibility), `GET /api/analytics/csat?from&to` (avg, count, sentCount, responseRate, dailyAvg series).
-  - **UI**: New **Settings → Surveys** tab (`SurveysSection.tsx`) with three KPI cards (Avg CSAT, Responses 30d, Response Rate), enable toggle, auto-send-after-close toggle, send-delay (0–60min), prompt + thank-you text inputs, and recent-responses table with color-coded score badges (≥4 emerald, =3 amber, ≤2 red). Analytics dashboard (`Analytics.tsx`) gains a fifth KPI card showing `avg ★` plus `responded/sent · rate%`.
-  - **Public URL helper**: `buildSurveyUrl(token)` resolves base from `REPLIT_DOMAINS` (prod) → `REPLIT_DEV_DOMAIN` (dev) → `localhost:80` so links work in both environments.
-- **Campaigns (Phase 6 — Commercial Megaphone)**: Bulk SMS campaigns with audience segmentation (tags + status + last-interaction), `{{first_name}}`/`{{full_name}}`/`{{phone}}` variable injection, pre-flight credit checks (prepaid + included + overage), GSM-7/UCS-2 segment-aware billing, and atomic rate-limited delivery (10 msg/sec). **Scheduler autonomy**: campaigns can be created with `scheduledAt` and the timer engine (60s cycle) auto-fires them via `activateScheduledCampaign`. **Twilio delivery webhook** at `/api/webhooks/twilio/status` updates `campaign_messages.delivered_at` and increments `campaigns.delivered_count`; the `StubSender` simulates this in-process via `simulateDeliveryCallback` (Sim-Vibe) for local testing. **Last-touch attribution** (72h window) credits inbound replies to `campaigns.response_count` and stamps `campaign_messages.responded_at` (idempotent); STOP/UNSUBSCRIBE writes the `campaign_id` Smoking Gun onto the `opt_outs` row and bumps `campaigns.opt_out_count` so tenants see *which* campaign caused the unsubscribe. UI surfaces a "Send now / Schedule for later" toggle in the wizard, a `scheduled` badge in the list, and Delivered / Responses / Opt-Outs cards on the detail page.
-- **Phase 9.1 — Integrations & Compliance** (4 of 6 picked from John/Phase9.1.md; remaining items have full deferred plans in that doc):
-  - **Audit Log**: New `audit_logs` table (tenant-scoped, indexed on entity, action, createdAt). `lib/audit.ts#recordAudit(req, {action, entityType, entityId, before?, after?})` resolves actor email, captures IP/UA/sessionId, and is fire-and-await with internal try/catch. Wired into: tenant settings updates, HIPAA enable/disable, opt-in record/revoke, integration connect/disconnect/resync, contact create/update/delete, conversation update/resolve. Endpoint: `GET /audit-logs` (paginated, filters: entityType, entityId, action, actorUserId, from/to). UI: **Settings → Audit Log** tab with filters + pagination.
-  - **TCPA Compliance Enhancements**: New `opt_ins` table (phone unique per tenant, source enum: web_form/keyword/agent_collected/imported, captures IP/UA/evidenceUrl). Tenants table extended with `quietHoursStart/End` (0-23 hours, supports cross-midnight), `quietHoursTz` (IANA), `frequencyCapPerDay` (0=disabled), `requireDoubleOptIn` (boolean). `lib/compliance.ts#checkOutboundCompliance(tenantId, phone)` is called from `POST /conversations/:id/messages` and returns 422 with one of these reasons: `opted_out`, `no_consent`, `quiet_hours`, `frequency_cap`. Endpoints: `GET/POST /opt-ins`, `POST /opt-ins/:id/revoke`, `GET /opt-ins/lookup`, `GET/PATCH /tenant-settings/me`. UI: **Settings → Compliance** tab with quiet-hours/cap/double-opt-in form + opt-in record table with revoke button.
-  - **HubSpot Connector (stub-first)**: New `integrations` table (provider/status/displayName/configJson/settingsJson/connectedAt/lastSyncAt/lastError, unique on tenant+provider). New `crm_sync_queue` (pending/completed/failed with attempts + lastError + nextRetryAt for exp backoff). `lib/integrations/hubspotStub.ts` provides `StubHubSpotClient` (returns deterministic stub IDs `stub_hs_contact_<hex>` / `stub_hs_engagement_<ts>_<rand>`) and an in-memory `getSimLog(tenantId)` (cap 100/tenant). `lib/integrations/syncWorker.ts#enqueueSync()` (no-op if integration not connected) + `processCrmSyncQueue()` (claims pending/retry-due items, max 3 attempts, exponential backoff). Worker runs every 60s in the timer engine cycle. Triggers: contact create/update enqueues `upsert`; conversation close enqueues `log_activity`. Endpoints: `GET /integrations`, `POST /integrations/:provider/connect|disconnect`, `GET /integrations/:provider/sync-queue`, `GET /integrations/hubspot/sim-log`, `POST /integrations/:provider/resync` (re-enqueues all contacts + closed conversations). UI: **Settings → Integrations** tab with connect/disconnect/resync buttons + live sync queue + simulation log (5s polling).
-  - **HIPAA Plan Flag**: `tiers.hipaa_eligible` boolean (Enterprise = true). Tenants table extended with `hipaaEnabled`, `baaAcknowledgedAt`, `baaAcknowledgedBy`. Endpoints: `POST /tenant-settings/hipaa/acknowledge` (rejects if tier not eligible, records BAA in audit log) and `POST /tenant-settings/hipaa/disable`. `lib/logger.ts` gains a HIPAA-aware `formatters.log` hook with PHI redaction (phone/SSN regex + key-name redaction for `phone`/`phoneNumber`/`contactPhone`/`body`); `setHipaaEnabled(tenantId, bool)` and `isHipaaActive()` toggle the redaction at runtime. `lib/hipaaBootstrap.ts#bootstrapHipaaState()` runs at server start to load tenants where `hipaa_enabled=true` into the redaction set. UI: **HipaaBanner** mounted in `AppShell`'s main panel shows when active; **Compliance** tab gates the "Acknowledge BAA" button on `hipaaEligible` flag.
-  - **Frontend pattern**: New endpoints use a thin `lib/apiFetch.ts` helper (Bearer auth, JSON parse, ApiError class) rather than expanding the OpenAPI codegen surface — these are admin/settings paths, not the hot inbox path.
-  - **Conductor auth bypass**: `middleware/conductorAuth.ts` whitelists `/audit-logs`, `/opt-ins`, `/integrations`, `/tenant-settings` so the tenant JWT path applies.
-- **Auto-Seed Strategy**: Idempotent seed data for tiers, demo tenants (ACME Corp, Orbital Logistics, Helvetia Privatbank), departments, conversations, billing, automation rules, message templates, and campaign credits. This creates a testable sandbox environment.
+-   **Modular Sender Pipeline**: Pluggable interface for message sending.
+-   **Conductor Authentication**: HTTP Basic Auth for admin APIs; Bearer tokens for admin, JWTs for tenant agents.
+-   **Multi-Tenant Intelligence**: Inbound routing by tenant phone numbers, per-tenant `From` numbers for outbound messages, and Chatwoot integration.
+-   **AI Student & Knowledge Base**: Tenants upload documents (PDF/TXT/MD/CSV) for an AI Student (GPT-4o-mini) to generate RAG-contextualized responses as private notes in Chatwoot.
+-   **10DLC Compliance Monitoring**: Integrates with Twilio Trust Hub APIs for real-time compliance status.
+-   **Conversation Management**: Features for claiming, transferring, unassigning, and event management.
+-   **Department & Agent Management**: Creation of departments, phone number assignment, agent roles, statuses, skills, languages, and routing strategies.
+-   **UI/UX**: React-based UIs with distinct branding, themes, and a two-panel inbox with agent status indicators.
+-   **Billing & Subscriptions**: Stripe billing (stubbed) with subscription plans, per-message credit model, usage metering, and free trial.
+-   **Automations & Shortcuts**: Automation rules (keyword replies, follow-ups, auto-resolve, welcome messages, opt-out) and message templates (shortcuts) with UI management.
+-   **Analytics & Insights**: Tenant-facing dashboard at `/analytics` with key performance indicators (KPIs) like total/open/closed conversations, response times, message counts, per-agent/department metrics, and CSV export. KPIs are computed on-the-fly from conversation and message data.
+-   **Advanced Inbox Features**:
+    -   **Whispers**: Internal notes (`messages.direction='internal'`) visible only to agents.
+    -   **Dispositions**: Tenant-scoped resolution categories for conversations.
+    -   **Contact Management & Tagging**: Tenant-scoped contact management with searchable lists, tags, and conversation history.
+    -   **Conversation Search & Filtering**: Extended `GET /conversations` with various query parameters.
+    -   **Reminders**: Tenant-scoped, per-user, conversation-linked reminders with notifications.
+-   **Surveys (CSAT)**: One-tap customer satisfaction surveys delivered via SMS after conversation closure. Includes schema for surveys, sends, and responses, with auto-sending, a public response page, and dedicated analytics.
+-   **Campaigns**: Bulk SMS campaigns with audience segmentation, variable injection, credit checks, segment-aware billing, and rate-limited delivery. Features include scheduling, Twilio delivery webhooks, and last-touch attribution for responses and opt-outs.
+-   **Integrations & Compliance**:
+    -   **Audit Log**: Comprehensive `audit_logs` table for tracking actions, indexed by entity, action, and timestamp.
+    -   **TCPA Compliance Enhancements**: `opt_ins` table, tenant-level quiet hours, frequency caps, and double opt-in requirements. Outbound compliance checks prevent sending messages violating these rules.
+    -   **HubSpot Connector (stub-first)**: Integration with HubSpot for CRM syncing (contacts, conversation activity) via a queue and a worker, with a simulation log for testing.
+    -   **HIPAA Plan Flag**: Tier-based HIPAA eligibility with tenant-level `hipaaEnabled`, BAA acknowledgment, and PHI redaction in logs.
+-   **Auto-Seed Strategy**: Idempotent seed data for consistent environment setup (tiers, demo tenants, departments, conversations, billing, etc.).
 
 ## External Dependencies
 
-- **Twilio**: Direct message sending, inbound routing, and 10DLC compliance monitoring.
-- **Chatwoot**: Sovereign bridging, conversation management, and posting AI-generated notes.
-- **OpenAI**: `gpt-4o-mini` for the AI Student Whisperer (knowledge base interaction, drafting replies).
-- **PostgreSQL**: Primary database for all data persistence.
-- **pdfjs-dist**: Used for text extraction from PDF files for knowledge base uploads.
+-   **Twilio**: Message sending, inbound routing, and 10DLC compliance.
+-   **Chatwoot**: Sovereign bridging, conversation management, and AI-generated note posting.
+-   **OpenAI**: `gpt-4o-mini` for the AI Student Whisperer.
+-   **PostgreSQL**: Primary database.
+-   **pdfjs-dist**: Used for text extraction from PDF files for the knowledge base.

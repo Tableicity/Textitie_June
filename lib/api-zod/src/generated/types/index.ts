@@ -56,6 +56,7 @@ export * from "./createAutomationInputTriggerConfig";
 export * from "./createCampaignInput";
 export * from "./createCampaignInputSegmentFilter";
 export * from "./createContactInput";
+export * from "./createConversationInput";
 export * from "./createDepartmentInput";
 export * from "./createDispositionInput";
 export * from "./createReminderInput";

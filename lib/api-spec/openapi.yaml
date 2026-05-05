@@ -359,6 +359,35 @@ paths:
                 $ref: "#/components/schemas/ApiError"
 
   /conversations:
+    post:
+      operationId: createConversation
+      tags: [conversations]
+      summary: Start a new conversation by phone number (upserts contact, reuses open conversation if one exists)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConversationInput"
+      responses:
+        "200":
+          description: Existing open conversation reused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+        "201":
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
     get:
       operationId: listConversations
       tags: [conversations]
@@ -2535,6 +2564,8 @@ components:
         createdAt:
           type: string
           format: date-time
+        contactLocation:
+          type: ["string", "null"]
       required:
         - id
         - tenantId
@@ -3552,6 +3583,7 @@ components:
         name: { type: ["string", "null"] }
         email: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        location: { type: ["string", "null"] }
         tags:
           type: ["array", "null"]
           items: { type: string }
@@ -3559,7 +3591,7 @@ components:
         lastInteractionAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, tenantId, phone, name, email, notes, firstSeenAt, lastInteractionAt, createdAt, updatedAt]
+      required: [id, tenantId, phone, name, email, notes, location, firstSeenAt, lastInteractionAt, createdAt, updatedAt]
 
     ContactConversationSummary:
       type: object
@@ -3589,6 +3621,7 @@ components:
         name: { type: ["string", "null"] }
         email: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        location: { type: ["string", "null"] }
         tags:
           type: ["array", "null"]
           items: { type: string }
@@ -3600,9 +3633,18 @@ components:
         name: { type: ["string", "null"] }
         email: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        location: { type: ["string", "null"] }
         tags:
           type: ["array", "null"]
           items: { type: string }
+
+    CreateConversationInput:
+      type: object
+      properties:
+        contactPhone: { type: string, minLength: 1 }
+        contactName: { type: ["string", "null"] }
+        departmentId: { type: ["integer", "null"] }
+      required: [contactPhone]
 
     Reminder:
       type: object

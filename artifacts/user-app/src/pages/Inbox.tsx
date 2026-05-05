@@ -6,6 +6,7 @@ import {
   useListDepartments,
   useListAgents,
   useClaimConversation,
+  useCreateConversation,
   useTransferConversation,
   useUnassignConversation,
   useListConversationEvents,
@@ -37,6 +38,8 @@ import {
   Filter,
   Hand,
   ArrowRightLeft,
+  MapPin,
+  PencilLine,
   UserX,
   History,
   Loader2,
@@ -94,6 +97,9 @@ export default function Inbox() {
   const [showRemind, setShowRemind] = useState(false);
   const [remindAt, setRemindAt] = useState("");
   const [remindNote, setRemindNote] = useState("");
+  const [showNewMessage, setShowNewMessage] = useState(false);
+  const [newPhone, setNewPhone] = useState("");
+  const [newName, setNewName] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -244,6 +250,20 @@ export default function Inbox() {
 
   const claimMutation = useClaimConversation({
     mutation: { onSuccess: invalidateConv },
+  });
+
+  const createConvMutation = useCreateConversation({
+    mutation: {
+      onSuccess: (data) => {
+        queryClient.invalidateQueries({
+          queryKey: getListConversationsQueryKey(filterParams),
+        });
+        setShowNewMessage(false);
+        setNewPhone("");
+        setNewName("");
+        if (data?.id) setSelectedId(data.id);
+      },
+    },
   });
 
   const transferMutation = useTransferConversation({
@@ -482,14 +502,6 @@ export default function Inbox() {
                           </span>
                         </div>
                       )}
-                    {!conv.assignedUserId && conv.status === "open" && (
-                      <Badge
-                        variant="outline"
-                        className="text-[9px] h-4 px-1.5 border-amber-300 text-amber-600 bg-amber-50"
-                      >
-                        Unassigned
-                      </Badge>
-                    )}
                   </div>
                 </button>
               ))}
@@ -541,11 +553,34 @@ export default function Inbox() {
                           </span>
                         </>
                       )}
+                    {selectedConv?.contactLocation && (
+                      <>
+                        <span className="w-1 h-1 rounded-full bg-slate-300 mx-1"></span>
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {selectedConv.contactLocation}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-medium gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
+                  onClick={() => {
+                    setNewPhone("");
+                    setNewName("");
+                    setShowNewMessage(true);
+                  }}
+                  data-testid="button-new-message-header"
+                >
+                  <PencilLine className="w-3 h-3" />
+                  New Message
+                </Button>
                 {!selectedConv?.assignedUserId && (
                   <Button
                     variant="outline"
@@ -987,6 +1022,20 @@ export default function Inbox() {
             <p className="text-sm font-medium text-slate-500">
               Select a conversation to start messaging
             </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4 h-8 text-xs font-medium gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
+              onClick={() => {
+                setNewPhone("");
+                setNewName("");
+                setShowNewMessage(true);
+              }}
+              data-testid="button-new-message-empty"
+            >
+              <PencilLine className="w-3 h-3" />
+              New Message
+            </Button>
           </div>
         )}
       </div>
@@ -1066,6 +1115,75 @@ export default function Inbox() {
               Resolve
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Message dialog */}
+      <Dialog open={showNewMessage} onOpenChange={setShowNewMessage}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New message</DialogTitle>
+            <DialogDescription>
+              Enter the recipient's phone number to start a new conversation. If an open
+              conversation already exists for this number, you'll be taken to it.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const phone = newPhone.trim();
+              if (!phone) return;
+              createConvMutation.mutate({
+                data: {
+                  contactPhone: phone,
+                  contactName: newName.trim() || null,
+                },
+              });
+            }}
+            className="space-y-4 py-2"
+          >
+            <div>
+              <Label className="mb-1.5 block">To</Label>
+              <Input
+                autoFocus
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                placeholder="+15551234567"
+                data-testid="input-new-message-phone"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Use E.164 format (e.g. +15551234567).
+              </p>
+            </div>
+            <div>
+              <Label className="mb-1.5 block">Name (optional)</Label>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Jane Doe"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowNewMessage(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-blue-600 hover:bg-blue-700"
+                disabled={createConvMutation.isPending || !newPhone.trim()}
+                data-testid="button-create-conversation"
+              >
+                {createConvMutation.isPending && (
+                  <Loader2 className="w-3 h-3 animate-spin mr-2" />
+                )}
+                Done
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

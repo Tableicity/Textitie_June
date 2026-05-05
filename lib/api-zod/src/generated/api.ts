@@ -348,6 +348,34 @@ export const TenantMeResponse = zod.object({
 });
 
 /**
+ * @summary Start a new conversation by phone number (upserts contact, reuses open conversation if one exists)
+ */
+
+export const CreateConversationBody = zod.object({
+  contactPhone: zod.string().min(1),
+  contactName: zod.string().nullish(),
+  departmentId: zod.number().nullish(),
+});
+
+export const CreateConversationResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  departmentId: zod.number().nullable(),
+  contactId: zod.number().nullish(),
+  contactPhone: zod.string(),
+  contactName: zod.string().nullable(),
+  status: zod.enum(["open", "closed", "snoozed"]),
+  dispositionId: zod.number().nullish(),
+  resolutionNote: zod.string().nullish(),
+  tags: zod.array(zod.string()).nullish(),
+  assignedUserId: zod.number().nullable(),
+  assignedAt: zod.coerce.date().nullable(),
+  lastMessageAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+  contactLocation: zod.string().nullish(),
+});
+
+/**
  * @summary List conversations for the tenant
  */
 export const ListConversationsQueryParams = zod.object({
@@ -383,6 +411,7 @@ export const ListConversationsResponseItem = zod.object({
   assignedAt: zod.coerce.date().nullable(),
   lastMessageAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
+  contactLocation: zod.string().nullish(),
 });
 export const ListConversationsResponse = zod.array(
   ListConversationsResponseItem,
@@ -410,6 +439,7 @@ export const GetConversationResponse = zod.object({
   assignedAt: zod.coerce.date().nullable(),
   lastMessageAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
+  contactLocation: zod.string().nullish(),
 });
 
 /**
@@ -440,6 +470,7 @@ export const UpdateConversationResponse = zod.object({
   assignedAt: zod.coerce.date().nullable(),
   lastMessageAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
+  contactLocation: zod.string().nullish(),
 });
 
 /**
@@ -1537,6 +1568,7 @@ export const ListContactsResponseItem = zod.object({
   name: zod.string().nullable(),
   email: zod.string().nullable(),
   notes: zod.string().nullable(),
+  location: zod.string().nullable(),
   tags: zod.array(zod.string()).nullish(),
   firstSeenAt: zod.coerce.date(),
   lastInteractionAt: zod.coerce.date().nullable(),
@@ -1554,6 +1586,7 @@ export const CreateContactBody = zod.object({
   name: zod.string().nullish(),
   email: zod.string().nullish(),
   notes: zod.string().nullish(),
+  location: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
 });
 
@@ -1578,6 +1611,7 @@ export const GetContactResponse = zod
     name: zod.string().nullable(),
     email: zod.string().nullable(),
     notes: zod.string().nullable(),
+    location: zod.string().nullable(),
     tags: zod.array(zod.string()).nullish(),
     firstSeenAt: zod.coerce.date(),
     lastInteractionAt: zod.coerce.date().nullable(),
@@ -1609,6 +1643,7 @@ export const UpdateContactBody = zod.object({
   name: zod.string().nullish(),
   email: zod.string().nullish(),
   notes: zod.string().nullish(),
+  location: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
 });
 
@@ -1619,6 +1654,7 @@ export const UpdateContactResponse = zod.object({
   name: zod.string().nullable(),
   email: zod.string().nullable(),
   notes: zod.string().nullable(),
+  location: zod.string().nullable(),
   tags: zod.array(zod.string()).nullish(),
   firstSeenAt: zod.coerce.date(),
   lastInteractionAt: zod.coerce.date().nullable(),

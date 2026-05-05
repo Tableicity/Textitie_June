@@ -53,11 +53,12 @@ type ContactDraft = {
   phone: string;
   name: string;
   email: string;
+  location: string;
   notes: string;
   tagsCsv: string;
 };
 
-const blankDraft: ContactDraft = { phone: "", name: "", email: "", notes: "", tagsCsv: "" };
+const blankDraft: ContactDraft = { phone: "", name: "", email: "", location: "", notes: "", tagsCsv: "" };
 
 function csvToTags(s: string): string[] | null {
   const arr = s
@@ -107,6 +108,14 @@ export default function Contacts() {
     if (selectedId) {
       queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(selectedId) });
     }
+    // Conversation list/detail responses include contactLocation via leftJoin,
+    // so a contact edit needs to bust those caches too.
+    queryClient.invalidateQueries({
+      predicate: (q) => {
+        const k = q.queryKey?.[0];
+        return typeof k === "string" && k.startsWith("/api/conversations");
+      },
+    });
   };
 
   const createMutation = useCreateContact({
@@ -143,6 +152,7 @@ export default function Contacts() {
       phone: c.phone,
       name: c.name ?? "",
       email: c.email ?? "",
+      location: c.location ?? "",
       notes: c.notes ?? "",
       tagsCsv: (c.tags ?? []).join(", "),
     });
@@ -156,6 +166,7 @@ export default function Contacts() {
         phone: draft.phone.trim(),
         name: draft.name.trim() || null,
         email: draft.email.trim() || null,
+        location: draft.location.trim() || null,
         notes: draft.notes.trim() || null,
         tags: csvToTags(draft.tagsCsv),
       },
@@ -170,6 +181,7 @@ export default function Contacts() {
       data: {
         name: draft.name.trim() || null,
         email: draft.email.trim() || null,
+        location: draft.location.trim() || null,
         notes: draft.notes.trim() || null,
         tags: csvToTags(draft.tagsCsv),
       },
@@ -336,6 +348,13 @@ export default function Contacts() {
                 </div>
               )}
 
+              {detail.location && (
+                <div className="mb-6">
+                  <Label className="text-xs uppercase tracking-wider text-slate-400 mb-2 block">Location</Label>
+                  <p className="text-sm text-slate-700">{detail.location}</p>
+                </div>
+              )}
+
               {detail.notes && (
                 <div className="mb-6">
                   <Label className="text-xs uppercase tracking-wider text-slate-400 mb-2 block">Notes</Label>
@@ -420,6 +439,15 @@ export default function Contacts() {
               />
             </div>
             <div>
+              <Label className="mb-1.5 block">Location</Label>
+              <Input
+                value={draft.location}
+                onChange={(e) => setDraft({ ...draft, location: e.target.value })}
+                placeholder="Santa Clarita, California, US"
+                data-testid="input-new-contact-location"
+              />
+            </div>
+            <div>
               <Label className="mb-1.5 block">Tags (comma separated)</Label>
               <Input
                 value={draft.tagsCsv}
@@ -478,6 +506,15 @@ export default function Contacts() {
                 type="email"
                 value={draft.email}
                 onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="mb-1.5 block">Location</Label>
+              <Input
+                value={draft.location}
+                onChange={(e) => setDraft({ ...draft, location: e.target.value })}
+                placeholder="Santa Clarita, California, US"
+                data-testid="input-edit-contact-location"
               />
             </div>
             <div>

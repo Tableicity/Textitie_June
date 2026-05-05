@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable } from "@workspace/db";
+import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable, contactsTable } from "@workspace/db";
 import { eq, and, desc, isNull, ilike, or, gte, lte, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
@@ -75,8 +75,16 @@ router.get("/conversations", requireTenantAuth, async (req, res) => {
         assignedAt: conversationsTable.assignedAt,
         lastMessageAt: conversationsTable.lastMessageAt,
         createdAt: conversationsTable.createdAt,
+        contactLocation: contactsTable.location,
       })
       .from(conversationsTable)
+      .leftJoin(
+        contactsTable,
+        and(
+          eq(contactsTable.tenantId, conversationsTable.tenantId),
+          eq(contactsTable.phone, conversationsTable.contactPhone),
+        ),
+      )
       .where(and(...conditions))
       .orderBy(desc(conversationsTable.lastMessageAt))
       .limit(500);
@@ -94,8 +102,31 @@ router.get("/conversations/:id", requireTenantAuth, async (req, res) => {
 
   try {
     const rows = await db
-      .select()
+      .select({
+        id: conversationsTable.id,
+        tenantId: conversationsTable.tenantId,
+        departmentId: conversationsTable.departmentId,
+        contactId: conversationsTable.contactId,
+        contactPhone: conversationsTable.contactPhone,
+        contactName: conversationsTable.contactName,
+        status: conversationsTable.status,
+        dispositionId: conversationsTable.dispositionId,
+        resolutionNote: conversationsTable.resolutionNote,
+        tags: conversationsTable.tags,
+        assignedUserId: conversationsTable.assignedUserId,
+        assignedAt: conversationsTable.assignedAt,
+        lastMessageAt: conversationsTable.lastMessageAt,
+        createdAt: conversationsTable.createdAt,
+        contactLocation: contactsTable.location,
+      })
       .from(conversationsTable)
+      .leftJoin(
+        contactsTable,
+        and(
+          eq(contactsTable.tenantId, conversationsTable.tenantId),
+          eq(contactsTable.phone, conversationsTable.contactPhone),
+        ),
+      )
       .where(
         and(
           eq(conversationsTable.id, id),
@@ -112,6 +143,121 @@ router.get("/conversations/:id", requireTenantAuth, async (req, res) => {
     res.json(rows[0]);
   } catch (err) {
     logger.error({ err }, "Get conversation error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/conversations", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const { contactPhone, contactName, departmentId } = req.body ?? {};
+  const phone = typeof contactPhone === "string" ? contactPhone.trim() : "";
+  if (!phone) {
+    res.status(400).json({ error: "contactPhone is required" });
+    return;
+  }
+  const name =
+    typeof contactName === "string" && contactName.trim().length > 0
+      ? contactName.trim()
+      : null;
+  const deptId =
+    typeof departmentId === "number" && Number.isFinite(departmentId)
+      ? departmentId
+      : null;
+
+  try {
+    // Tenant-scope check: if a department was specified, it must belong to this tenant.
+    if (deptId !== null) {
+      const dept = await db
+        .select({ id: departmentsTable.id })
+        .from(departmentsTable)
+        .where(
+          and(eq(departmentsTable.id, deptId), eq(departmentsTable.tenantId, tenantId)),
+        )
+        .limit(1);
+      if (dept.length === 0) {
+        res.status(400).json({ error: "departmentId not found for this tenant" });
+        return;
+      }
+    }
+
+    // Always upsert the contact first so name enrichment happens whether we reuse or create.
+    const contactRows = await db
+      .insert(contactsTable)
+      .values({ tenantId, phone, name })
+      .onConflictDoUpdate({
+        target: [contactsTable.tenantId, contactsTable.phone],
+        set: name ? { name, updatedAt: new Date() } : { updatedAt: new Date() },
+      })
+      .returning({ id: contactsTable.id, location: contactsTable.location });
+    const contact = contactRows[0];
+
+    // Reuse an existing OPEN conversation for this phone if one exists.
+    const existing = await db
+      .select({
+        id: conversationsTable.id,
+        tenantId: conversationsTable.tenantId,
+        departmentId: conversationsTable.departmentId,
+        contactId: conversationsTable.contactId,
+        contactPhone: conversationsTable.contactPhone,
+        contactName: conversationsTable.contactName,
+        status: conversationsTable.status,
+        dispositionId: conversationsTable.dispositionId,
+        resolutionNote: conversationsTable.resolutionNote,
+        tags: conversationsTable.tags,
+        assignedUserId: conversationsTable.assignedUserId,
+        assignedAt: conversationsTable.assignedAt,
+        lastMessageAt: conversationsTable.lastMessageAt,
+        createdAt: conversationsTable.createdAt,
+        contactLocation: contactsTable.location,
+      })
+      .from(conversationsTable)
+      .leftJoin(
+        contactsTable,
+        and(
+          eq(contactsTable.tenantId, conversationsTable.tenantId),
+          eq(contactsTable.phone, conversationsTable.contactPhone),
+        ),
+      )
+      .where(
+        and(
+          eq(conversationsTable.tenantId, tenantId),
+          eq(conversationsTable.contactPhone, phone),
+          eq(conversationsTable.status, "open"),
+        ),
+      )
+      .orderBy(desc(conversationsTable.lastMessageAt))
+      .limit(1);
+
+    if (existing.length > 0) {
+      res.status(200).json(existing[0]);
+      return;
+    }
+
+    const created = await db
+      .insert(conversationsTable)
+      .values({
+        tenantId,
+        contactPhone: phone,
+        contactName: name,
+        contactId: contact?.id ?? null,
+        departmentId: deptId,
+        status: "open",
+      })
+      .returning();
+
+    await recordAudit(req, {
+      action: "conversation.created",
+      entityType: "conversation",
+      entityId: created[0].id,
+      after: { contactPhone: phone, contactName: name, departmentId: deptId },
+    });
+
+    res.status(201).json({
+      ...created[0],
+      contactLocation: contact?.location ?? null,
+    });
+  } catch (err) {
+    logger.error({ err }, "Create conversation error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

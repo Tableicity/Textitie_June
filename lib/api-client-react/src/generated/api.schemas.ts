@@ -272,6 +272,8 @@ export interface Conversation {
   /** @nullable */
   lastMessageAt: string | null;
   createdAt: string;
+  /** @nullable */
+  contactLocation?: string | null;
 }
 
 export type MessageDirection =
@@ -951,6 +953,8 @@ export interface Contact {
   /** @nullable */
   notes: string | null;
   /** @nullable */
+  location: string | null;
+  /** @nullable */
   tags?: string[] | null;
   firstSeenAt: string;
   /** @nullable */
@@ -982,6 +986,8 @@ export interface CreateContactInput {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
+  location?: string | null;
+  /** @nullable */
   tags?: string[] | null;
 }
 
@@ -993,7 +999,18 @@ export interface UpdateContactInput {
   /** @nullable */
   notes?: string | null;
   /** @nullable */
+  location?: string | null;
+  /** @nullable */
   tags?: string[] | null;
+}
+
+export interface CreateConversationInput {
+  /** @minLength 1 */
+  contactPhone: string;
+  /** @nullable */
+  contactName?: string | null;
+  /** @nullable */
+  departmentId?: number | null;
 }
 
 export interface Reminder {
