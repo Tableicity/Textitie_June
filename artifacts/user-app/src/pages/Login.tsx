@@ -113,7 +113,7 @@ export default function Login() {
 
         {/* Layer C: glass card stack */}
         <div className="relative z-10 w-full max-w-[460px]">
-          <div className="bg-slate-900/85 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl px-8 py-12 text-white">
+          <div className="bg-slate-900/85 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl px-8 py-12 text-white min-h-[640px] flex flex-col">
             {/* Header */}
             <div className="text-center mb-5">
               <div className="inline-flex items-center gap-2 mb-3">
