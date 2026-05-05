@@ -53,6 +53,7 @@ import {
   Fuel,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,7 +108,14 @@ export default function Inbox() {
   const [newPhone, setNewPhone] = useState("");
   const [newName, setNewName] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const COMPOSE_MAX_CHARS = 1000;
+  const COMMON_EMOJIS = [
+    "😀","😂","😉","😍","🥰","😎","🤔","🙏",
+    "👍","👏","🙌","💪","✅","❌","🔥","🎉",
+    "❤️","💙","💯","⭐","☀️","🚗","📞","📅",
+  ];
+  const [showEmoji, setShowEmoji] = useState(false);
 
   // Auto-select conversation from URL param (e.g. from reminder bell jump)
   useEffect(() => {
@@ -314,10 +322,11 @@ export default function Inbox() {
 
   const handleComposeChange = useCallback(
     (value: string) => {
-      setComposeText(value);
-      if (value.startsWith("/") && value.length >= 1) {
+      const clipped = value.length > 1000 ? value.slice(0, 1000) : value;
+      setComposeText(clipped);
+      if (clipped.startsWith("/") && clipped.length >= 1) {
         setShowShortcuts(true);
-        setShortcutFilter(value);
+        setShortcutFilter(clipped);
         setShortcutIndex(0);
       } else {
         setShowShortcuts(false);
@@ -338,22 +347,34 @@ export default function Inbox() {
   );
 
   const handleComposeKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (!showShortcuts || filteredShortcuts.length === 0) return;
-      if (e.key === "ArrowDown") {
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (showShortcuts && filteredShortcuts.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setShortcutIndex((i) =>
+            Math.min(i + 1, filteredShortcuts.length - 1),
+          );
+          return;
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setShortcutIndex((i) => Math.max(i - 1, 0));
+          return;
+        } else if (e.key === "Tab" || e.key === "Enter") {
+          e.preventDefault();
+          insertShortcut(filteredShortcuts[shortcutIndex].body);
+          return;
+        } else if (e.key === "Escape") {
+          setShowShortcuts(false);
+          return;
+        }
+      }
+      // Enter sends; Shift+Enter inserts a newline.
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        setShortcutIndex((i) => Math.min(i + 1, filteredShortcuts.length - 1));
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setShortcutIndex((i) => Math.max(i - 1, 0));
-      } else if (e.key === "Tab" || (e.key === "Enter" && showShortcuts)) {
-        e.preventDefault();
-        insertShortcut(filteredShortcuts[shortcutIndex].body);
-      } else if (e.key === "Escape") {
-        setShowShortcuts(false);
+        (e.currentTarget.form as HTMLFormElement | null)?.requestSubmit();
       }
     },
-    [showShortcuts, filteredShortcuts, shortcutIndex, insertShortcut]
+    [showShortcuts, filteredShortcuts, shortcutIndex, insertShortcut],
   );
 
   const handleSend = (e: React.FormEvent) => {
@@ -998,31 +1019,68 @@ export default function Inbox() {
                   <button
                     type="button"
                     onClick={() => setIsWhisperMode((m) => !m)}
-                    className={`h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors border ${
+                    className={`h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                       isWhisperMode
-                        ? "bg-amber-100 border-amber-300 text-amber-700"
-                        : "bg-white border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                        ? "bg-amber-100 border-2 border-amber-500 text-amber-700 ring-2 ring-amber-300"
+                        : "bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"
                     }`}
                     title={isWhisperMode ? "Whisper mode: only your team will see this" : "Click to leave an internal note"}
                     data-testid="button-toggle-whisper"
                   >
                     <StickyNote className="w-5 h-5" />
                   </button>
+                  <Popover open={showEmoji} onOpenChange={setShowEmoji}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                        title="Insert emoji"
+                        data-testid="button-emoji"
+                      >
+                        <span className="text-2xl leading-none">😊</span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-2" align="start">
+                      <div className="grid grid-cols-8 gap-1">
+                        {COMMON_EMOJIS.map((emo) => (
+                          <button
+                            key={emo}
+                            type="button"
+                            className="text-xl rounded hover:bg-slate-100 h-7 w-7 flex items-center justify-center"
+                            onClick={() => {
+                              handleComposeChange(composeText + emo);
+                              setShowEmoji(false);
+                              inputRef.current?.focus();
+                            }}
+                          >
+                            {emo}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                   <div className="flex-1 relative">
-                    <Input
+                    <Textarea
                       ref={inputRef}
                       value={composeText}
                       onChange={(e) => handleComposeChange(e.target.value)}
                       onKeyDown={handleComposeKeyDown}
+                      maxLength={COMPOSE_MAX_CHARS}
+                      rows={2}
                       placeholder={
                         isWhisperMode
                           ? "Internal note (only your team will see this)..."
                           : 'Type a message... (type "/" for shortcuts)'
                       }
-                      className={`pr-12 h-[66px] text-base border-slate-200 focus-visible:ring-blue-500 rounded-xl ${
-                        isWhisperMode ? "bg-amber-50" : "bg-slate-50"
+                      className={`pr-12 min-h-[66px] max-h-40 overflow-y-auto resize-none text-base focus-visible:ring-blue-500 rounded-xl py-3 ${
+                        isWhisperMode
+                          ? "bg-amber-50 border-2 border-amber-500 ring-2 ring-amber-300"
+                          : "bg-slate-50 border-slate-200"
                       }`}
                     />
+                    <div className="absolute bottom-1.5 right-3 text-[10px] text-slate-400 pointer-events-none select-none">
+                      {composeText.length}/{COMPOSE_MAX_CHARS}
+                    </div>
                   </div>
                   <Button
                     type="submit"
