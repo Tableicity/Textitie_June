@@ -83,7 +83,7 @@ router.post("/billing/subscribe", requireTenantAuth, async (req, res) => {
       return;
     }
 
-    const result = await startSubscription(tenantId, tierCode);
+    const result = await startSubscription(tenantId, req.tenantUser!.tenantSlug, tierCode);
     res.status(201).json(result);
   } catch (err: any) {
     logger.error({ err }, "Subscribe error");
@@ -117,7 +117,7 @@ router.post("/billing/change-plan", requireTenantAuth, async (req, res) => {
       return;
     }
 
-    const result = await changePlan(tenantId, tierCode);
+    const result = await changePlan(tenantId, req.tenantUser!.tenantSlug, tierCode);
     res.json(result);
   } catch (err: any) {
     logger.error({ err }, "Change plan error");
@@ -145,7 +145,7 @@ router.post("/billing/cancel", requireTenantAuth, async (req, res) => {
       return;
     }
 
-    await cancelSubscription(tenantId);
+    await cancelSubscription(tenantId, req.tenantUser!.tenantSlug);
     res.json({ status: "canceled" });
   } catch (err: any) {
     logger.error({ err }, "Cancel subscription error");
@@ -157,7 +157,7 @@ router.get("/billing/usage", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
 
   try {
-    const record = await getCurrentUsageRecord(tenantId);
+    const record = await getCurrentUsageRecord(tenantId, req.tenantUser!.tenantSlug);
 
     const tenant = await db
       .select({ planTierCode: tenantsTable.planTierCode, subscriptionStatus: tenantsTable.subscriptionStatus })

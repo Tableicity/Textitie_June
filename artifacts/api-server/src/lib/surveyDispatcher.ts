@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { db, surveysTable, surveySendsTable, tenantsTable } from "@workspace/db";
+import { db, getTenantDb, surveysTable, surveySendsTable, tenantsTable } from "@workspace/db";
 import { and, eq, lte, isNull, asc } from "drizzle-orm";
 import { logger } from "./logger";
 import { getSender } from "./senders";
@@ -26,6 +26,7 @@ export function buildSurveyUrl(token: string): string {
 
 interface EnqueueArgs {
   tenantId: number;
+  tenantSlug: string;
   conversationId: number;
   contactPhone: string;
 }
@@ -33,7 +34,8 @@ interface EnqueueArgs {
 /** Returns the survey_send id, or null if no enqueue happened. */
 export async function maybeEnqueueSurveyForClose(args: EnqueueArgs): Promise<number | null> {
   try {
-    const surveys = await db
+    const tdb = getTenantDb(args.tenantSlug);
+    const surveys = await tdb
       .select()
       .from(surveysTable)
       .where(and(eq(surveysTable.tenantId, args.tenantId), eq(surveysTable.type, "csat")))
@@ -41,7 +43,7 @@ export async function maybeEnqueueSurveyForClose(args: EnqueueArgs): Promise<num
     const survey = surveys[0];
     if (!survey || !survey.enabled || !survey.sendAfterClose) return null;
 
-    const compliance = await checkOutboundCompliance(args.tenantId, args.contactPhone);
+    const compliance = await checkOutboundCompliance(args.tenantId, args.tenantSlug, args.contactPhone);
     if (!compliance.ok) {
       logger.info(
         { tenantId: args.tenantId, conversationId: args.conversationId, reason: compliance.reason },
@@ -53,7 +55,7 @@ export async function maybeEnqueueSurveyForClose(args: EnqueueArgs): Promise<num
     const token = generateSurveyToken();
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
-    const inserted = await db
+    const inserted = await tdb
       .insert(surveySendsTable)
       .values({
         tenantId: args.tenantId,
@@ -72,12 +74,31 @@ export async function maybeEnqueueSurveyForClose(args: EnqueueArgs): Promise<num
   }
 }
 
-/** Process pending survey sends. Called by timer engine. Returns count dispatched. */
+/**
+ * Process pending survey sends. Called by timer engine, iterates every tenant.
+ * Returns total count dispatched across tenants.
+ */
 export async function processPendingSurveys(): Promise<number> {
+  const tenants = await db
+    .select({ slug: tenantsTable.slug })
+    .from(tenantsTable);
+  let total = 0;
+  for (const { slug } of tenants) {
+    try {
+      total += await processPendingSurveysForTenant(slug);
+    } catch (err) {
+      logger.warn({ err, slug }, "processPendingSurveysForTenant failed (continuing)");
+    }
+  }
+  return total;
+}
+
+async function processPendingSurveysForTenant(tenantSlug: string): Promise<number> {
+  const tdb = getTenantDb(tenantSlug);
   const now = new Date();
   let dispatched = 0;
 
-  const pending = await db
+  const pending = await tdb
     .select({
       id: surveySendsTable.id,
       tenantId: surveySendsTable.tenantId,
@@ -93,7 +114,7 @@ export async function processPendingSurveys(): Promise<number> {
 
   for (const item of pending) {
     try {
-      const surveyRows = await db
+      const surveyRows = await tdb
         .select({
           prompt: surveysTable.prompt,
           enabled: surveysTable.enabled,
@@ -108,19 +129,16 @@ export async function processPendingSurveys(): Promise<number> {
       const earliest = item.createdAt.getTime() + survey.sendDelayMinutes * 60_000;
       if (earliest > now.getTime()) continue;
 
-      // Atomic claim: only one worker can flip pending -> dispatching for this row.
-      const claimed = await db
+      const claimed = await tdb
         .update(surveySendsTable)
         .set({ status: "dispatching" })
         .where(and(eq(surveySendsTable.id, item.id), eq(surveySendsTable.status, "pending")))
         .returning({ id: surveySendsTable.id });
       if (claimed.length === 0) continue;
 
-      // Re-check compliance at dispatch time (recipient may have opted out
-      // or quiet hours may have changed since enqueue).
-      const compliance = await checkOutboundCompliance(item.tenantId, item.contactPhone);
+      const compliance = await checkOutboundCompliance(item.tenantId, tenantSlug, item.contactPhone);
       if (!compliance.ok) {
-        await db
+        await tdb
           .update(surveySendsTable)
           .set({ status: "failed", error: `compliance: ${compliance.reason}` })
           .where(eq(surveySendsTable.id, item.id));
@@ -143,14 +161,14 @@ export async function processPendingSurveys(): Promise<number> {
       });
 
       if (result.status === "failed") {
-        await db
+        await tdb
           .update(surveySendsTable)
           .set({ status: "failed", error: result.responseSummary ?? "send failed" })
           .where(eq(surveySendsTable.id, item.id));
         continue;
       }
 
-      await db
+      await tdb
         .update(surveySendsTable)
         .set({ status: "sent", sentAt: now, error: null })
         .where(eq(surveySendsTable.id, item.id));
@@ -162,9 +180,8 @@ export async function processPendingSurveys(): Promise<number> {
       );
     } catch (err) {
       logger.warn({ err, sendId: item.id }, "Survey send loop error");
-      // best-effort: release the claim so the next cycle retries
       try {
-        await db
+        await tdb
           .update(surveySendsTable)
           .set({ status: "pending" })
           .where(and(eq(surveySendsTable.id, item.id), eq(surveySendsTable.status, "dispatching")));
@@ -174,9 +191,8 @@ export async function processPendingSurveys(): Promise<number> {
     }
   }
 
-  // Mark expired
   try {
-    await db
+    await tdb
       .update(surveySendsTable)
       .set({ status: "expired" })
       .where(
@@ -186,7 +202,7 @@ export async function processPendingSurveys(): Promise<number> {
         ),
       );
   } catch (err) {
-    logger.warn({ err }, "Survey expire sweep failed");
+    logger.warn({ err, tenantSlug }, "Survey expire sweep failed");
   }
 
   return dispatched;

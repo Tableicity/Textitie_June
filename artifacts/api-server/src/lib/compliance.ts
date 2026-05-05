@@ -1,4 +1,4 @@
-import { db, tenantsTable, optInsTable, optOutsTable, messagesTable, conversationsTable } from "@workspace/db";
+import { db, getTenantDb, tenantsTable, optInsTable, optOutsTable, messagesTable, conversationsTable } from "@workspace/db";
 import { and, eq, gte, isNull, sql } from "drizzle-orm";
 
 export type ComplianceBlock =
@@ -54,8 +54,9 @@ export function isInQuietHours(
   return hour >= start || hour < end;
 }
 
-async function isOptedOut(tenantId: number, phone: string): Promise<boolean> {
-  const rows = await db
+async function isOptedOut(tenantSlug: string, tenantId: number, phone: string): Promise<boolean> {
+  const tdb = getTenantDb(tenantSlug);
+  const rows = await tdb
     .select({ id: optOutsTable.id })
     .from(optOutsTable)
     .where(and(eq(optOutsTable.tenantId, tenantId), eq(optOutsTable.phoneNumber, phone)))
@@ -63,8 +64,9 @@ async function isOptedOut(tenantId: number, phone: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-async function hasConsent(tenantId: number, phone: string): Promise<boolean> {
-  const rows = await db
+async function hasConsent(tenantSlug: string, tenantId: number, phone: string): Promise<boolean> {
+  const tdb = getTenantDb(tenantSlug);
+  const rows = await tdb
     .select({ id: optInsTable.id })
     .from(optInsTable)
     .where(
@@ -78,9 +80,10 @@ async function hasConsent(tenantId: number, phone: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-async function countOutboundLast24h(tenantId: number, phone: string): Promise<number> {
+async function countOutboundLast24h(tenantSlug: string, tenantId: number, phone: string): Promise<number> {
+  const tdb = getTenantDb(tenantSlug);
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const rows = await db
+  const rows = await tdb
     .select({ c: sql<number>`count(*)::int` })
     .from(messagesTable)
     .innerJoin(conversationsTable, eq(messagesTable.conversationId, conversationsTable.id))
@@ -97,17 +100,18 @@ async function countOutboundLast24h(tenantId: number, phone: string): Promise<nu
 
 export async function checkOutboundCompliance(
   tenantId: number,
+  tenantSlug: string,
   phone: string,
   now: Date = new Date(),
 ): Promise<ComplianceBlock> {
   const t = await loadTenantCompliance(tenantId);
   if (!t) return { ok: true };
 
-  if (await isOptedOut(tenantId, phone)) {
+  if (await isOptedOut(tenantSlug, tenantId, phone)) {
     return { ok: false, reason: "opted_out", message: "Recipient has opted out (STOP)." };
   }
 
-  if (t.requireDoubleOptIn && !(await hasConsent(tenantId, phone))) {
+  if (t.requireDoubleOptIn && !(await hasConsent(tenantSlug, tenantId, phone))) {
     return {
       ok: false,
       reason: "no_consent",
@@ -124,7 +128,7 @@ export async function checkOutboundCompliance(
   }
 
   if (t.frequencyCapPerDay > 0) {
-    const sent = await countOutboundLast24h(tenantId, phone);
+    const sent = await countOutboundLast24h(tenantSlug, tenantId, phone);
     if (sent >= t.frequencyCapPerDay) {
       return {
         ok: false,

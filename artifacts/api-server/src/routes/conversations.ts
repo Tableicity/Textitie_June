@@ -423,6 +423,7 @@ router.patch("/conversations/:id", requireTenantAuth, async (req, res) => {
       }
       await enqueueSync({
         tenantId,
+        tenantSlug: req.tenantUser!.tenantSlug,
         provider: "hubspot",
         entityType: "conversation",
         entityId: id,
@@ -436,6 +437,7 @@ router.patch("/conversations/:id", requireTenantAuth, async (req, res) => {
 
       await maybeEnqueueSurveyForClose({
         tenantId,
+        tenantSlug: req.tenantUser!.tenantSlug,
         conversationId: id,
         contactPhone: conv[0].contactPhone,
       });
@@ -489,7 +491,7 @@ router.post(
         return;
       }
 
-      const compliance = await checkOutboundCompliance(tenantId, convRows[0].contactPhone);
+      const compliance = await checkOutboundCompliance(tenantId, req.tenantUser!.tenantSlug, convRows[0].contactPhone);
       if (!compliance.ok) {
         res.status(422).json({ error: compliance.message, reason: compliance.reason });
         return;
@@ -512,7 +514,7 @@ router.post(
         .set({ lastMessageAt: now })
         .where(eq(conversationsTable.id, conversationId));
 
-      recordMessageUsage(tenantId).catch((usageErr) => {
+      recordMessageUsage(tenantId, req.tenantUser!.tenantSlug).catch((usageErr) => {
         logger.warn({ err: usageErr, tenantId }, "Usage tracking failed (non-blocking)");
       });
 
@@ -694,7 +696,7 @@ router.post("/conversations/:id/auto-route", requireTenantAuth, async (req, res)
       .limit(1);
 
     const strategy = (dept[0]?.routingStrategy ?? "round_robin") as RoutingStrategy;
-    const agentId = await pickAgent(conv[0].departmentId, tenantId, strategy);
+    const agentId = await pickAgent(conv[0].departmentId, tenantId, req.tenantUser!.tenantSlug, strategy);
 
     if (!agentId) {
       res.status(422).json({ error: "No online agents available in this department" });

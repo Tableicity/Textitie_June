@@ -140,6 +140,7 @@ router.post("/contacts", requireTenantAuth, async (req, res) => {
     const { firstName, lastName } = splitName(created.name);
     await enqueueSync({
       tenantId,
+      tenantSlug: req.tenantUser!.tenantSlug,
       provider: "hubspot",
       entityType: "contact",
       entityId: created.id,
@@ -204,6 +205,7 @@ router.patch("/contacts/:id", requireTenantAuth, async (req, res) => {
     const { firstName, lastName } = splitName(updated.name);
     await enqueueSync({
       tenantId,
+      tenantSlug: req.tenantUser!.tenantSlug,
       provider: "hubspot",
       entityType: "contact",
       entityId: id,

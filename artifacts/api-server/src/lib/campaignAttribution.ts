@@ -1,4 +1,4 @@
-import { pool } from "@workspace/db";
+import { getTenantPool } from "@workspace/db";
 import { logger } from "./logger";
 
 /**
@@ -9,6 +9,9 @@ import { logger } from "./logger";
  * the last 72 hours. This prevents:
  *  - Random "thank you" replies weeks later from skewing campaign ROI
  *  - Multi-campaign double-counting (Monday's "Discount" vs Tuesday's "Greeting")
+ *
+ * All campaign tables are per-tenant (in tenant_<slug> schemas), so callers
+ * MUST pass the tenantSlug in addition to tenantId.
  */
 
 const ATTRIBUTION_WINDOW_HOURS = 72;
@@ -18,15 +21,13 @@ interface AttributedCampaign {
   campaignId: number;
 }
 
-/**
- * Find the most recent campaign message sent to this contact within the
- * attribution window. Returns null if no recent campaign exists.
- */
 async function findLastTouchCampaign(
   tenantId: number,
+  tenantSlug: string,
   contactPhone: string,
 ): Promise<AttributedCampaign | null> {
-  const result = await pool.query(
+  const tpool = getTenantPool(tenantSlug);
+  const result = await tpool.query(
     `SELECT cm.id AS campaign_message_id, cm.campaign_id
      FROM campaign_messages cm
      JOIN campaigns c ON c.id = cm.campaign_id
@@ -47,21 +48,17 @@ async function findLastTouchCampaign(
   };
 }
 
-/**
- * Attribute an inbound reply to the most recent campaign sent to this contact
- * within 72 hours. Increments campaigns.response_count and stamps
- * campaign_messages.responded_at (only on first response — idempotent).
- */
 export async function attributeInboundResponse(
   tenantId: number,
+  tenantSlug: string,
   contactPhone: string,
 ): Promise<{ attributed: boolean; campaignId?: number }> {
   try {
-    const last = await findLastTouchCampaign(tenantId, contactPhone);
+    const last = await findLastTouchCampaign(tenantId, tenantSlug, contactPhone);
     if (!last) return { attributed: false };
 
-    // Idempotent: only mark responded_at once
-    const stamped = await pool.query(
+    const tpool = getTenantPool(tenantSlug);
+    const stamped = await tpool.query(
       `UPDATE campaign_messages
        SET responded_at = NOW()
        WHERE id = $1 AND responded_at IS NULL
@@ -70,11 +67,10 @@ export async function attributeInboundResponse(
     );
 
     if (stamped.rows.length === 0) {
-      // Already counted — don't double-increment
       return { attributed: false, campaignId: last.campaignId };
     }
 
-    await pool.query(
+    await tpool.query(
       `UPDATE campaigns SET response_count = response_count + 1 WHERE id = $1`,
       [last.campaignId],
     );
@@ -91,22 +87,17 @@ export async function attributeInboundResponse(
   }
 }
 
-/**
- * Attribute an opt-out (STOP/UNSUBSCRIBE) to the campaign that triggered it.
- * Updates the opt_outs row's campaign_id (the "Smoking Gun") AND increments
- * campaigns.opt_out_count.
- *
- * Must be called AFTER the opt_outs row is inserted.
- */
 export async function attributeOptOut(
   tenantId: number,
+  tenantSlug: string,
   contactPhone: string,
 ): Promise<{ attributed: boolean; campaignId?: number }> {
   try {
-    const last = await findLastTouchCampaign(tenantId, contactPhone);
+    const last = await findLastTouchCampaign(tenantId, tenantSlug, contactPhone);
     if (!last) return { attributed: false };
 
-    const updated = await pool.query(
+    const tpool = getTenantPool(tenantSlug);
+    const updated = await tpool.query(
       `UPDATE opt_outs
        SET campaign_id = $1
        WHERE tenant_id = $2 AND phone_number = $3 AND campaign_id IS NULL
@@ -118,7 +109,7 @@ export async function attributeOptOut(
       return { attributed: false, campaignId: last.campaignId };
     }
 
-    await pool.query(
+    await tpool.query(
       `UPDATE campaigns SET opt_out_count = opt_out_count + 1 WHERE id = $1`,
       [last.campaignId],
     );

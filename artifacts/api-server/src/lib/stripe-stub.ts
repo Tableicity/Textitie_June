@@ -1,4 +1,4 @@
-import { db, tenantsTable, tiersTable, billingEventsTable, usageRecordsTable } from "@workspace/db";
+import { db, getTenantDb, getTenantPool, tenantsTable, tiersTable, billingEventsTable, usageRecordsTable } from "@workspace/db";
 import { pool } from "@workspace/db";
 import { eq, and, lte, gte, sql } from "drizzle-orm";
 import { logger } from "./logger";
@@ -31,6 +31,7 @@ export async function createStubCustomer(tenantId: number): Promise<string> {
 
 export async function startSubscription(
   tenantId: number,
+  tenantSlug: string,
   tierCode: string,
 ): Promise<{
   subscriptionId: string;
@@ -98,9 +99,10 @@ export async function startSubscription(
     throw new Error("Subscription state changed concurrently. Please retry.");
   }
 
-  await ensureUsageRecord(tenantId, tier.includedCredits);
+  await ensureUsageRecord(tenantId, tenantSlug, tier.includedCredits);
 
-  await db.insert(billingEventsTable).values({
+  const tdb = getTenantDb(tenantSlug);
+  await tdb.insert(billingEventsTable).values({
     tenantId,
     eventType: trialEnd ? "trial_started" : "subscribed",
     toTier: tierCode,
@@ -115,6 +117,7 @@ export async function startSubscription(
 
 export async function changePlan(
   tenantId: number,
+  tenantSlug: string,
   newTierCode: string,
 ): Promise<{
   subscriptionId: string;
@@ -132,7 +135,7 @@ export async function changePlan(
   const t = tenant[0];
 
   if (t.subscriptionStatus === "none" || t.subscriptionStatus === "canceled") {
-    return startSubscription(tenantId, newTierCode);
+    return startSubscription(tenantId, tenantSlug, newTierCode);
   }
 
   const tiers = await db
@@ -170,7 +173,8 @@ export async function changePlan(
     throw new Error("Subscription state changed concurrently. Please retry.");
   }
 
-  await db.insert(billingEventsTable).values({
+  const tdb = getTenantDb(tenantSlug);
+  await tdb.insert(billingEventsTable).values({
     tenantId,
     eventType: isUpgrade ? "upgraded" : "downgraded",
     fromTier: oldTier,
@@ -178,9 +182,9 @@ export async function changePlan(
     amountCents: tier.monthlyPriceCents,
   });
 
-  const currentUsage = await getCurrentUsageRecord(tenantId);
+  const currentUsage = await getCurrentUsageRecord(tenantId, tenantSlug);
   if (currentUsage) {
-    await db
+    await tdb
       .update(usageRecordsTable)
       .set({ creditsIncluded: tier.includedCredits })
       .where(eq(usageRecordsTable.id, currentUsage.id));
@@ -196,7 +200,7 @@ export async function changePlan(
   };
 }
 
-export async function cancelSubscription(tenantId: number): Promise<void> {
+export async function cancelSubscription(tenantId: number, tenantSlug: string): Promise<void> {
   const updated = await db
     .update(tenantsTable)
     .set({
@@ -217,7 +221,8 @@ export async function cancelSubscription(tenantId: number): Promise<void> {
 
   const oldTier = updated[0].planTierCode;
 
-  await db.insert(billingEventsTable).values({
+  const tdb = getTenantDb(tenantSlug);
+  await tdb.insert(billingEventsTable).values({
     tenantId,
     eventType: "canceled",
     fromTier: oldTier,
@@ -226,14 +231,15 @@ export async function cancelSubscription(tenantId: number): Promise<void> {
   logger.info({ tenantId }, "Stub subscription canceled");
 }
 
-async function ensureUsageRecord(tenantId: number, creditsIncluded: number) {
-  const existing = await getCurrentUsageRecord(tenantId);
+async function ensureUsageRecord(tenantId: number, tenantSlug: string, creditsIncluded: number) {
+  const existing = await getCurrentUsageRecord(tenantId, tenantSlug);
   if (existing) return existing;
 
   const pStart = periodStart();
   const pEnd = periodEnd();
 
-  const result = await pool.query(
+  const tpool = getTenantPool(tenantSlug);
+  const result = await tpool.query(
     `INSERT INTO usage_records (tenant_id, period_start, period_end, credits_included)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (tenant_id, period_start) DO UPDATE SET credits_included = $4
@@ -244,9 +250,10 @@ async function ensureUsageRecord(tenantId: number, creditsIncluded: number) {
   return result.rows[0];
 }
 
-export async function getCurrentUsageRecord(tenantId: number) {
+export async function getCurrentUsageRecord(tenantId: number, tenantSlug: string) {
+  const tdb = getTenantDb(tenantSlug);
   const now = new Date();
-  const rows = await db
+  const rows = await tdb
     .select()
     .from(usageRecordsTable)
     .where(
@@ -260,7 +267,7 @@ export async function getCurrentUsageRecord(tenantId: number) {
   return rows[0] ?? null;
 }
 
-export async function recordMessageUsage(tenantId: number): Promise<{
+export async function recordMessageUsage(tenantId: number, tenantSlug: string): Promise<{
   creditsUsed: number;
   creditsIncluded: number;
   overageCredits: number;
@@ -287,9 +294,10 @@ export async function recordMessageUsage(tenantId: number): Promise<{
   const includedCredits = tier[0]?.includedCredits ?? 0;
   const isUnlimited = includedCredits === 0 && t.planTierCode === "enterprise";
 
-  await ensureUsageRecord(tenantId, includedCredits);
+  await ensureUsageRecord(tenantId, tenantSlug, includedCredits);
 
-  const result = await pool.query(
+  const tpool = getTenantPool(tenantSlug);
+  const result = await tpool.query(
     `UPDATE usage_records
      SET messages_sent = messages_sent + 1,
          credits_used = credits_used + 1,

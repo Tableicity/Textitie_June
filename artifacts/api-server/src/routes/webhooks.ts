@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { desc, eq, and } from "drizzle-orm";
-import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable } from "@workspace/db";
+import { db, getTenantDb, webhookEventsTable, tenantsTable, conversationsTable, messagesTable } from "@workspace/db";
 import {
   ReceiveWebhookParams,
   ListWebhookEventsQueryParams,
@@ -130,9 +130,11 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
 
         // ---- Automation Engine (Phase 5) ----
         if (fromNumber) {
+          const tdb = getTenantDb(tenant.slug);
+          const tenantSlug = tenant.slug;
           void (async () => {
             try {
-              const existing = await db
+              const existing = await tdb
                 .select({ id: conversationsTable.id })
                 .from(conversationsTable)
                 .where(
@@ -148,7 +150,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
               if (existing.length > 0) {
                 conversationId = existing[0].id;
               } else {
-                const [newConv] = await db
+                const [newConv] = await tdb
                   .insert(conversationsTable)
                   .values({
                     tenantId: tenant.id,
@@ -161,7 +163,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 conversationId = newConv.id;
               }
 
-              await db.insert(messagesTable).values({
+              await tdb.insert(messagesTable).values({
                 conversationId,
                 direction: "inbound",
                 body: messageBody,
@@ -169,30 +171,27 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 read: false,
               });
 
-              await db
+              await tdb
                 .update(conversationsTable)
                 .set({ lastMessageAt: new Date() })
                 .where(eq(conversationsTable.id, conversationId));
 
               const result = await processInboundMessage(
                 tenant.id,
+                tenantSlug,
                 conversationId,
                 fromNumber,
                 messageBody,
               );
               if (result.handled) {
                 logger.info(
-                  { tenantSlug: tenant.slug, from: fromNumber, action: result.action },
+                  { tenantSlug, from: fromNumber, action: result.action },
                   "Automation engine handled inbound message",
                 );
               }
 
-              // Phase 6 — Last-Touch Campaign Attribution (72h window).
-              // Skip if this was an opt-out: those are attributed separately
-              // inside the automation engine to keep response_count clean
-              // (an opt-out is not a "response" for ROI purposes).
               if (result.action !== "tcpa_opt_out" && result.action !== "opted_out_ignored") {
-                await attributeInboundResponse(tenant.id, fromNumber);
+                await attributeInboundResponse(tenant.id, tenantSlug, fromNumber);
               }
             } catch (err) {
               logger.warn(

@@ -51,7 +51,7 @@ router.post("/campaigns", requireTenantAuth, async (req, res) => {
   }
 
   try {
-    const audience = await buildAudience(tenantId, segmentFilter ?? null);
+    const audience = await buildAudience(tenantId, req.tenantUser!.tenantSlug, segmentFilter ?? null);
     const segInfo = calculateSegments(body);
     const creditsRequired = audience.length * Math.max(1, segInfo.segmentCount);
 
@@ -137,7 +137,7 @@ router.get("/campaigns/credits", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
 
   try {
-    const balance = await getCreditBalance(tenantId);
+    const balance = await getCreditBalance(tenantId, req.tenantUser!.tenantSlug);
     res.json(balance);
   } catch (err) {
     logger.error({ err }, "Get credit balance error");
@@ -168,7 +168,7 @@ router.post("/campaigns/audience-preview", requireTenantAuth, async (req, res) =
   const { segmentFilter } = req.body ?? {};
 
   try {
-    const audience = await buildAudience(tenantId, segmentFilter ?? null);
+    const audience = await buildAudience(tenantId, req.tenantUser!.tenantSlug, segmentFilter ?? null);
     res.json({
       count: audience.length,
       contacts: audience.slice(0, 20),
@@ -255,7 +255,7 @@ router.post("/campaigns/:id/send", requireTenantAuth, async (req, res) => {
       return;
     }
 
-    const audience = await buildAudience(tenantId, campaign.segmentFilter as any);
+    const audience = await buildAudience(tenantId, req.tenantUser!.tenantSlug, campaign.segmentFilter as any);
     if (audience.length === 0) {
       res.status(422).json({ error: "No eligible recipients found" });
       return;
@@ -264,7 +264,7 @@ router.post("/campaigns/:id/send", requireTenantAuth, async (req, res) => {
     const segInfo = calculateSegments(campaign.body);
     const segCount = Math.max(1, segInfo.segmentCount);
 
-    const preflight = await preFlightCheck(tenantId, audience.length, segCount);
+    const preflight = await preFlightCheck(tenantId, req.tenantUser!.tenantSlug, audience.length, segCount);
     if (!preflight.allowed) {
       res.status(402).json({
         error: "Insufficient credits",
@@ -287,14 +287,14 @@ router.post("/campaigns/:id/send", requireTenantAuth, async (req, res) => {
       return;
     }
 
-    const queued = await createCampaignMessages(id, audience, campaign.body);
+    const queued = await createCampaignMessages(req.tenantUser!.tenantSlug, id, audience, campaign.body);
 
     await pool.query(
       `UPDATE campaigns SET total_recipients = $1, queued_count = $2, credits_required = $3 WHERE id = $4`,
       [audience.length, queued, audience.length * segCount, id],
     );
 
-    executeCampaign(id).catch((err) => {
+    executeCampaign(req.tenantUser!.tenantSlug, id).catch((err) => {
       logger.error({ err, campaignId: id }, "Campaign execution error (fire-and-forget)");
     });
 

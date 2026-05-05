@@ -1,6 +1,18 @@
-import { db, tiersTable, tenantsTable, departmentsTable, conversationsTable, messagesTable, tenantUsersTable, billingEventsTable, usageRecordsTable, automationRulesTable, messageTemplatesTable, campaignsTable } from "@workspace/db";
-import { pool } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import {
+  db,
+  ensureTenantSchema,
+  getTenantDb,
+  getTenantPool,
+  tiersTable,
+  tenantsTable,
+  departmentsTable,
+  conversationsTable,
+  messagesTable,
+  billingEventsTable,
+  automationRulesTable,
+  messageTemplatesTable,
+} from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 import { logger } from "./logger";
 
 const TIER_PRICING = [
@@ -42,19 +54,20 @@ const TIER_PRICING = [
 
 const DEMO_TENANTS = [
   { slug: "acme", name: "ACME Corp", region: "US", tierCode: "starter", phoneNumber: "+14155550100" },
-  { slug: "orbital", name: "Orbital Logistics", region: "US", tierCode: "growth", phoneNumber: "+14155550200" },
-  { slug: "helvetia", name: "Helvetia Privatbank", region: "DE", tierCode: "enterprise", phoneNumber: "+491701234567" },
 ];
 
-const DEMO_DEPARTMENTS = [
-  { tenantSlug: "acme", name: "Customer Support" },
-  { tenantSlug: "acme", name: "Sales" },
-  { tenantSlug: "acme", name: "Marketing" },
-];
+const DEMO_DEPARTMENTS = ["Customer Support", "Sales", "Marketing"];
 
-const DEMO_CONVERSATIONS = [
+interface DemoConversation {
+  contactPhone: string;
+  contactName: string;
+  status: string;
+  tags: string[];
+  messages: { direction: string; body: string; senderName: string }[];
+}
+
+const DEMO_CONVERSATIONS: DemoConversation[] = [
   {
-    tenantSlug: "acme",
     contactPhone: "+14155551234",
     contactName: "Sarah Johnson",
     status: "open",
@@ -66,7 +79,6 @@ const DEMO_CONVERSATIONS = [
     ],
   },
   {
-    tenantSlug: "acme",
     contactPhone: "+14155555678",
     contactName: "Mike Chen",
     status: "open",
@@ -78,7 +90,6 @@ const DEMO_CONVERSATIONS = [
     ],
   },
   {
-    tenantSlug: "acme",
     contactPhone: "+14155559012",
     contactName: "Emily Davis",
     status: "closed",
@@ -89,7 +100,6 @@ const DEMO_CONVERSATIONS = [
     ],
   },
   {
-    tenantSlug: "acme",
     contactPhone: "+14155553456",
     contactName: "James Wilson",
     status: "open",
@@ -103,7 +113,6 @@ const DEMO_CONVERSATIONS = [
     ],
   },
   {
-    tenantSlug: "acme",
     contactPhone: "+14155557890",
     contactName: "Lisa Park",
     status: "open",
@@ -115,7 +124,6 @@ const DEMO_CONVERSATIONS = [
     ],
   },
   {
-    tenantSlug: "acme",
     contactPhone: "+14155552468",
     contactName: "Robert Martinez",
     status: "open",
@@ -129,10 +137,71 @@ const DEMO_CONVERSATIONS = [
   },
 ];
 
+const DEMO_AUTOMATIONS = [
+  {
+    type: "welcome_message",
+    name: "Welcome New Contacts",
+    enabled: true,
+    triggerConfig: {},
+    actionConfig: { replyBody: "Welcome to ACME Corp! How can we help you today? A team member will be with you shortly." },
+    priority: 0,
+  },
+  {
+    type: "keyword_reply",
+    name: "Hours & Availability",
+    enabled: true,
+    triggerConfig: { keywords: ["hours", "open", "available", "schedule"], matchType: "contains" },
+    actionConfig: { replyBody: "Our business hours are Monday–Friday, 9 AM – 6 PM EST. We typically respond within 15 minutes during business hours." },
+    priority: 10,
+  },
+  {
+    type: "keyword_reply",
+    name: "Pricing Info",
+    enabled: true,
+    triggerConfig: { keywords: ["price", "pricing", "cost", "how much"], matchType: "contains" },
+    actionConfig: { replyBody: "Thanks for your interest in pricing! Our plans start at $29/mo. Visit our website for full details, or I can connect you with our sales team." },
+    priority: 20,
+  },
+  {
+    type: "follow_up_timer",
+    name: "24h Follow-up",
+    enabled: true,
+    triggerConfig: { inactiveHours: 24 },
+    actionConfig: { replyBody: "Hi! Just checking in — is there anything else we can help you with?" },
+    priority: 0,
+  },
+  {
+    type: "auto_resolve",
+    name: "Auto-close after 72h",
+    enabled: true,
+    triggerConfig: { inactiveHours: 72 },
+    actionConfig: { replyBody: "This conversation has been closed due to inactivity. Feel free to message us anytime if you need help!" },
+    priority: 0,
+  },
+  {
+    type: "auto_unsubscribe",
+    name: "TCPA Opt-out",
+    enabled: true,
+    triggerConfig: {},
+    actionConfig: {},
+    priority: -1,
+  },
+];
+
+const DEMO_SHORTCUTS = [
+  { name: "Greeting", shortcutKey: "/hello", body: "Hi there! Thanks for reaching out to ACME Corp. How can I help you today?", category: "General" },
+  { name: "Transfer Notice", shortcutKey: "/transfer", body: "I'm going to transfer you to a specialist who can better assist you. One moment please!", category: "General" },
+  { name: "Business Hours", shortcutKey: "/hours", body: "Our business hours are Monday–Friday, 9 AM – 6 PM EST. We typically respond within 15 minutes during business hours.", category: "Info" },
+  { name: "Closing", shortcutKey: "/bye", body: "Thanks for contacting ACME Corp! Don't hesitate to reach out if you need anything else. Have a great day!", category: "General" },
+  { name: "Escalation", shortcutKey: "/escalate", body: "I understand this is important. Let me escalate this to our senior team right away. You'll hear back within the hour.", category: "Support" },
+  { name: "Order Status", shortcutKey: "/order", body: "I'd be happy to look into your order status. Could you please share your order number?", category: "Support" },
+  { name: "Refund Policy", shortcutKey: "/refund", body: "Our refund policy allows returns within 30 days of purchase. Would you like me to initiate a refund for you?", category: "Support" },
+];
+
 async function seedTiers(): Promise<void> {
   for (const tier of TIER_PRICING) {
     const existing = await db
-      .select({ id: tiersTable.id, monthlyPriceCents: tiersTable.monthlyPriceCents })
+      .select({ id: tiersTable.id })
       .from(tiersTable)
       .where(eq(tiersTable.code, tier.code))
       .limit(1);
@@ -165,61 +234,48 @@ async function seedTenants(): Promise<void> {
       await db.insert(tenantsTable).values(tenant);
       logger.info({ slug: tenant.slug }, "Demo tenant seeded");
     }
+
+    // Idempotent: provision per-tenant schema (no-op if already exists).
+    await ensureTenantSchema(tenant.slug);
   }
 }
 
-async function seedDepartments(): Promise<void> {
-  for (const dept of DEMO_DEPARTMENTS) {
-    const tenants = await db
-      .select({ id: tenantsTable.id })
-      .from(tenantsTable)
-      .where(eq(tenantsTable.slug, dept.tenantSlug))
-      .limit(1);
-
-    if (tenants.length === 0) continue;
-    const tenantId = tenants[0].id;
-
-    const existing = await db
+async function seedDepartmentsForAcme(tenantId: number): Promise<void> {
+  const tdb = getTenantDb("acme");
+  for (const name of DEMO_DEPARTMENTS) {
+    const existing = await tdb
       .select({ id: departmentsTable.id })
       .from(departmentsTable)
-      .where(eq(departmentsTable.name, dept.name))
+      .where(and(eq(departmentsTable.tenantId, tenantId), eq(departmentsTable.name, name)))
       .limit(1);
 
     if (existing.length === 0) {
-      await db.insert(departmentsTable).values({ tenantId, name: dept.name });
-      logger.info({ name: dept.name }, "Demo department seeded");
+      await tdb.insert(departmentsTable).values({ tenantId, name });
+      logger.info({ name, tenantSlug: "acme" }, "Demo department seeded");
     }
   }
 }
 
-async function seedConversations(): Promise<void> {
+async function seedConversationsForAcme(tenantId: number): Promise<void> {
+  const tdb = getTenantDb("acme");
   for (const conv of DEMO_CONVERSATIONS) {
-    const tenants = await db
-      .select({ id: tenantsTable.id })
-      .from(tenantsTable)
-      .where(eq(tenantsTable.slug, conv.tenantSlug))
-      .limit(1);
-
-    if (tenants.length === 0) continue;
-    const tenantId = tenants[0].id;
-
-    const existing = await db
+    const existing = await tdb
       .select({ id: conversationsTable.id })
       .from(conversationsTable)
-      .where(eq(conversationsTable.contactPhone, conv.contactPhone))
+      .where(and(eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.contactPhone, conv.contactPhone)))
       .limit(1);
 
     if (existing.length > 0) continue;
 
     const now = new Date();
-    const rows = await db
+    const rows = await tdb
       .insert(conversationsTable)
       .values({
         tenantId,
         contactPhone: conv.contactPhone,
         contactName: conv.contactName,
         status: conv.status,
-        tags: conv.tags ?? [],
+        tags: conv.tags,
         lastMessageAt: now,
       })
       .returning();
@@ -229,28 +285,22 @@ async function seedConversations(): Promise<void> {
     for (let i = 0; i < conv.messages.length; i++) {
       const msg = conv.messages[i];
       const msgTime = new Date(now.getTime() - (conv.messages.length - i) * 60000);
-      await pool.query(
-        `INSERT INTO messages (conversation_id, direction, body, sender_name, read, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [conversationId, msg.direction, msg.body, msg.senderName, msg.direction === "outbound", msgTime],
-      );
+      await tdb.insert(messagesTable).values({
+        conversationId,
+        direction: msg.direction,
+        body: msg.body,
+        senderName: msg.senderName,
+        read: msg.direction === "outbound",
+        createdAt: msgTime,
+      });
     }
 
-    logger.info({ contactName: conv.contactName }, "Demo conversation seeded");
+    logger.info({ contactName: conv.contactName, tenantSlug: "acme" }, "Demo conversation seeded");
   }
 }
 
-async function seedBillingDemo(): Promise<void> {
-  const tenants = await db
-    .select({ id: tenantsTable.id, subscriptionStatus: tenantsTable.subscriptionStatus, planTierCode: tenantsTable.planTierCode })
-    .from(tenantsTable)
-    .where(eq(tenantsTable.slug, "acme"))
-    .limit(1);
-
-  if (tenants.length === 0) return;
-  const tenant = tenants[0];
-
-  if (tenant.subscriptionStatus !== "none") return;
+async function seedBillingDemoForAcme(tenantId: number, status: string): Promise<void> {
+  if (status !== "none") return;
 
   const now = new Date();
   const trialEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
@@ -270,17 +320,18 @@ async function seedBillingDemo(): Promise<void> {
       prepaidCredits: 5000,
       overageEnabled: false,
     })
-    .where(eq(tenantsTable.id, tenant.id));
+    .where(eq(tenantsTable.id, tenantId));
 
-  const existingEvents = await db
+  const tdb = getTenantDb("acme");
+  const existingEvents = await tdb
     .select({ id: billingEventsTable.id })
     .from(billingEventsTable)
-    .where(eq(billingEventsTable.tenantId, tenant.id))
+    .where(eq(billingEventsTable.tenantId, tenantId))
     .limit(1);
 
   if (existingEvents.length === 0) {
-    await db.insert(billingEventsTable).values({
-      tenantId: tenant.id,
+    await tdb.insert(billingEventsTable).values({
+      tenantId,
       eventType: "trial_started",
       toTier: "starter",
       amountCents: 2900,
@@ -288,161 +339,39 @@ async function seedBillingDemo(): Promise<void> {
     });
   }
 
-  const msgCount = await pool.query(
+  // Seed per-tenant usage_records using raw SQL (not in schema as drizzle table).
+  const tpool = getTenantPool("acme");
+  const msgCount = await tpool.query(
     `SELECT count(*)::int as cnt FROM messages m
      JOIN conversations c ON m.conversation_id = c.id
      WHERE c.tenant_id = $1 AND m.direction = 'outbound'`,
-    [tenant.id],
+    [tenantId],
   );
   const outboundCount = msgCount.rows[0]?.cnt ?? 0;
 
-  await pool.query(
+  await tpool.query(
     `INSERT INTO usage_records (tenant_id, period_start, period_end, messages_sent, credits_used, credits_included, overage_credits, overage_amount_cents)
      VALUES ($1, $2, $3, $4, $4, 1000, 0, 0)
      ON CONFLICT (tenant_id, period_start) DO UPDATE SET messages_sent = $4, credits_used = $4`,
-    [tenant.id, periodStart, periodEnd, outboundCount],
+    [tenantId, periodStart, periodEnd, outboundCount],
   );
 
-  logger.info({ tenantId: tenant.id }, "Billing demo data seeded");
+  logger.info({ tenantId }, "Billing demo data seeded");
 }
 
-async function seedCampaignCredits(): Promise<void> {
-  const tenants = await db
-    .select({ id: tenantsTable.id, prepaidCredits: tenantsTable.prepaidCredits })
-    .from(tenantsTable)
-    .where(eq(tenantsTable.slug, "acme"))
-    .limit(1);
-
-  if (tenants.length === 0) return;
-  const tenant = tenants[0];
-
-  if ((tenant.prepaidCredits ?? 0) > 0) return;
-
+async function seedCampaignCreditsForAcme(tenantId: number, prepaid: number | null): Promise<void> {
+  if ((prepaid ?? 0) > 0) return;
   await db
     .update(tenantsTable)
     .set({ prepaidCredits: 5000, overageEnabled: false })
-    .where(eq(tenantsTable.id, tenant.id));
-
-  logger.info({ tenantId: tenant.id, prepaidCredits: 5000 }, "Campaign prepaid credits seeded");
+    .where(eq(tenantsTable.id, tenantId));
+  logger.info({ tenantId, prepaidCredits: 5000 }, "Campaign prepaid credits seeded");
 }
 
-async function seedConversationTags(): Promise<void> {
-  const tenants = await db
-    .select({ id: tenantsTable.id })
-    .from(tenantsTable)
-    .where(eq(tenantsTable.slug, "acme"))
-    .limit(1);
-
-  if (tenants.length === 0) return;
-  const tenantId = tenants[0].id;
-
-  const tagMap: Record<string, string[]> = {
-    "+14155551234": ["vip", "support"],
-    "+14155555678": ["orders", "support"],
-    "+14155559012": ["resolved"],
-    "+14155553456": ["vip", "sales"],
-    "+14155557890": ["sales", "prospect"],
-    "+14155552468": ["enterprise", "support"],
-  };
-
-  for (const [phone, tags] of Object.entries(tagMap)) {
-    const conv = await db
-      .select({ id: conversationsTable.id, tags: conversationsTable.tags })
-      .from(conversationsTable)
-      .where(and(eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.contactPhone, phone)))
-      .limit(1);
-
-    if (conv.length === 0) continue;
-    if (conv[0].tags && conv[0].tags.length > 0) continue;
-
-    await db
-      .update(conversationsTable)
-      .set({ tags })
-      .where(eq(conversationsTable.id, conv[0].id));
-  }
-
-  logger.info("Conversation tags seeded for ACME");
-}
-
-const DEMO_AUTOMATIONS = [
-  {
-    tenantSlug: "acme",
-    type: "welcome_message",
-    name: "Welcome New Contacts",
-    enabled: true,
-    triggerConfig: {},
-    actionConfig: { replyBody: "Welcome to ACME Corp! How can we help you today? A team member will be with you shortly." },
-    priority: 0,
-  },
-  {
-    tenantSlug: "acme",
-    type: "keyword_reply",
-    name: "Hours & Availability",
-    enabled: true,
-    triggerConfig: { keywords: ["hours", "open", "available", "schedule"], matchType: "contains" },
-    actionConfig: { replyBody: "Our business hours are Monday–Friday, 9 AM – 6 PM EST. We typically respond within 15 minutes during business hours." },
-    priority: 10,
-  },
-  {
-    tenantSlug: "acme",
-    type: "keyword_reply",
-    name: "Pricing Info",
-    enabled: true,
-    triggerConfig: { keywords: ["price", "pricing", "cost", "how much"], matchType: "contains" },
-    actionConfig: { replyBody: "Thanks for your interest in pricing! Our plans start at $29/mo. Visit our website for full details, or I can connect you with our sales team." },
-    priority: 20,
-  },
-  {
-    tenantSlug: "acme",
-    type: "follow_up_timer",
-    name: "24h Follow-up",
-    enabled: true,
-    triggerConfig: { inactiveHours: 24 },
-    actionConfig: { replyBody: "Hi! Just checking in — is there anything else we can help you with?" },
-    priority: 0,
-  },
-  {
-    tenantSlug: "acme",
-    type: "auto_resolve",
-    name: "Auto-close after 72h",
-    enabled: true,
-    triggerConfig: { inactiveHours: 72 },
-    actionConfig: { replyBody: "This conversation has been closed due to inactivity. Feel free to message us anytime if you need help!" },
-    priority: 0,
-  },
-  {
-    tenantSlug: "acme",
-    type: "auto_unsubscribe",
-    name: "TCPA Opt-out",
-    enabled: true,
-    triggerConfig: {},
-    actionConfig: {},
-    priority: -1,
-  },
-];
-
-const DEMO_SHORTCUTS = [
-  { tenantSlug: "acme", name: "Greeting", shortcutKey: "/hello", body: "Hi there! Thanks for reaching out to ACME Corp. How can I help you today?", category: "General" },
-  { tenantSlug: "acme", name: "Transfer Notice", shortcutKey: "/transfer", body: "I'm going to transfer you to a specialist who can better assist you. One moment please!", category: "General" },
-  { tenantSlug: "acme", name: "Business Hours", shortcutKey: "/hours", body: "Our business hours are Monday–Friday, 9 AM – 6 PM EST. We typically respond within 15 minutes during business hours.", category: "Info" },
-  { tenantSlug: "acme", name: "Closing", shortcutKey: "/bye", body: "Thanks for contacting ACME Corp! Don't hesitate to reach out if you need anything else. Have a great day!", category: "General" },
-  { tenantSlug: "acme", name: "Escalation", shortcutKey: "/escalate", body: "I understand this is important. Let me escalate this to our senior team right away. You'll hear back within the hour.", category: "Support" },
-  { tenantSlug: "acme", name: "Order Status", shortcutKey: "/order", body: "I'd be happy to look into your order status. Could you please share your order number?", category: "Support" },
-  { tenantSlug: "acme", name: "Refund Policy", shortcutKey: "/refund", body: "Our refund policy allows returns within 30 days of purchase. Would you like me to initiate a refund for you?", category: "Support" },
-];
-
-async function seedAutomations(): Promise<void> {
+async function seedAutomationsForAcme(tenantId: number): Promise<void> {
+  const tdb = getTenantDb("acme");
   for (const rule of DEMO_AUTOMATIONS) {
-    const tenants = await db
-      .select({ id: tenantsTable.id })
-      .from(tenantsTable)
-      .where(eq(tenantsTable.slug, rule.tenantSlug))
-      .limit(1);
-
-    if (tenants.length === 0) continue;
-    const tenantId = tenants[0].id;
-
-    const existing = await db
+    const existing = await tdb
       .select({ id: automationRulesTable.id })
       .from(automationRulesTable)
       .where(and(eq(automationRulesTable.tenantId, tenantId), eq(automationRulesTable.name, rule.name)))
@@ -450,7 +379,7 @@ async function seedAutomations(): Promise<void> {
 
     if (existing.length > 0) continue;
 
-    await db.insert(automationRulesTable).values({
+    await tdb.insert(automationRulesTable).values({
       tenantId,
       type: rule.type,
       name: rule.name,
@@ -463,18 +392,10 @@ async function seedAutomations(): Promise<void> {
   }
 }
 
-async function seedShortcuts(): Promise<void> {
+async function seedShortcutsForAcme(tenantId: number): Promise<void> {
+  const tdb = getTenantDb("acme");
   for (const tmpl of DEMO_SHORTCUTS) {
-    const tenants = await db
-      .select({ id: tenantsTable.id })
-      .from(tenantsTable)
-      .where(eq(tenantsTable.slug, tmpl.tenantSlug))
-      .limit(1);
-
-    if (tenants.length === 0) continue;
-    const tenantId = tenants[0].id;
-
-    const existing = await db
+    const existing = await tdb
       .select({ id: messageTemplatesTable.id })
       .from(messageTemplatesTable)
       .where(and(eq(messageTemplatesTable.tenantId, tenantId), eq(messageTemplatesTable.shortcutKey, tmpl.shortcutKey)))
@@ -482,7 +403,7 @@ async function seedShortcuts(): Promise<void> {
 
     if (existing.length > 0) continue;
 
-    await db.insert(messageTemplatesTable).values({
+    await tdb.insert(messageTemplatesTable).values({
       tenantId,
       name: tmpl.name,
       shortcutKey: tmpl.shortcutKey,
@@ -504,18 +425,35 @@ export async function seedDemoData(missingTables: string[]): Promise<void> {
   try {
     await seedTiers();
     await seedTenants();
-    await seedDepartments();
-    await seedConversations();
-    await seedBillingDemo();
+
+    // ACME-specific demo data — all per-tenant tables, written into tenant_acme schema.
+    const acme = await db
+      .select({
+        id: tenantsTable.id,
+        subscriptionStatus: tenantsTable.subscriptionStatus,
+        prepaidCredits: tenantsTable.prepaidCredits,
+      })
+      .from(tenantsTable)
+      .where(eq(tenantsTable.slug, "acme"))
+      .limit(1);
+
+    if (acme.length === 0) {
+      logger.warn("ACME tenant not found after seeding; skipping per-tenant demo data");
+      return;
+    }
+    const acmeId = acme[0].id;
+
+    await seedDepartmentsForAcme(acmeId);
+    await seedConversationsForAcme(acmeId);
+    await seedBillingDemoForAcme(acmeId, acme[0].subscriptionStatus);
     if (!missingTables.includes("automation_rules")) {
-      await seedAutomations();
+      await seedAutomationsForAcme(acmeId);
     }
     if (!missingTables.includes("message_templates")) {
-      await seedShortcuts();
+      await seedShortcutsForAcme(acmeId);
     }
     if (!missingTables.includes("campaigns")) {
-      await seedCampaignCredits();
-      await seedConversationTags();
+      await seedCampaignCreditsForAcme(acmeId, acme[0].prepaidCredits);
     }
     logger.info("Demo data seed complete");
   } catch (err) {

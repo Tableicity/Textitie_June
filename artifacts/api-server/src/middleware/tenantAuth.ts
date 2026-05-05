@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { db, getTenantDb, type TenantDb } from "@workspace/db";
+import { db, getTenantDb, tenantSlugStore, type TenantDb } from "@workspace/db";
 import { tenantsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { verifyToken } from "../routes/auth";
@@ -69,5 +69,7 @@ export const requireTenantAuth: RequestHandler = async (req, res, next) => {
 
   req.tenantUser = { ...payload, tenantSlug } as TenantAuthPayload;
   req.tenantDb = getTenantDb(tenantSlug as string);
-  next();
+  // Run the rest of the request inside ALS so module-level `db`/`pool`
+  // imports automatically resolve to this tenant's per-schema pool.
+  tenantSlugStore.run(tenantSlug as string, () => next());
 };

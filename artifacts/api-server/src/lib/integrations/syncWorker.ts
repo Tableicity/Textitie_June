@@ -1,4 +1,4 @@
-import { db, crmSyncQueueTable, integrationsTable } from "@workspace/db";
+import { db, getTenantDb, crmSyncQueueTable, integrationsTable, tenantsTable } from "@workspace/db";
 import { and, eq, lte, asc, sql } from "drizzle-orm";
 import { logger } from "../logger";
 import { getHubSpotClient } from "./hubspotStub";
@@ -12,13 +12,15 @@ function backoffMinutes(attempts: number): number {
 
 export async function enqueueSync(params: {
   tenantId: number;
+  tenantSlug: string;
   provider: "hubspot";
   entityType: "contact" | "conversation";
   entityId: string | number;
   op: "upsert" | "log_activity";
   payload: Record<string, unknown>;
 }): Promise<void> {
-  const integ = await db
+  const tdb = getTenantDb(params.tenantSlug);
+  const integ = await tdb
     .select({ status: integrationsTable.status })
     .from(integrationsTable)
     .where(
@@ -33,7 +35,7 @@ export async function enqueueSync(params: {
     return;
   }
 
-  await db.insert(crmSyncQueueTable).values({
+  await tdb.insert(crmSyncQueueTable).values({
     tenantId: params.tenantId,
     provider: params.provider,
     entityType: params.entityType,
@@ -43,9 +45,24 @@ export async function enqueueSync(params: {
   });
 }
 
+/** Iterates all tenants, processes their CRM sync queues. Returns total processed. */
 export async function processCrmSyncQueue(): Promise<number> {
+  const tenants = await db.select({ slug: tenantsTable.slug }).from(tenantsTable);
+  let total = 0;
+  for (const { slug } of tenants) {
+    try {
+      total += await processCrmSyncQueueForTenant(slug);
+    } catch (err) {
+      logger.warn({ err, slug }, "processCrmSyncQueueForTenant failed (continuing)");
+    }
+  }
+  return total;
+}
+
+async function processCrmSyncQueueForTenant(tenantSlug: string): Promise<number> {
+  const tdb = getTenantDb(tenantSlug);
   const now = new Date();
-  const pending = await db
+  const pending = await tdb
     .select()
     .from(crmSyncQueueTable)
     .where(
@@ -59,7 +76,7 @@ export async function processCrmSyncQueue(): Promise<number> {
 
   let processed = 0;
   for (const item of pending) {
-    const claim = await db
+    const claim = await tdb
       .update(crmSyncQueueTable)
       .set({ status: "in_flight", updatedAt: new Date() })
       .where(and(eq(crmSyncQueueTable.id, item.id), eq(crmSyncQueueTable.status, "pending")))
@@ -95,7 +112,7 @@ export async function processCrmSyncQueue(): Promise<number> {
         throw new Error(`Unknown provider: ${item.provider}`);
       }
 
-      await db
+      await tdb
         .update(crmSyncQueueTable)
         .set({
           status: "done",
@@ -106,7 +123,7 @@ export async function processCrmSyncQueue(): Promise<number> {
         })
         .where(eq(crmSyncQueueTable.id, item.id));
 
-      await db
+      await tdb
         .update(integrationsTable)
         .set({ lastSyncAt: new Date(), lastError: null, updatedAt: new Date() })
         .where(
@@ -122,7 +139,7 @@ export async function processCrmSyncQueue(): Promise<number> {
       const failed = nextAttempts >= MAX_ATTEMPTS;
       const errMsg = err instanceof Error ? err.message : String(err);
       const next = new Date(Date.now() + backoffMinutes(nextAttempts) * 60_000);
-      await db
+      await tdb
         .update(crmSyncQueueTable)
         .set({
           status: failed ? "failed" : "pending",
@@ -133,7 +150,7 @@ export async function processCrmSyncQueue(): Promise<number> {
         })
         .where(eq(crmSyncQueueTable.id, item.id));
 
-      await db
+      await tdb
         .update(integrationsTable)
         .set({ lastError: errMsg, updatedAt: new Date() })
         .where(
@@ -147,8 +164,7 @@ export async function processCrmSyncQueue(): Promise<number> {
     }
   }
 
-  // Reset stuck in_flight items older than 5 min back to pending
-  await db
+  await tdb
     .update(crmSyncQueueTable)
     .set({ status: "pending", updatedAt: new Date() })
     .where(

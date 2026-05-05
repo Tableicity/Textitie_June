@@ -62,6 +62,20 @@ export function getTenantDb(slug: string): TenantDb {
 }
 
 /**
+ * Returns the raw pg.Pool whose connections always run with
+ * `search_path = tenant_<slug>, public`. Use this for raw SQL paths
+ * (`pool.query("...")`) that previously hit the global pool. Cached per
+ * slug — same pool that backs `getTenantDb(slug)`.
+ */
+export function getTenantPool(slug: string): pg.Pool {
+  // Force pool creation via getTenantDb so the on-connect search_path hook
+  // is registered exactly once per slug.
+  getTenantDb(slug);
+  // Safe: guaranteed present after getTenantDb above.
+  return tenantPools.get(slug)!.pool;
+}
+
+/**
  * Closes all cached tenant pools. Used by tests and graceful shutdown.
  */
 export async function closeAllTenantPools(): Promise<void> {

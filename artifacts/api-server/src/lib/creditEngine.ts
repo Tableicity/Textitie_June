@@ -1,4 +1,4 @@
-import { db, tenantsTable, usageRecordsTable } from "@workspace/db";
+import { db, getTenantDb, getTenantPool, tenantsTable, usageRecordsTable } from "@workspace/db";
 import { pool } from "@workspace/db";
 import { eq, and, lte, gte } from "drizzle-orm";
 import { logger } from "./logger";
@@ -15,6 +15,7 @@ export interface PreFlightResult {
 
 export async function preFlightCheck(
   tenantId: number,
+  tenantSlug: string,
   recipientCount: number,
   segmentsPerMessage: number,
 ): Promise<PreFlightResult> {
@@ -40,9 +41,10 @@ export async function preFlightCheck(
   const prepaidCredits = t.prepaidCredits ?? 0;
   const overageEnabled = t.overageEnabled ?? false;
 
+  const tdb = getTenantDb(tenantSlug);
   let includedRemaining = 0;
   const now = new Date();
-  const usageRows = await db
+  const usageRows = await tdb
     .select()
     .from(usageRecordsTable)
     .where(
@@ -82,6 +84,7 @@ export async function preFlightCheck(
 
 export async function deductCampaignCredits(
   tenantId: number,
+  tenantSlug: string,
   creditsUsed: number,
 ): Promise<void> {
   const tenant = await db
@@ -93,8 +96,10 @@ export async function deductCampaignCredits(
   if (tenant.length === 0) return;
 
   const prepaid = tenant[0].prepaidCredits ?? 0;
+  const tpool = getTenantPool(tenantSlug);
 
   if (prepaid >= creditsUsed) {
+    // tenants lives in public — use the global pool
     await pool.query(
       `UPDATE tenants SET prepaid_credits = prepaid_credits - $1 WHERE id = $2`,
       [creditsUsed, tenantId],
@@ -109,7 +114,8 @@ export async function deductCampaignCredits(
     const overflowToUsage = creditsUsed - prepaid;
     if (overflowToUsage > 0) {
       const now = new Date();
-      await pool.query(
+      // usage_records lives per-tenant — use the per-tenant pool
+      await tpool.query(
         `UPDATE usage_records
          SET credits_used = credits_used + $1,
              messages_sent = messages_sent + $1,
@@ -126,13 +132,13 @@ export async function deductCampaignCredits(
   logger.info({ tenantId, creditsUsed }, "Campaign credits deducted");
 }
 
-export async function getCreditBalance(tenantId: number): Promise<{
+export async function getCreditBalance(tenantId: number, tenantSlug: string): Promise<{
   prepaidCredits: number;
   includedRemaining: number;
   totalAvailable: number;
   overageEnabled: boolean;
 }> {
-  const result = await preFlightCheck(tenantId, 0, 0);
+  const result = await preFlightCheck(tenantId, tenantSlug, 0, 0);
   return {
     prepaidCredits: result.prepaidCredits,
     includedRemaining: result.includedRemaining === Infinity ? -1 : result.includedRemaining,

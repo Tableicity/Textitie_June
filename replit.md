@@ -11,7 +11,7 @@ No specific user preferences were provided in the original document.
 ### Core Architecture
 -   **Monorepo**: Utilizes a pnpm workspace.
 -   **Contract-first API Design**: OpenAPI (`lib/api-spec/openapi.yaml`) defines API specifications, generating client code and Zod schemas.
--   **Database**: PostgreSQL with Drizzle ORM.
+-   **Database**: PostgreSQL with Drizzle ORM. **Schema-per-tenant isolation (Stage 4)**: each tenant's per-tenant data lives in a dedicated `tenant_<slug>` Postgres schema. Globals (`tenants`, `tenant_users`, `tiers`, `users`, `email_verifications`, `webhook_events`, `injections`) remain in `public`. The middleware `requireTenantAuth` resolves the tenant slug from the JWT and runs the rest of the request inside an `AsyncLocalStorage` context (`tenantSlugStore`); the `db`/`pool` exports from `@workspace/db` are Proxies that read that context, so route-level direct queries route to the correct schema with no per-call edits. Library functions that run outside a request (workers, fire-and-forget jobs) accept an explicit `tenantSlug` and use `getTenantDb(slug)` / `getTenantPool(slug)` directly. Schema provisioning is handled by `ensureTenantSchema(slug)` and the `scripts/provision-tenant-schemas` / `scripts/backfill-tenant-schemas` scripts (idempotent).
 -   **API Server**: Express.js application (`artifacts/api-server`).
 -   **Admin UI**: React application (`artifacts/eng-architect`) using Vite, wouter, and shadcn, served at `/admin/`.
 -   **User UI**: React application (`artifacts/user-app`) using Vite, wouter, and shadcn, providing a Textline-style messaging inbox, served at `/` (root).

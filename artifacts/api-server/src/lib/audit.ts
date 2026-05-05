@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { db, auditLogsTable } from "@workspace/db";
+import { auditLogsTable } from "@workspace/db";
 import { logger } from "./logger";
 
 export interface AuditEvent {
@@ -13,13 +13,14 @@ export interface AuditEvent {
 export async function recordAudit(req: Request, evt: AuditEvent): Promise<void> {
   try {
     const tu = req.tenantUser;
-    if (!tu) return;
+    const tdb = req.tenantDb;
+    if (!tu || !tdb) return;
     const ip =
       (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
       req.socket.remoteAddress ||
       null;
     const userAgent = (req.headers["user-agent"] as string | undefined) ?? null;
-    await db.insert(auditLogsTable).values({
+    await tdb.insert(auditLogsTable).values({
       tenantId: tu.tenantId,
       actorUserId: tu.tenantUserId,
       actorEmail: tu.email,

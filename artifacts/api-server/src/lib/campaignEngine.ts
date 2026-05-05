@@ -1,6 +1,6 @@
-import { db, campaignsTable, campaignMessagesTable, conversationsTable, optOutsTable } from "@workspace/db";
+import { getTenantDb, getTenantPool, campaignsTable } from "@workspace/db";
 import { pool } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getSender } from "./senders";
 import { extractContactVars, injectVariables, calculateSegments } from "./smsUtils";
 import { deductCampaignCredits } from "./creditEngine";
@@ -13,6 +13,7 @@ const BATCH_INTERVAL_MS = 1000;
 interface CampaignContext {
   campaignId: number;
   tenantId: number;
+  tenantSlug: string;
   fromNumber: string | null;
   totalToSend: number;
   sentSoFar: number;
@@ -20,7 +21,8 @@ interface CampaignContext {
 }
 
 async function sendBatch(ctx: CampaignContext): Promise<boolean> {
-  const claimed = await pool.query(
+  const tpool = getTenantPool(ctx.tenantSlug);
+  const claimed = await tpool.query(
     `UPDATE campaign_messages
      SET status = 'sending'
      WHERE id IN (
@@ -50,7 +52,7 @@ async function sendBatch(ctx: CampaignContext): Promise<boolean> {
       });
 
       const newStatus = result.status === "failed" ? "failed" : "sent";
-      await pool.query(
+      await tpool.query(
         `UPDATE campaign_messages SET status = $1, sent_at = NOW(), external_id = $2, error_message = $3 WHERE id = $4`,
         [
           newStatus,
@@ -62,8 +64,6 @@ async function sendBatch(ctx: CampaignContext): Promise<boolean> {
 
       if (newStatus === "sent") {
         ctx.sentSoFar++;
-        // Sim-Vibe: when running on the stub sender, replay a fake Twilio
-        // delivery callback so the "Delivered" counters move during local testing.
         if (isStub && result.externalId) {
           simulateDeliveryCallback(result.externalId);
         }
@@ -71,7 +71,7 @@ async function sendBatch(ctx: CampaignContext): Promise<boolean> {
         ctx.failedSoFar++;
       }
     } catch (err: any) {
-      await pool.query(
+      await tpool.query(
         `UPDATE campaign_messages SET status = 'failed', sent_at = NOW(), error_message = $1 WHERE id = $2`,
         [err.message ?? "Unknown error", row.id],
       );
@@ -79,7 +79,7 @@ async function sendBatch(ctx: CampaignContext): Promise<boolean> {
     }
   }
 
-  await pool.query(
+  await tpool.query(
     `UPDATE campaigns SET sent_count = $1, failed_count = $2 WHERE id = $3`,
     [ctx.sentSoFar, ctx.failedSoFar, ctx.campaignId],
   );
@@ -87,15 +87,18 @@ async function sendBatch(ctx: CampaignContext): Promise<boolean> {
   return true;
 }
 
-export async function executeCampaign(campaignId: number): Promise<void> {
-  const campaigns = await db
+export async function executeCampaign(tenantSlug: string, campaignId: number): Promise<void> {
+  const tdb = getTenantDb(tenantSlug);
+  const tpool = getTenantPool(tenantSlug);
+
+  const campaigns = await tdb
     .select()
     .from(campaignsTable)
     .where(eq(campaignsTable.id, campaignId))
     .limit(1);
 
   if (campaigns.length === 0) {
-    logger.error({ campaignId }, "Campaign not found for execution");
+    logger.error({ campaignId, tenantSlug }, "Campaign not found for execution");
     return;
   }
 
@@ -109,19 +112,21 @@ export async function executeCampaign(campaignId: number): Promise<void> {
   const ctx: CampaignContext = {
     campaignId,
     tenantId: campaign.tenantId,
+    tenantSlug,
     fromNumber: null,
     totalToSend: campaign.totalRecipients,
     sentSoFar: campaign.sentCount ?? 0,
     failedSoFar: campaign.failedCount ?? 0,
   };
 
+  // tenants is in public — use the global pool
   const tenantRow = await pool.query(
     `SELECT phone_number FROM tenants WHERE id = $1`,
     [campaign.tenantId],
   );
   ctx.fromNumber = tenantRow.rows[0]?.phone_number ?? null;
 
-  logger.info({ campaignId, totalRecipients: ctx.totalToSend }, "Campaign execution started");
+  logger.info({ campaignId, tenantSlug, totalRecipients: ctx.totalToSend }, "Campaign execution started");
 
   const processBatches = async () => {
     let hasMore = true;
@@ -133,7 +138,7 @@ export async function executeCampaign(campaignId: number): Promise<void> {
     }
 
     if (ctx.sentSoFar > 0) {
-      const renderedRows = await pool.query(
+      const renderedRows = await tpool.query(
         `SELECT rendered_body FROM campaign_messages WHERE campaign_id = $1 AND status IN ('sent', 'delivered')`,
         [campaignId],
       );
@@ -143,10 +148,10 @@ export async function executeCampaign(campaignId: number): Promise<void> {
       }
 
       try {
-        await deductCampaignCredits(campaign.tenantId, totalSegments);
+        await deductCampaignCredits(campaign.tenantId, tenantSlug, totalSegments);
       } catch (deductErr) {
         logger.error({ err: deductErr, campaignId, totalSegments }, "Credit deduction failed — campaign marked failed");
-        await pool.query(
+        await tpool.query(
           `UPDATE campaigns SET status = 'failed', completed_at = NOW(), sent_count = $1, failed_count = $2 WHERE id = $3`,
           [ctx.sentSoFar, ctx.failedSoFar, campaignId],
         );
@@ -154,20 +159,20 @@ export async function executeCampaign(campaignId: number): Promise<void> {
       }
     }
 
-    await pool.query(
+    await tpool.query(
       `UPDATE campaigns SET status = 'completed', completed_at = NOW(), sent_count = $1, failed_count = $2 WHERE id = $3`,
       [ctx.sentSoFar, ctx.failedSoFar, campaignId],
     );
 
     logger.info(
-      { campaignId, sent: ctx.sentSoFar, failed: ctx.failedSoFar },
+      { campaignId, tenantSlug, sent: ctx.sentSoFar, failed: ctx.failedSoFar },
       "Campaign execution completed",
     );
   };
 
   processBatches().catch((err) => {
     logger.error({ err, campaignId }, "Campaign execution crashed");
-    pool.query(
+    tpool.query(
       `UPDATE campaigns SET status = 'failed', completed_at = NOW() WHERE id = $1`,
       [campaignId],
     ).catch(() => {});
@@ -176,8 +181,10 @@ export async function executeCampaign(campaignId: number): Promise<void> {
 
 export async function buildAudience(
   tenantId: number,
+  tenantSlug: string,
   filter: { tags?: string[]; status?: string; lastInteractionBefore?: string; lastInteractionAfter?: string } | null,
 ): Promise<Array<{ id: number; contactPhone: string; contactName: string | null }>> {
+  const tpool = getTenantPool(tenantSlug);
   let query = `
     SELECT c.id, c.contact_phone, c.contact_name
     FROM conversations c
@@ -216,7 +223,7 @@ export async function buildAudience(
 
   query += ` ORDER BY c.contact_name ASC`;
 
-  const result = await pool.query(query, params);
+  const result = await tpool.query(query, params);
   return result.rows.map((r: any) => ({
     id: r.id,
     contactPhone: r.contact_phone,
@@ -225,11 +232,13 @@ export async function buildAudience(
 }
 
 export async function createCampaignMessages(
+  tenantSlug: string,
   campaignId: number,
   audience: Array<{ id: number; contactPhone: string; contactName: string | null }>,
   templateBody: string,
 ): Promise<number> {
   if (audience.length === 0) return 0;
+  const tpool = getTenantPool(tenantSlug);
 
   const values: string[] = [];
   const params: any[] = [];
@@ -243,7 +252,7 @@ export async function createCampaignMessages(
     idx += 5;
   }
 
-  await pool.query(
+  await tpool.query(
     `INSERT INTO campaign_messages (campaign_id, conversation_id, contact_phone, contact_name, rendered_body, status)
      VALUES ${values.join(", ")}`,
     params,
@@ -252,20 +261,15 @@ export async function createCampaignMessages(
   return audience.length;
 }
 
-/**
- * Internal helper used by the scheduler. Picks up a draft+scheduled campaign,
- * runs the pre-flight credit check, atomically claims it, queues messages,
- * and kicks off executeCampaign in the background.
- *
- * Returns null on success, or an error string explaining why it was skipped
- * (insufficient credits, no audience, race lost, etc).
- */
 export async function activateScheduledCampaign(
+  tenantSlug: string,
   campaignId: number,
 ): Promise<{ ok: boolean; reason?: string }> {
   const { preFlightCheck } = await import("./creditEngine");
+  const tdb = getTenantDb(tenantSlug);
+  const tpool = getTenantPool(tenantSlug);
 
-  const rows = await db
+  const rows = await tdb
     .select()
     .from(campaignsTable)
     .where(eq(campaignsTable.id, campaignId))
@@ -274,9 +278,9 @@ export async function activateScheduledCampaign(
   const campaign = rows[0];
   if (campaign.status !== "draft") return { ok: false, reason: `status=${campaign.status}` };
 
-  const audience = await buildAudience(campaign.tenantId, campaign.segmentFilter as any);
+  const audience = await buildAudience(campaign.tenantId, tenantSlug, campaign.segmentFilter as any);
   if (audience.length === 0) {
-    await pool.query(
+    await tpool.query(
       `UPDATE campaigns SET status = 'failed', completed_at = NOW() WHERE id = $1 AND status = 'draft'`,
       [campaignId],
     );
@@ -285,16 +289,16 @@ export async function activateScheduledCampaign(
 
   const segInfo = calculateSegments(campaign.body);
   const segCount = Math.max(1, segInfo.segmentCount);
-  const preflight = await preFlightCheck(campaign.tenantId, audience.length, segCount);
+  const preflight = await preFlightCheck(campaign.tenantId, tenantSlug, audience.length, segCount);
   if (!preflight.allowed) {
-    await pool.query(
+    await tpool.query(
       `UPDATE campaigns SET status = 'failed', completed_at = NOW() WHERE id = $1 AND status = 'draft'`,
       [campaignId],
     );
     return { ok: false, reason: `insufficient credits (need ${preflight.requiredCredits}, have ${preflight.availableCredits})` };
   }
 
-  const claimed = await pool.query(
+  const claimed = await tpool.query(
     `UPDATE campaigns SET status = 'sending', started_at = NOW()
      WHERE id = $1 AND status = 'draft'
      RETURNING id`,
@@ -302,13 +306,13 @@ export async function activateScheduledCampaign(
   );
   if (claimed.rows.length === 0) return { ok: false, reason: "race lost" };
 
-  const queued = await createCampaignMessages(campaignId, audience, campaign.body);
-  await pool.query(
+  const queued = await createCampaignMessages(tenantSlug, campaignId, audience, campaign.body);
+  await tpool.query(
     `UPDATE campaigns SET total_recipients = $1, queued_count = $2, credits_required = $3 WHERE id = $4`,
     [audience.length, queued, audience.length * segCount, campaignId],
   );
 
-  executeCampaign(campaignId).catch((err) => {
+  executeCampaign(tenantSlug, campaignId).catch((err) => {
     logger.error({ err, campaignId }, "Scheduled campaign execution error (fire-and-forget)");
   });
 

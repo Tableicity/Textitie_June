@@ -1,6 +1,5 @@
-import { db, automationRulesTable, optOutsTable, conversationsTable, messagesTable, conversationEventsTable } from "@workspace/db";
+import { getTenantDb, getTenantPool, automationRulesTable, optOutsTable, conversationsTable, messagesTable, conversationEventsTable } from "@workspace/db";
 import { eq, and, asc } from "drizzle-orm";
-import { pool } from "@workspace/db";
 import { logger } from "./logger";
 import { attributeOptOut } from "./campaignAttribution";
 
@@ -19,23 +18,26 @@ interface ActionConfig {
 
 export async function processInboundMessage(
   tenantId: number,
+  tenantSlug: string,
   conversationId: number,
   contactPhone: string,
   messageBody: string,
 ): Promise<{ handled: boolean; action?: string }> {
+  const tdb = getTenantDb(tenantSlug);
+  const tpool = getTenantPool(tenantSlug);
   try {
     const normalized = messageBody.trim().toLowerCase();
     if (normalized === "start") {
-      const resubscribed = await handleResubscribe(tenantId, contactPhone);
+      const resubscribed = await handleResubscribe(tenantId, tenantSlug, contactPhone);
       if (resubscribed) {
-        await db.insert(messagesTable).values({
+        await tdb.insert(messagesTable).values({
           conversationId,
           direction: "outbound",
           body: "You have been re-subscribed and will receive messages again. Welcome back!",
           senderName: "System (Auto)",
           read: true,
         });
-        await db.insert(conversationEventsTable).values({
+        await tdb.insert(conversationEventsTable).values({
           conversationId,
           eventType: "resubscribed",
           note: "Contact sent START — re-subscribed",
@@ -44,31 +46,31 @@ export async function processInboundMessage(
       }
     }
 
-    const isOptedOut = await checkOptOut(tenantId, contactPhone);
+    const isOptedOut = await checkOptOut(tenantId, tenantSlug, contactPhone);
     if (isOptedOut) {
       logger.info({ tenantId, contactPhone }, "Message from opted-out number, ignoring");
       return { handled: true, action: "opted_out_ignored" };
     }
 
-    const tcpaResult = await handleTcpaKeyword(tenantId, conversationId, contactPhone, messageBody);
+    const tcpaResult = await handleTcpaKeyword(tenantId, tenantSlug, conversationId, contactPhone, messageBody);
     if (tcpaResult.handled) {
       return tcpaResult;
     }
 
-    const messageCount = await pool.query(
+    const messageCount = await tpool.query(
       `SELECT count(*)::int as cnt FROM messages WHERE conversation_id = $1`,
       [conversationId],
     );
     const isFirstMessage = (messageCount.rows[0]?.cnt ?? 0) <= 1;
 
     if (isFirstMessage) {
-      const welcomeResult = await handleWelcomeMessage(tenantId, conversationId);
+      const welcomeResult = await handleWelcomeMessage(tenantId, tenantSlug, conversationId);
       if (welcomeResult.handled) {
         return welcomeResult;
       }
     }
 
-    const keywordResult = await handleKeywordAutoreply(tenantId, conversationId, messageBody);
+    const keywordResult = await handleKeywordAutoreply(tenantId, tenantSlug, conversationId, messageBody);
     if (keywordResult.handled) {
       return keywordResult;
     }
@@ -80,8 +82,9 @@ export async function processInboundMessage(
   }
 }
 
-async function checkOptOut(tenantId: number, phoneNumber: string): Promise<boolean> {
-  const rows = await db
+async function checkOptOut(tenantId: number, tenantSlug: string, phoneNumber: string): Promise<boolean> {
+  const tdb = getTenantDb(tenantSlug);
+  const rows = await tdb
     .select({ id: optOutsTable.id })
     .from(optOutsTable)
     .where(and(eq(optOutsTable.tenantId, tenantId), eq(optOutsTable.phoneNumber, phoneNumber)))
@@ -91,6 +94,7 @@ async function checkOptOut(tenantId: number, phoneNumber: string): Promise<boole
 
 async function handleTcpaKeyword(
   tenantId: number,
+  tenantSlug: string,
   conversationId: number,
   contactPhone: string,
   messageBody: string,
@@ -100,19 +104,19 @@ async function handleTcpaKeyword(
     return { handled: false };
   }
 
-  await pool.query(
+  const tdb = getTenantDb(tenantSlug);
+  const tpool = getTenantPool(tenantSlug);
+
+  await tpool.query(
     `INSERT INTO opt_outs (tenant_id, phone_number, reason)
      VALUES ($1, $2, $3)
      ON CONFLICT (tenant_id, phone_number) DO NOTHING`,
     [tenantId, contactPhone, `Keyword: ${normalized}`],
   );
 
-  // Smoking Gun: tag the opt-out with the campaign that triggered it
-  // (last-touch within 72h) so tenants can see WHICH message angered the
-  // customer. Non-fatal if no recent campaign exists.
-  await attributeOptOut(tenantId, contactPhone);
+  await attributeOptOut(tenantId, tenantSlug, contactPhone);
 
-  await db.insert(messagesTable).values({
+  await tdb.insert(messagesTable).values({
     conversationId,
     direction: "outbound",
     body: TCPA_CONFIRMATION,
@@ -121,12 +125,12 @@ async function handleTcpaKeyword(
   });
 
   const now = new Date();
-  await db
+  await tdb
     .update(conversationsTable)
     .set({ status: "closed", lastMessageAt: now })
     .where(eq(conversationsTable.id, conversationId));
 
-  await db.insert(conversationEventsTable).values({
+  await tdb.insert(conversationEventsTable).values({
     conversationId,
     eventType: "auto_unsubscribed",
     note: `Contact sent "${normalized}" — TCPA opt-out processed`,
@@ -138,9 +142,11 @@ async function handleTcpaKeyword(
 
 async function handleWelcomeMessage(
   tenantId: number,
+  tenantSlug: string,
   conversationId: number,
 ): Promise<{ handled: boolean; action?: string }> {
-  const rules = await db
+  const tdb = getTenantDb(tenantSlug);
+  const rules = await tdb
     .select()
     .from(automationRulesTable)
     .where(
@@ -159,7 +165,7 @@ async function handleWelcomeMessage(
   const action = rule.actionConfig as ActionConfig;
   if (!action.replyBody) return { handled: false };
 
-  await db.insert(messagesTable).values({
+  await tdb.insert(messagesTable).values({
     conversationId,
     direction: "outbound",
     body: action.replyBody,
@@ -168,12 +174,12 @@ async function handleWelcomeMessage(
   });
 
   const now = new Date();
-  await db
+  await tdb
     .update(conversationsTable)
     .set({ lastMessageAt: now })
     .where(eq(conversationsTable.id, conversationId));
 
-  await db.insert(conversationEventsTable).values({
+  await tdb.insert(conversationEventsTable).values({
     conversationId,
     eventType: "automation_fired",
     note: `Welcome message sent (rule: ${rule.name})`,
@@ -186,10 +192,12 @@ async function handleWelcomeMessage(
 
 async function handleKeywordAutoreply(
   tenantId: number,
+  tenantSlug: string,
   conversationId: number,
   messageBody: string,
 ): Promise<{ handled: boolean; action?: string }> {
-  const rules = await db
+  const tdb = getTenantDb(tenantSlug);
+  const rules = await tdb
     .select()
     .from(automationRulesTable)
     .where(
@@ -235,7 +243,7 @@ async function handleKeywordAutoreply(
     }
 
     if (matched) {
-      await db.insert(messagesTable).values({
+      await tdb.insert(messagesTable).values({
         conversationId,
         direction: "outbound",
         body: action.replyBody,
@@ -244,12 +252,12 @@ async function handleKeywordAutoreply(
       });
 
       const now = new Date();
-      await db
+      await tdb
         .update(conversationsTable)
         .set({ lastMessageAt: now })
         .where(eq(conversationsTable.id, conversationId));
 
-      await db.insert(conversationEventsTable).values({
+      await tdb.insert(conversationEventsTable).values({
         conversationId,
         eventType: "automation_fired",
         note: `Keyword auto-reply triggered (rule: ${rule.name})`,
@@ -266,9 +274,11 @@ async function handleKeywordAutoreply(
 
 export async function handleResubscribe(
   tenantId: number,
+  tenantSlug: string,
   contactPhone: string,
 ): Promise<boolean> {
-  const result = await pool.query(
+  const tpool = getTenantPool(tenantSlug);
+  const result = await tpool.query(
     `DELETE FROM opt_outs WHERE tenant_id = $1 AND phone_number = $2`,
     [tenantId, contactPhone],
   );

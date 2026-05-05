@@ -162,6 +162,7 @@ router.post("/integrations/:provider/resync", requireTenantAuth, requireAdmin, a
       const [first, ...rest] = (c.name ?? "").split(/\s+/).filter(Boolean);
       await enqueueSync({
         tenantId,
+        tenantSlug: req.tenantUser!.tenantSlug,
         provider: "hubspot",
         entityType: "contact",
         entityId: c.id,
@@ -192,6 +193,7 @@ router.post("/integrations/:provider/resync", requireTenantAuth, requireAdmin, a
     for (const c of closed) {
       await enqueueSync({
         tenantId,
+        tenantSlug: req.tenantUser!.tenantSlug,
         provider: "hubspot",
         entityType: "conversation",
         entityId: c.id,

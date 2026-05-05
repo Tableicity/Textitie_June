@@ -1,5 +1,5 @@
-import { db, tenantUsersTable, departmentMembersTable } from "@workspace/db";
-import { eq, and, asc } from "drizzle-orm";
+import { db, getTenantDb, tenantUsersTable, departmentMembersTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 import { logger } from "./logger";
 
 export type RoutingStrategy = "round_robin" | "load_balanced" | "last_assigned";
@@ -13,10 +13,15 @@ interface RoutableAgent {
 export async function pickAgent(
   departmentId: number,
   tenantId: number,
+  tenantSlug: string,
   strategy: RoutingStrategy,
 ): Promise<number | null> {
   try {
-    const members = await db
+    const tdb = getTenantDb(tenantSlug);
+    // tenant_users lives in public, department_members lives per-tenant.
+    // The cross-schema join works because per-tenant pools have
+    // search_path = tenant_<slug>, public.
+    const members = await tdb
       .select({
         id: tenantUsersTable.id,
         status: tenantUsersTable.status,
@@ -38,7 +43,7 @@ export async function pickAgent(
       case "round_robin":
         return roundRobin(members);
       case "load_balanced":
-        return loadBalanced(members, tenantId);
+        return loadBalanced(members, tenantId, tenantSlug);
       case "last_assigned":
         return lastAssigned(members);
       default:
@@ -59,11 +64,12 @@ function roundRobin(agents: RoutableAgent[]): number {
   return sorted[0].id;
 }
 
-async function loadBalanced(agents: RoutableAgent[], tenantId: number): Promise<number> {
+async function loadBalanced(agents: RoutableAgent[], tenantId: number, tenantSlug: string): Promise<number> {
   const { conversationsTable } = await import("@workspace/db");
+  const tdb = getTenantDb(tenantSlug);
   const counts = new Map<number, number>();
   for (const agent of agents) {
-    const rows = await db
+    const rows = await tdb
       .select({ id: conversationsTable.id })
       .from(conversationsTable)
       .where(
