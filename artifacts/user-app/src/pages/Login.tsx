@@ -97,6 +97,26 @@ export default function Login() {
         </div>
 
         <p className="mt-5 text-center text-xs text-white/60">info@textitie.com</p>
+
+        <div className="mt-4 flex items-center gap-4 text-xs text-white/70">
+          <button
+            type="button"
+            onClick={() => setLocation("/privacy")}
+            className="hover:text-white underline-offset-4 hover:underline"
+            data-testid="link-privacy"
+          >
+            Privacy Policy
+          </button>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            onClick={() => setLocation("/terms")}
+            className="hover:text-white underline-offset-4 hover:underline"
+            data-testid="link-terms"
+          >
+            Terms of Service
+          </button>
+        </div>
       </div>
 
       {/* RIGHT: Layered peek view + login card */}
@@ -179,6 +199,34 @@ export default function Login() {
               </form>
             </Form>
 
+            {/* A2P 10DLC consent disclosure (required for SMS opt-in evidence) */}
+            <p
+              className="mt-5 text-[11px] leading-relaxed text-slate-400"
+              data-testid="sms-consent-disclosure"
+            >
+              By providing your phone number and clicking "Sign Up", you
+              consent to receive one-time passcode (OTP) security texts and
+              customer support messages from Textitie. Consent is not a
+              condition of purchase. Message and data rates may apply.
+              Message frequency varies. Reply HELP for help or STOP to
+              cancel. View our{" "}
+              <button
+                type="button"
+                onClick={() => setLocation("/privacy")}
+                className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
+              >
+                Privacy Policy
+              </button>{" "}
+              and{" "}
+              <button
+                type="button"
+                onClick={() => setLocation("/terms")}
+                className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
+              >
+                Terms of Service
+              </button>
+              .
+            </p>
           </div>
         </div>
       </div>

@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /signup
+Allow: /signup/trial
+Allow: /privacy
+Allow: /terms
+
+# Authenticated agent surfaces — no value to crawl
+Disallow: /inbox
+Disallow: /contacts
+Disallow: /settings
+Disallow: /billing
+Disallow: /automations
+Disallow: /campaigns
+Disallow: /analytics
+Disallow: /verify
+Disallow: /api/
+
+Sitemap: https://textitie.com/sitemap.xml

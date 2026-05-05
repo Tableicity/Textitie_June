@@ -7,6 +7,8 @@ import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import Verify from "@/pages/Verify";
 import Signup from "@/pages/Signup";
+import Privacy from "@/pages/Privacy";
+import Terms from "@/pages/Terms";
 import Inbox from "@/pages/Inbox";
 import Contacts from "@/pages/Contacts";
 import Settings from "@/pages/Settings";
@@ -25,6 +27,8 @@ function Router() {
       <Route path="/verify" component={Verify} />
       <Route path="/signup" component={Signup} />
       <Route path="/signup/trial" component={Signup} />
+      <Route path="/privacy" component={Privacy} />
+      <Route path="/terms" component={Terms} />
       <Route>
         <AppShell>
           <Switch>
