@@ -26,6 +26,7 @@ import integrationsRouter from "./integrations";
 import tenantSettingsRouter from "./tenantSettings";
 import surveysRouter from "./surveys";
 import surveysPublicRouter from "./surveysPublic";
+import eventsRouter from "./events";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(integrationsRouter);
 router.use(tenantSettingsRouter);
 router.use(surveysRouter);
 router.use(surveysPublicRouter);
+router.use(eventsRouter);
 
 export default router;

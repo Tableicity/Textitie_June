@@ -30,7 +30,8 @@ export const conductorAuth: RequestHandler = (req, res, next) => {
     req.path.startsWith("/integrations") ||
     req.path.startsWith("/tenant-settings") ||
     req.path.startsWith("/surveys") ||
-    req.path.startsWith("/s/")
+    req.path.startsWith("/s/") ||
+    req.path.startsWith("/events/")
   ) {
     next();
     return;

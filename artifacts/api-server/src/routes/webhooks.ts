@@ -13,6 +13,7 @@ import { processInboundMessage } from "../lib/automationEngine";
 import { attributeInboundResponse } from "../lib/campaignAttribution";
 import { processDeliveryStatus } from "../lib/deliveryStatus";
 import { resolveTenantByPhoneNumber } from "../lib/tenantPhoneLookup";
+import { eventBus } from "../lib/eventBus";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -145,6 +146,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 .limit(1);
 
               let conversationId: number;
+              let isNewConversation = false;
               if (existing.length > 0) {
                 conversationId = existing[0].id;
               } else {
@@ -159,6 +161,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                   })
                   .returning({ id: conversationsTable.id });
                 conversationId = newConv.id;
+                isNewConversation = true;
               }
 
               await tdb.insert(messagesTable).values({
@@ -173,6 +176,16 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 .update(conversationsTable)
                 .set({ lastMessageAt: new Date() })
                 .where(eq(conversationsTable.id, conversationId));
+
+              // Real-time push to any agent inbox watching this tenant.
+              if (isNewConversation) {
+                eventBus.publish(tenant.id, { type: "conversation:new", conversationId });
+              }
+              eventBus.publish(tenant.id, {
+                type: "message:new",
+                conversationId,
+                direction: "inbound",
+              });
 
               const result = await processInboundMessage(
                 tenant.id,

@@ -25,6 +25,7 @@ import {
 } from "@workspace/api-client-react";
 import { useSearch, Link } from "wouter";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
 import { format } from "date-fns";
 import {
   Search,
@@ -82,6 +83,7 @@ import { formatPhone, cityStateForPhone, toE164 } from "@/lib/phone";
 
 export default function Inbox() {
   const queryClient = useQueryClient();
+  useRealtimeInbox();
   const searchString = useSearch();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [composeText, setComposeText] = useState("");
@@ -163,7 +165,7 @@ export default function Inbox() {
     useListConversations(filterParams, {
       query: {
         queryKey: getListConversationsQueryKey(filterParams),
-        refetchInterval: 10000,
+        refetchInterval: 30000,
       },
     });
 
@@ -195,7 +197,7 @@ export default function Inbox() {
       query: {
         enabled: !!selectedId,
         queryKey: getListMessagesQueryKey(selectedId as number),
-        refetchInterval: 5000,
+        refetchInterval: 30000,
       },
     },
   );

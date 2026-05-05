@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable, contactsTable, tenantsTable } from "@workspace/db";
 import { getSender } from "../lib/senders";
+import { eventBus } from "../lib/eventBus";
 import { eq, and, desc, isNull, ilike, or, gte, lte, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
@@ -576,6 +577,12 @@ router.post(
 
       recordMessageUsage(tenantId, req.tenantUser!.tenantSlug).catch((usageErr) => {
         logger.warn({ err: usageErr, tenantId }, "Usage tracking failed (non-blocking)");
+      });
+
+      eventBus.publish(tenantId, {
+        type: "message:new",
+        conversationId,
+        direction: "outbound",
       });
 
       res.status(201).json(updatedRow);
