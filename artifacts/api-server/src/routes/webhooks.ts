@@ -15,6 +15,7 @@ import { processDeliveryStatus } from "../lib/deliveryStatus";
 import { resolveTenantByPhoneNumber } from "../lib/tenantPhoneLookup";
 import { eventBus } from "../lib/eventBus";
 import { logger } from "../lib/logger";
+import { requireTwilioSignature } from "../lib/twilioSignature";
 
 const router: IRouter = Router();
 
@@ -273,28 +274,46 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
  *
  * Always returns 200 — Twilio retries non-2xx responses aggressively.
  */
-router.post("/webhooks/twilio/status", async (req, res): Promise<void> => {
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  const externalId = pickString(body, ["MessageSid", "messageSid", "sid"]);
-  const status = pickString(body, ["MessageStatus", "messageStatus", "status"]);
-  const errorCode = pickString(body, ["ErrorCode", "errorCode"]);
-  const errorMessage = pickString(body, ["ErrorMessage", "errorMessage"]);
+router.post(
+  "/webhooks/twilio/status",
+  requireTwilioSignature(),
+  async (req, res): Promise<void> => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const externalId = pickString(body, ["MessageSid", "messageSid", "sid"]);
+    const status = pickString(body, ["MessageStatus", "messageStatus", "status"]);
+    const errorCode = pickString(body, ["ErrorCode", "errorCode"]);
+    const errorMessage = pickString(body, ["ErrorMessage", "errorMessage"]);
 
-  if (!externalId || !status) {
-    req.log.warn({ body }, "Twilio status webhook missing MessageSid or MessageStatus");
-    res.status(200).json({ ok: true, skipped: "missing fields" });
-    return;
-  }
+    // `?msgId=` is appended by TwilioSender so we can update by PK and avoid
+    // the race where the callback arrives before externalId is persisted.
+    const msgIdRaw = req.query["msgId"];
+    const msgId =
+      typeof msgIdRaw === "string" && /^\d+$/.test(msgIdRaw)
+        ? Number(msgIdRaw)
+        : undefined;
 
-  try {
-    const result = await processDeliveryStatus(externalId, status, errorCode, errorMessage);
-    req.log.info({ externalId, status, ...result }, "Twilio delivery-status processed");
-    res.status(200).json({ ok: true, ...result });
-  } catch (err) {
-    req.log.error({ err, externalId, status }, "Twilio delivery-status handler error");
-    res.status(200).json({ ok: false, error: "internal" });
-  }
-});
+    if ((!externalId && !msgId) || !status) {
+      req.log.warn({ body, msgId }, "Twilio status webhook missing identifiers or status");
+      res.status(200).json({ ok: true, skipped: "missing fields" });
+      return;
+    }
+
+    try {
+      const result = await processDeliveryStatus(
+        externalId ?? "",
+        status,
+        errorCode,
+        errorMessage,
+        msgId,
+      );
+      req.log.info({ externalId, msgId, status, ...result }, "Twilio delivery-status processed");
+      res.status(200).json({ ok: true, ...result });
+    } catch (err) {
+      req.log.error({ err, externalId, msgId, status }, "Twilio delivery-status handler error");
+      res.status(200).json({ ok: false, error: "internal" });
+    }
+  },
+);
 
 router.get("/webhook-events", async (req, res): Promise<void> => {
   const query = ListWebhookEventsQueryParams.safeParse(req.query);

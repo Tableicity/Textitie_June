@@ -22,6 +22,14 @@ export type SendInput = {
   tenantId: number | null;
   conductorAuthorized: boolean;
   fromOverride?: string | null;
+  /**
+   * Internal `messages.id` for outbound conversation replies. When set, the
+   * sender includes it in the Twilio status-callback URL as `?msgId=N` so
+   * the delivery webhook can update the row by primary key — eliminates the
+   * race where Twilio's status callback arrives before the route persists
+   * the externalId. Optional: campaign sends use external_id lookup instead.
+   */
+  messageId?: number;
 };
 
 export interface MessageSender {

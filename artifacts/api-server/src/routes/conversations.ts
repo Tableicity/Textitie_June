@@ -544,6 +544,9 @@ router.post(
         tenantId,
         conductorAuthorized: true,
         fromOverride,
+        // Pass the row id so Twilio's status callback can update by PK and
+        // never lose a delivery update to the externalId race.
+        messageId: pendingRow.id,
       });
 
       const finalStatus = sendResult.status === "sent" ? "sent" : "failed";
