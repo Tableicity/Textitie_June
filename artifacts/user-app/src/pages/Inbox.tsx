@@ -786,24 +786,6 @@ export default function Inbox() {
                   </>
                 )}
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs font-medium gap-1.5"
-                  onClick={() => {
-                    const def = new Date(Date.now() + 60 * 60 * 1000);
-                    const pad = (n: number) => String(n).padStart(2, "0");
-                    setRemindAt(
-                      `${def.getFullYear()}-${pad(def.getMonth() + 1)}-${pad(def.getDate())}T${pad(def.getHours())}:${pad(def.getMinutes())}`,
-                    );
-                    setShowRemind(true);
-                  }}
-                  title="Remind me about this conversation"
-                  data-testid="button-remind-me"
-                >
-                  <BellPlus className="w-3 h-3" /> Remind
-                </Button>
-
                 {selectedConv?.status === "open" && (
                   <Button
                     variant="outline"
