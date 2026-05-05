@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { MessageSquare, Cookie } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import peekImage from "@assets/landing-peek.png";
 
 const loginSchema = z.object({
@@ -21,7 +21,6 @@ export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [cookiesAcknowledged, setCookiesAcknowledged] = useState(false);
 
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -104,40 +103,6 @@ export default function Login() {
               <h2 className="text-2xl font-bold tracking-tight">TEXTITIE</h2>
               <p className="text-slate-400 text-xs mt-1">Two-way SMS for teams that actually answer</p>
             </div>
-
-            {/* Layer D: nested cookie card (dismissible) */}
-            {!cookiesAcknowledged && (
-              <div className="mb-5 bg-slate-800/80 border border-white/10 rounded-lg p-3">
-                <div className="flex items-start gap-2 mb-2">
-                  <Cookie className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold">We value your privacy</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      We use cookies to enhance your browsing experience. By clicking "Accept", you consent to our use of cookies.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 h-8 text-xs bg-transparent border-white/20 text-white hover:bg-white/10 hover:text-white"
-                    onClick={() => setCookiesAcknowledged(true)}
-                  >
-                    Reject All
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="flex-1 h-8 text-xs bg-blue-600 hover:bg-blue-700"
-                    onClick={() => setCookiesAcknowledged(true)}
-                  >
-                    Accept All
-                  </Button>
-                </div>
-              </div>
-            )}
 
             {/* Login form */}
             <Form {...form}>
