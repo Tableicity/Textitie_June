@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, Redirect } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users } from "lucide-react";
+import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall } from "lucide-react";
 import ReminderBell from "@/components/ReminderBell";
 import HipaaBanner from "@/components/HipaaBanner";
 import {
@@ -118,16 +118,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <Link
-            href="/contacts"
+            href="/analytics"
             className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/contacts"
+              location === "/analytics"
                 ? "bg-blue-600 text-white shadow-md"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
-            title="Contacts"
-            data-testid="link-contacts"
+            title="Analytics"
+            data-testid="link-analytics"
           >
-            <Users className="w-5 h-5" />
+            <BarChart3 className="w-5 h-5" />
           </Link>
 
           <Link
@@ -167,19 +167,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <Link
-            href="/analytics"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/analytics"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
-            title="Analytics"
-            data-testid="link-analytics"
-          >
-            <BarChart3 className="w-5 h-5" />
-          </Link>
-
-          <Link
             href="/billing"
             className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
               location === "/billing"
@@ -193,6 +180,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="mt-auto w-full px-2 flex flex-col gap-2 items-center">
+          <Link
+            href="/contacts"
+            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
+              location === "/contacts"
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+            title="Contacts"
+            data-testid="link-contacts"
+          >
+            <Users className="w-5 h-5" />
+          </Link>
           <ReminderBell
             onJumpToConversation={(cid) => {
               setLocation(`/?conversation=${cid}`);

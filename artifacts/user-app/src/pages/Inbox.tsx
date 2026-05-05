@@ -32,6 +32,7 @@ import {
   Clock,
   User,
   Phone,
+  PhoneCall,
   CheckCircle2,
   MessageSquare,
   Building2,
@@ -613,12 +614,13 @@ export default function Inbox() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 w-8 p-0 text-slate-600 hover:bg-slate-50"
+                    className="h-8 text-xs font-medium gap-1.5"
                     title="Phone Numbers"
                     aria-label="Phone Numbers"
                     data-testid="button-phone-numbers"
                   >
-                    <Phone className="w-3.5 h-3.5" />
+                    <PhoneCall className="w-3.5 h-3.5" />
+                    Phone Numbers
                   </Button>
                 </Link>
                 <Button
