@@ -57,10 +57,36 @@ function maskEmail(email: string): string {
   return `****${tail}@${domain}`;
 }
 
+/**
+ * Lab-mode plaintext code cache. Keyed by tenantUserId. Populated when a code
+ * is issued, consumed by GET /tenant-auth/lab-code so the Verify page can
+ * display it directly. NEVER ship this once SES is wired — delete the cache
+ * and endpoint at that point.
+ */
+const labCodeCache = new Map<number, { code: string; expiresAt: number }>();
+
+function rememberLabCode(tenantUserId: number, code: string): void {
+  labCodeCache.set(tenantUserId, {
+    code,
+    expiresAt: Date.now() + CODE_TTL_MS,
+  });
+}
+
+function readLabCode(tenantUserId: number): string | null {
+  const entry = labCodeCache.get(tenantUserId);
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    labCodeCache.delete(tenantUserId);
+    return null;
+  }
+  return entry.code;
+}
+
 async function issueLabCode(tenantUserId: number, email: string): Promise<void> {
   const code = generateCode();
   const codeHash = hashCode(code);
   const expiresAt = new Date(Date.now() + CODE_TTL_MS);
+  rememberLabCode(tenantUserId, code);
 
   // Burn any previous unused codes so only the newest one is valid.
   await db
@@ -387,6 +413,31 @@ router.post("/tenant-auth/verify-mfa", async (req, res) => {
     logger.error({ err }, "MFA verify error");
     res.status(500).json({ error: "Internal server error" });
   }
+});
+
+/**
+ * LAB ONLY — returns the plaintext MFA code for a pending session so the
+ * Verify page can display it. Remove this endpoint when SES email is wired.
+ */
+router.get("/tenant-auth/lab-code", async (req, res) => {
+  const pendingToken = typeof req.query.pendingToken === "string"
+    ? req.query.pendingToken
+    : "";
+  if (!pendingToken) {
+    res.status(400).json({ error: "pendingToken required" });
+    return;
+  }
+  const payload = verifyToken(pendingToken);
+  if (!payload || payload.scope !== "mfa-pending") {
+    res.status(401).json({ error: "Pending session expired" });
+    return;
+  }
+  const code = readLabCode(payload.tenantUserId as number);
+  if (!code) {
+    res.status(404).json({ error: "No active lab code" });
+    return;
+  }
+  res.json({ code });
 });
 
 router.post("/tenant-auth/resend-code", async (req, res) => {

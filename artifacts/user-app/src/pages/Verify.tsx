@@ -32,6 +32,7 @@ export default function Verify() {
   const [digits, setDigits] = useState<string[]>(["", "", "", "", "", ""]);
   const [isLoading, setIsLoading] = useState(false);
   const [resendIn, setResendIn] = useState(60);
+  const [labCode, setLabCode] = useState<string | null>(null);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   const { token: pendingToken, maskedEmail } = getMfaPending();
 
@@ -42,6 +43,27 @@ export default function Verify() {
     }
     inputs.current[0]?.focus();
   }, [pendingToken, setLocation]);
+
+  useEffect(() => {
+    if (!pendingToken) return;
+    let cancelled = false;
+    async function fetchLabCode() {
+      try {
+        const res = await fetch(
+          `/api/tenant-auth/lab-code?pendingToken=${encodeURIComponent(pendingToken!)}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && typeof data.code === "string") setLabCode(data.code);
+      } catch {
+        /* lab card stays hidden */
+      }
+    }
+    void fetchLabCode();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingToken, resendIn]);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -181,6 +203,17 @@ export default function Verify() {
                 />
               ))}
             </div>
+
+            {labCode && (
+              <div className="mb-5 rounded-xl border border-blue-400/30 bg-blue-950/40 px-4 py-3 text-center">
+                <div className="text-[10px] font-semibold tracking-[0.2em] text-blue-300/80 uppercase">
+                  Lab Mode — Your Code
+                </div>
+                <div className="mt-2 font-mono text-2xl font-bold tracking-[0.4em] text-blue-300">
+                  {labCode.split("").join(" ")}
+                </div>
+              </div>
+            )}
 
             <Button
               type="button"
