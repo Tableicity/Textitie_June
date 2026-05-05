@@ -165,6 +165,25 @@ export function formatPhone(raw: string | null | undefined): string {
 }
 
 /**
+ * Normalize a human-typed phone number to E.164 (NANP-only).
+ * Accepts "(909) 490-4265", "909-490-4265", "9094904265", "+19094904265", etc.
+ * Returns null if the input doesn't look like a valid 10-digit US/CA number.
+ */
+export function toE164(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  // If user already typed a +<countrycode> number (not +1), trust them.
+  if (trimmed.startsWith("+") && !trimmed.startsWith("+1")) {
+    const d = digits(trimmed);
+    return d.length >= 8 ? `+${d}` : null;
+  }
+  const d = digits(trimmed);
+  const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+  if (ten.length !== 10) return null;
+  return `+1${ten}`;
+}
+
+/**
  * Best-effort city/state lookup from a phone number's area code (NANP).
  * Returns null for non-NANP numbers or unknown codes.
  */

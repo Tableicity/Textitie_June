@@ -78,7 +78,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatPhone, cityStateForPhone } from "@/lib/phone";
+import { formatPhone, cityStateForPhone, toE164 } from "@/lib/phone";
 
 export default function Inbox() {
   const queryClient = useQueryClient();
@@ -1285,11 +1285,11 @@ export default function Inbox() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              const phone = newPhone.trim();
-              if (!phone) return;
+              const e164 = toE164(newPhone);
+              if (!e164) return;
               createConvMutation.mutate({
                 data: {
-                  contactPhone: phone,
+                  contactPhone: e164,
                   contactName: newName.trim() || null,
                 },
               });
@@ -1302,11 +1302,13 @@ export default function Inbox() {
                 autoFocus
                 value={newPhone}
                 onChange={(e) => setNewPhone(e.target.value)}
-                placeholder="+15551234567"
+                placeholder="(555) 123-4567"
                 data-testid="input-new-message-phone"
               />
               <p className="text-[11px] text-slate-400 mt-1">
-                Use E.164 format (e.g. +15551234567).
+                {newPhone.trim() === "" || toE164(newPhone)
+                  ? "US/Canada numbers — any format works (we'll add the +1)."
+                  : "That doesn't look like a valid 10-digit number yet."}
               </p>
             </div>
             <div>
@@ -1328,7 +1330,7 @@ export default function Inbox() {
               <Button
                 type="submit"
                 className="bg-blue-600 hover:bg-blue-700"
-                disabled={createConvMutation.isPending || !newPhone.trim()}
+                disabled={createConvMutation.isPending || !toE164(newPhone)}
                 data-testid="button-create-conversation"
               >
                 {createConvMutation.isPending && (
