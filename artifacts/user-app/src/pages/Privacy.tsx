@@ -106,6 +106,20 @@ export default function Privacy() {
             required by law or to protect the rights, property, or safety of
             users or the public.
           </p>
+          <p className="text-slate-700 leading-relaxed mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+            <strong>SMS consent data is never shared.</strong> Mobile phone
+            numbers and SMS opt-in / consent information collected by
+            Textitie are <strong>not shared, sold, rented, or bought</strong>{" "}
+            with or from any third party for marketing or promotional
+            purposes. SMS consent data is used solely to deliver the
+            messaging service you have opted in to receive (one-time
+            passcodes, customer-support replies, and any campaigns the
+            sending business is contractually entitled to send to its own
+            opted-in recipients), and is shared with downstream carriers
+            (Twilio and US mobile networks) only as required to transmit
+            those messages. This commitment applies to all subsidiaries,
+            affiliates, and successor entities of Textitie.
+          </p>
 
           <h2 className="text-xl font-semibold text-slate-900 mt-8">6. Data retention</h2>
           <p className="text-slate-700 leading-relaxed">

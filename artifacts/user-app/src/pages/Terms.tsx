@@ -82,7 +82,17 @@ export default function Terms() {
             properly registered or that exceed carrier throughput limits.
           </p>
 
-          <h2 className="text-xl font-semibold text-slate-900 mt-8">6. Opt-out handling</h2>
+          <h2 className="text-xl font-semibold text-slate-900 mt-8">6. SMS program terms</h2>
+          <div className="text-slate-700 leading-relaxed p-4 bg-blue-50 border border-blue-200 rounded-md space-y-2">
+            <p><strong>Program description.</strong> Textitie sends one-time passcode (OTP) security texts, customer-support replies, and (where the sending business is properly registered and you have opted in to that business) transactional and marketing SMS.</p>
+            <p><strong>Message and data rates may apply.</strong> Standard message and data rates from your wireless carrier may apply to every message sent or received.</p>
+            <p><strong>Message frequency varies.</strong> The number of messages you receive depends on your interactions with the platform and the businesses you have opted in to. OTPs are sent only when you request them.</p>
+            <p><strong>How to get help.</strong> Reply <code className="px-1 py-0.5 bg-white rounded">HELP</code> to any Textitie message for assistance, or email <a href="mailto:info@textitie.com" className="text-blue-600 hover:underline">info@textitie.com</a>.</p>
+            <p><strong>How to opt out.</strong> Reply <code className="px-1 py-0.5 bg-white rounded">STOP</code>, <code className="px-1 py-0.5 bg-white rounded">UNSUBSCRIBE</code>, <code className="px-1 py-0.5 bg-white rounded">CANCEL</code>, <code className="px-1 py-0.5 bg-white rounded">END</code>, or <code className="px-1 py-0.5 bg-white rounded">QUIT</code> to any message to stop receiving texts from that sender immediately.</p>
+            <p><strong>Carriers.</strong> Supported on all major US carriers. Carriers are not liable for delayed or undelivered messages.</p>
+          </div>
+
+          <h2 className="text-xl font-semibold text-slate-900 mt-8">7. Opt-out handling</h2>
           <p className="text-slate-700 leading-relaxed">
             Reply keywords <code className="px-1 py-0.5 bg-slate-100 rounded">STOP</code>,
             <code className="px-1 py-0.5 bg-slate-100 rounded">UNSUBSCRIBE</code>,

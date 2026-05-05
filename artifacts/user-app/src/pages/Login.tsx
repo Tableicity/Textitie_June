@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { MessageSquare } from "lucide-react";
 import peekImage from "@assets/landing-peek.png";
 
@@ -21,6 +22,8 @@ export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  // A2P 10DLC affirmative consent — must be unchecked by default
+  const [smsConsent, setSmsConsent] = useState(false);
 
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -188,45 +191,55 @@ export default function Login() {
                   )}
                 />
 
+                {/* A2P 10DLC affirmative-consent checkbox (must be unchecked by default) */}
+                <label
+                  className="flex items-start gap-3 pt-1 cursor-pointer select-none"
+                  data-testid="sms-consent-row"
+                >
+                  <Checkbox
+                    checked={smsConsent}
+                    onCheckedChange={(v) => setSmsConsent(v === true)}
+                    className="mt-0.5 border-white/30 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                    data-testid="sms-consent-checkbox"
+                  />
+                  <span className="text-[11px] leading-relaxed text-slate-400">
+                    By providing your phone number and clicking "Sign Up", I
+                    consent to receive one-time passcode (OTP) security
+                    texts and customer support messages from Textitie.
+                    Consent is not a condition of purchase. Message and
+                    data rates may apply. Message frequency varies. Reply
+                    HELP for help or STOP to cancel. I have read and agree
+                    to the{" "}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); setLocation("/privacy"); }}
+                      className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
+                    >
+                      Privacy Policy
+                    </button>{" "}
+                    and{" "}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); setLocation("/terms"); }}
+                      className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
+                    >
+                      Terms of Service
+                    </button>
+                    .
+                  </span>
+                </label>
+
                 <Button
                   type="submit"
                   className="w-full bg-blue-600 hover:bg-blue-700 font-medium"
                   size="lg"
-                  disabled={isLoading}
+                  disabled={isLoading || !smsConsent}
+                  data-testid="sign-in-button"
                 >
                   {isLoading ? "Signing in..." : "Sign In"}
                 </Button>
               </form>
             </Form>
-
-            {/* A2P 10DLC consent disclosure (required for SMS opt-in evidence) */}
-            <p
-              className="mt-5 text-[11px] leading-relaxed text-slate-400"
-              data-testid="sms-consent-disclosure"
-            >
-              By providing your phone number and clicking "Sign Up", you
-              consent to receive one-time passcode (OTP) security texts and
-              customer support messages from Textitie. Consent is not a
-              condition of purchase. Message and data rates may apply.
-              Message frequency varies. Reply HELP for help or STOP to
-              cancel. View our{" "}
-              <button
-                type="button"
-                onClick={() => setLocation("/privacy")}
-                className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
-              >
-                Privacy Policy
-              </button>{" "}
-              and{" "}
-              <button
-                type="button"
-                onClick={() => setLocation("/terms")}
-                className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
-              >
-                Terms of Service
-              </button>
-              .
-            </p>
           </div>
         </div>
       </div>
