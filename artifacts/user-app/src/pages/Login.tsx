@@ -88,8 +88,8 @@ export default function Login() {
         <div className="absolute inset-0 bg-blue-900/60 backdrop-blur-[2px]" />
 
         {/* Layer C: glass card stack */}
-        <div className="relative z-10 w-full max-w-sm">
-          <div className="bg-slate-900/85 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl p-6 text-white">
+        <div className="relative z-10 w-full max-w-[460px]">
+          <div className="bg-slate-900/85 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl p-8 text-white">
             {/* Header */}
             <div className="text-center mb-5">
               <div className="inline-flex items-center gap-2 mb-3">
