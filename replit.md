@@ -50,3 +50,27 @@ No specific user preferences were provided in the original document.
 -   **OpenAI**: `gpt-4o-mini` for the AI Student Whisperer.
 -   **PostgreSQL**: Primary database.
 -   **pdfjs-dist**: Used for text extraction from PDF files for the knowledge base.
+## Stage 4 Multi-Tenancy Migration (in progress)
+
+**Architecture:** Schema-per-tenant. Each tenant gets a `tenant_<slug>` Postgres schema; one Drizzle table-def set is reused with `search_path` per pooled connection. Cross-schema FKs into `public.tenants` and `public.tenant_users` are preserved.
+
+**Phase 4A — Plumbing (DONE, verified)**
+- `lib/db/src/tenant-db.ts` — `getTenantDb(slug)` factory, per-slug pool cache, validates slug shape, sets `search_path = tenant_<slug>, public` on every new connection.
+- `lib/db/src/tenant-provisioner.ts` — `provisionTenantSchema(slug)` / `ensureTenantSchema(slug)` / `tenantSchemaExists(slug)`. Reads `tenant-schema-template.sql` and substitutes `__SCHEMA__`.
+- `lib/db/src/tenant-schema-template.sql` — generated from `pg_dump --schema-only` of all 22 per-tenant tables in one invocation (so FKs resolve correctly), then sed-transformed: `public.X` → `__SCHEMA__.X`, with `public.tenants` and `public.tenant_users` restored.
+- `middleware/tenantAuth.ts` — payload now includes `tenantSlug`, attaches `req.tenantDb` to every request, has 1-hour slug cache for legacy tokens (backward compat with sessions issued before 4A).
+- `routes/tenantAuth.ts` — login/verify-mfa/register tokens all carry `tenantSlug`. Register calls `ensureTenantSchema(slug)` after tenant creation (catches errors so a provisioner failure doesn't block signup).
+- `scripts/src/provision-tenant-schemas.ts` + npm script `provision-tenant-schemas`. All 4 existing tenants provisioned (acme, orbital, helvetia, orbital-test), 22 tables each.
+- `scripts/src/backfill-tenant-schemas.ts` + npm script `backfill-tenant-schemas`. Idempotent INSERT...ON CONFLICT DO NOTHING with parent-before-child ordering and per-schema sequence advance (`setval` to MAX(id)+1).
+- `John/pre-stage4-backup-schema.sql` + `John/pre-stage4-backup-data.sql` — full pg_dump backup taken before backfill.
+
+**ACME backfill verified:** 94 rows copied, every one of 18 tenant tables shows public count == tenant_acme count.
+
+**Phase 4B/4C — Route refactor (NOT STARTED)**
+- 28 files in `artifacts/api-server/src/` reference per-tenant tables (`conversations.ts` alone has 151 references). Each must switch from `db.X.where(eq(X.tenantId, ...))` → `req.tenantDb.X` (no tenantId filter; schema isolation handles it).
+- Webhook + survey-public routes (no `requireTenantAuth`) need to look up tenant from public, then call `getTenantDb(slug)`.
+- Lib files (`automationEngine`, `timerEngine`, `audit`, `compliance`, `routing`, `surveyDispatcher`, `creditEngine`, `campaignEngine`, `seedData`, `stripe-stub`, `integrations/syncWorker`) need to accept slug and use `getTenantDb(slug)`.
+- Estimated: 2–3 focused sessions; biggest files (`conversations.ts`, `campaigns.ts`, `automations.ts`, `automationEngine.ts`, `timerEngine.ts`, `surveyDispatcher.ts`, `syncWorker.ts`) should be split into separate sessions for review.
+- DO NOT drop `tenant_id` columns from public tables yet; we still read from public until 4B is done.
+
+**Files NOT in `public` per current plan:** tenants, tenant_users, email_verifications, tiers, users (legacy), webhook_events, injections.

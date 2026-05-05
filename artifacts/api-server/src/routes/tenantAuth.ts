@@ -5,6 +5,7 @@ import {
   tenantUsersTable,
   tenantsTable,
   emailVerificationsTable,
+  ensureTenantSchema,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -180,12 +181,24 @@ router.post("/tenant-auth/register", async (req, res) => {
       "New tenant registered",
     );
 
+    // Provision the per-tenant Postgres schema for this new tenant.
+    // Idempotent — no-op if already provisioned.
+    try {
+      await ensureTenantSchema(result.tenant.slug);
+    } catch (provErr) {
+      logger.error(
+        { err: provErr, tenantSlug: result.tenant.slug },
+        "Failed to provision tenant schema (tenant created, will retry on first use)",
+      );
+    }
+
     // Funnel new signups through the same MFA flow as login.
     await issueLabCode(result.user.id, result.user.email);
 
     const pendingToken = signToken({
       tenantUserId: result.user.id,
       tenantId: result.tenant.id,
+      tenantSlug: result.tenant.slug,
       email: result.user.email,
       scope: "mfa-pending",
       iat: Date.now(),
@@ -245,6 +258,7 @@ router.post("/tenant-auth/login", async (req, res) => {
     const pendingToken = signToken({
       tenantUserId: user.id,
       tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug,
       email: user.email,
       scope: "mfa-pending",
       iat: Date.now(),
@@ -345,6 +359,7 @@ router.post("/tenant-auth/verify-mfa", async (req, res) => {
     const token = signToken({
       tenantUserId: user.id,
       tenantId: user.tenantId,
+      tenantSlug: user.tenantSlug,
       email: user.email,
       role: user.role,
       scope: "tenant",
