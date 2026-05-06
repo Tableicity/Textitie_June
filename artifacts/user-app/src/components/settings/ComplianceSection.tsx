@@ -288,7 +288,7 @@ export default function ComplianceSection() {
                   <DialogHeader>
                     <DialogTitle>Acknowledge Business Associate Agreement</DialogTitle>
                     <DialogDescription>
-                      By acknowledging, you agree to the SAMA Messaging Business Associate Agreement
+                      By acknowledging, you agree to the Textitie Business Associate Agreement
                       governing PHI handling under HIPAA. PHI redaction will be enabled across all
                       server logs immediately. Your acknowledgement is recorded in the audit log.
                     </DialogDescription>

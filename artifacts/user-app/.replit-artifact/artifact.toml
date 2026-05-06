@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "SAMA Messaging"
+title = "Textitie"
 version = "1.0.0"
 id = "artifacts/user-app"
 router = "path"

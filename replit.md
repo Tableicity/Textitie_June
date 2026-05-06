@@ -1,7 +1,7 @@
-# Project SAMA — Control Plane & User Messaging
+# Textitie — Two-way SMS Platform (formerly Project SAMA)
 
 ## Overview
-Project SAMA (Simple but Advanced Messaging Alternative) is a multi-tenant control plane designed for robust, scalable, and intelligent communication management. It features a Master Conductor for overseeing tenants, injecting messages, and monitoring webhooks. Key capabilities include multi-tenant management, an AI-powered knowledge base, a user-friendly messaging inbox for customer agents, and comprehensive compliance features. SAMA aims to revolutionize business communication by offering a sophisticated yet easy-to-use platform.
+Textitie (internal codename "SAMA" — Simple but Advanced Messaging Alternative) is a multi-tenant control plane designed for robust, scalable, and intelligent communication management. The user-facing app is branded **Textitie**; the admin/control plane retains the "SAMA Control Plane" label internally. It features a Master Conductor for overseeing tenants, injecting messages, and monitoring webhooks. Key capabilities include multi-tenant management, an AI-powered knowledge base, a user-friendly messaging inbox for customer agents, and comprehensive compliance features. SAMA aims to revolutionize business communication by offering a sophisticated yet easy-to-use platform.
 
 ## User Preferences
 No specific user preferences were provided in the original document.
