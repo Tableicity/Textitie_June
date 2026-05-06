@@ -147,13 +147,42 @@ export default function Verify() {
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
       {/* LEFT: same blue marketing pane as Login */}
-      <div className="lg:w-1/2 bg-blue-600 flex items-center justify-center p-8 min-h-[40vh] lg:min-h-screen">
+      <div className="lg:w-1/2 bg-blue-600 flex flex-col items-center justify-center p-8 min-h-[40vh] lg:min-h-screen">
         <div className="text-center text-white/90 max-w-md">
           <div className="mx-auto w-16 h-16 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center mb-6">
             <MessageSquare className="w-8 h-8" />
           </div>
           <h1 className="text-4xl font-bold tracking-tight">Textitie</h1>
-          <p className="mt-3 text-white/70 text-sm">Marketing pitch — content coming soon</p>
+          <p className="mt-3 text-white/70 text-sm">Two-way SMS for teams that actually answer</p>
+        </div>
+
+        {/* A2P 10DLC transparency note (matches Login footer) */}
+        <p className="mt-10 max-w-sm text-center text-[11px] leading-relaxed text-white/75">
+          OTP security texts and customer support messages only. Message
+          and data rates may apply. Message frequency varies. Reply HELP
+          for help or STOP to cancel.
+        </p>
+
+        <p className="mt-5 text-center text-xs text-white/60">info@textitie.com</p>
+
+        <div className="mt-4 flex items-center gap-4 text-xs text-white/70">
+          <button
+            type="button"
+            onClick={() => setLocation("/privacy")}
+            className="hover:text-white underline-offset-4 hover:underline"
+            data-testid="link-privacy"
+          >
+            Privacy Policy
+          </button>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            onClick={() => setLocation("/terms")}
+            className="hover:text-white underline-offset-4 hover:underline"
+            data-testid="link-terms"
+          >
+            Terms of Service
+          </button>
         </div>
       </div>
 
@@ -238,6 +267,32 @@ export default function Verify() {
 
             <p className="mt-4 text-center text-[11px] text-amber-300/80 italic">
               Beta: code is in your server logs until SES is wired.
+            </p>
+
+            {/* A2P 10DLC transparency note inside the Lab Card */}
+            <p
+              className="mt-4 pt-4 border-t border-white/10 text-[10px] leading-relaxed text-slate-500 text-center"
+              data-testid="sms-consent-disclosure"
+            >
+              You requested this OTP from Textitie. Message and data rates
+              may apply. Message frequency varies. Reply HELP for help or
+              STOP to cancel. View our{" "}
+              <button
+                type="button"
+                onClick={() => setLocation("/privacy")}
+                className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
+              >
+                Privacy Policy
+              </button>{" "}
+              and{" "}
+              <button
+                type="button"
+                onClick={() => setLocation("/terms")}
+                className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
+              >
+                Terms of Service
+              </button>
+              .
             </p>
           </div>
         </div>

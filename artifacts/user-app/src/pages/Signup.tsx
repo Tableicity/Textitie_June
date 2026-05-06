@@ -61,13 +61,42 @@ export default function Signup() {
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
       {/* LEFT */}
-      <div className="lg:w-1/2 bg-blue-600 flex items-center justify-center p-8 min-h-[40vh] lg:min-h-screen">
+      <div className="lg:w-1/2 bg-blue-600 flex flex-col items-center justify-center p-8 min-h-[40vh] lg:min-h-screen">
         <div className="text-center text-white/90 max-w-md">
           <div className="mx-auto w-16 h-16 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center mb-6">
             <MessageSquare className="w-8 h-8" />
           </div>
           <h1 className="text-4xl font-bold tracking-tight">Textitie</h1>
-          <p className="mt-3 text-white/70 text-sm">Marketing pitch — content coming soon</p>
+          <p className="mt-3 text-white/70 text-sm">Two-way SMS for teams that actually answer</p>
+        </div>
+
+        {/* A2P 10DLC transparency note (matches Login footer) */}
+        <p className="mt-10 max-w-sm text-center text-[11px] leading-relaxed text-white/75">
+          OTP security texts and customer support messages only. Message
+          and data rates may apply. Message frequency varies. Reply HELP
+          for help or STOP to cancel.
+        </p>
+
+        <p className="mt-5 text-center text-xs text-white/60">info@textitie.com</p>
+
+        <div className="mt-4 flex items-center gap-4 text-xs text-white/70">
+          <button
+            type="button"
+            onClick={() => setLocation("/privacy")}
+            className="hover:text-white underline-offset-4 hover:underline"
+            data-testid="link-privacy"
+          >
+            Privacy Policy
+          </button>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            onClick={() => setLocation("/terms")}
+            className="hover:text-white underline-offset-4 hover:underline"
+            data-testid="link-terms"
+          >
+            Terms of Service
+          </button>
         </div>
       </div>
 
