@@ -615,6 +615,53 @@ export default function Inbox() {
               </div>
 
               <div className="flex items-center gap-1.5">
+                {/* Order: Claim → Resolve → New Message → Halo AI → Buy Gas */}
+                {!selectedConv?.assignedUserId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-medium gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                    disabled={claimMutation.isPending}
+                    onClick={() => claimMutation.mutate({ id: selectedId })}
+                    data-testid="button-claim-header"
+                  >
+                    {claimMutation.isPending ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Hand className="w-3 h-3" />
+                    )}
+                    Claim
+                  </Button>
+                )}
+                {selectedConv?.status === "open" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-medium gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                    onClick={() => {
+                      setResolveDispId("");
+                      setResolveNote("");
+                      setShowResolve(true);
+                    }}
+                    data-testid="button-resolve"
+                  >
+                    <CheckSquare className="w-3 h-3" /> Resolve
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-medium gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
+                  onClick={() => {
+                    setNewPhone("");
+                    setNewName("");
+                    setShowNewMessage(true);
+                  }}
+                  data-testid="button-new-message-header"
+                >
+                  <PencilLine className="w-3 h-3" />
+                  New Message
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -648,20 +695,6 @@ export default function Inbox() {
                     Phone Numbers
                   </Button>
                 </Link>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs font-medium gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
-                  onClick={() => {
-                    setNewPhone("");
-                    setNewName("");
-                    setShowNewMessage(true);
-                  }}
-                  data-testid="button-new-message-header"
-                >
-                  <PencilLine className="w-3 h-3" />
-                  New Message
-                </Button>
                 {selectedConv?.assignedUserId && (
                   <>
                     <Dialog
@@ -792,22 +825,6 @@ export default function Inbox() {
                       Unassign
                     </Button>
                   </>
-                )}
-
-                {selectedConv?.status === "open" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs font-medium gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                    onClick={() => {
-                      setResolveDispId("");
-                      setResolveNote("");
-                      setShowResolve(true);
-                    }}
-                    data-testid="button-resolve"
-                  >
-                    <CheckSquare className="w-3 h-3" /> Resolve
-                  </Button>
                 )}
 
                 {selectedConv?.status === "closed" && (
@@ -1023,34 +1040,13 @@ export default function Inbox() {
                   </div>
                 )}
                 <form onSubmit={handleSend} className="flex items-end gap-2">
-                  <div className="flex items-end gap-0.5">
-                  {!selectedConv?.assignedUserId && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-[66px] px-2 text-xs font-medium gap-1.5 border-0 text-emerald-700 hover:bg-emerald-50 shrink-0 rounded-xl"
-                      disabled={claimMutation.isPending}
-                      onClick={() =>
-                        claimMutation.mutate({ id: selectedId })
-                      }
-                      data-testid="button-claim"
-                    >
-                      {claimMutation.isPending ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Hand className="w-4 h-4" />
-                      )}
-                      Claim
-                    </Button>
-                  )}
                   <button
                     type="button"
                     onClick={() => setIsWhisperMode((m) => !m)}
-                    className={`h-[66px] w-[52px] rounded-xl flex items-center justify-center shrink-0 transition-colors border-0 ${
+                    className={`h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                       isWhisperMode
-                        ? "bg-amber-100 text-amber-700 ring-2 ring-amber-400"
-                        : "bg-transparent text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                        ? "bg-amber-100 border-2 border-amber-500 text-amber-700 ring-2 ring-amber-300"
+                        : "bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"
                     }`}
                     title={isWhisperMode ? "Whisper mode: only your team will see this" : "Click to leave an internal note"}
                     data-testid="button-toggle-whisper"
@@ -1061,11 +1057,11 @@ export default function Inbox() {
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="h-[66px] w-[52px] rounded-xl flex items-center justify-center shrink-0 transition-colors border-0 bg-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                        className="h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
                         title="Insert emoji"
                         data-testid="button-emoji"
                       >
-                        <span className="text-[17px] leading-none">😊</span>
+                        <span className="text-2xl leading-none">😊</span>
                       </button>
                     </PopoverTrigger>
                     <PopoverContent className="w-64 p-2" align="start">
@@ -1090,13 +1086,12 @@ export default function Inbox() {
                   <button
                     type="button"
                     onClick={() => setShowAttach(true)}
-                    className="h-[66px] w-[52px] rounded-xl flex items-center justify-center shrink-0 transition-colors border-0 bg-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                    className="h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
                     title="Attach photo or PDF"
                     data-testid="button-attach"
                   >
                     <Paperclip className="w-5 h-5" />
                   </button>
-                  </div>
                   <div className="flex-1 relative">
                     <Textarea
                       ref={inputRef}
