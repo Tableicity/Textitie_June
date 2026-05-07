@@ -4,6 +4,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall } from "lucide-react";
 import ReminderBell from "@/components/ReminderBell";
 import HipaaBanner from "@/components/HipaaBanner";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import {
+  getLocalProfile,
+  setLocalProfile,
+  clearLocalProfile,
+  clearLastEmail,
+  formatUSPhone,
+  type LocalProfile,
+} from "@/lib/profile";
 import {
   useTenantMe,
   useSetAgentStatus,
@@ -80,8 +93,42 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogout = () => {
+    // Forget the "last email" hint so the Login form starts neutral on a
+    // shared device. Per-email profiles remain stored, scoped by their email.
+    clearLastEmail();
     removeTenantToken();
     setLocation("/login");
+  };
+
+  // ── Profile dialog (A2P opt-in evidence) ─────────────────────────────────
+  const { toast } = useToast();
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileDraft, setProfileDraft] = useState<LocalProfile>({ fullName: "", phone: "" });
+  const userEmail = data?.user?.email ?? "";
+
+  const openProfile = () => {
+    setProfileDraft(getLocalProfile(userEmail));
+    setProfileOpen(true);
+  };
+
+  const saveProfile = () => {
+    if (profileDraft.fullName.trim().length < 2) {
+      toast({ title: "Full name required", description: "Enter at least 2 characters.", variant: "destructive" });
+      return;
+    }
+    if (profileDraft.phone.replace(/\D/g, "").length !== 10) {
+      toast({ title: "Phone required", description: "Enter a valid 10-digit US number.", variant: "destructive" });
+      return;
+    }
+    setLocalProfile(userEmail, profileDraft);
+    setProfileOpen(false);
+    toast({ title: "Profile saved", description: "Will prefill on next sign-in." });
+  };
+
+  const removeProfile = () => {
+    clearLocalProfile(userEmail);
+    setProfileDraft({ fullName: "", phone: "" });
+    toast({ title: "Profile cleared", description: "Sign-in form will start blank." });
   };
 
   if (!hasToken || isError) {
@@ -197,12 +244,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               setLocation(`/?conversation=${cid}`);
             }}
           />
-          <div className="relative w-full mb-2" title={data.user.name}>
-            <div className="w-full aspect-square rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center">
+          <div className="relative w-full mb-2">
+            <button
+              type="button"
+              onClick={openProfile}
+              title={`${data.user.name} — open profile`}
+              data-testid="profile-avatar"
+              className="w-full aspect-square rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center hover:border-blue-400 hover:bg-slate-700 transition-colors"
+            >
               <span className="text-xs font-bold text-white uppercase">
                 {data.user.name.substring(0, 2)}
               </span>
-            </div>
+            </button>
             <button
               type="button"
               onClick={cycleStatus}
@@ -226,6 +279,74 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <HipaaBanner />
         <div className="flex-1 overflow-hidden">{children}</div>
       </main>
+
+      {/* Profile dialog — manages locally-stored A2P opt-in evidence */}
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Your profile</DialogTitle>
+            <DialogDescription>
+              Used to pre-fill the sign-in form. Stored only in this browser
+              for SMS opt-in records — not sent to our servers.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-fullname" className="text-xs">Full Name</Label>
+              <Input
+                id="profile-fullname"
+                placeholder="Jane Doe"
+                autoComplete="name"
+                value={profileDraft.fullName}
+                onChange={(e) => setProfileDraft((p) => ({ ...p, fullName: e.target.value }))}
+                data-testid="profile-full-name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-phone" className="text-xs">Phone</Label>
+              <Input
+                id="profile-phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel-national"
+                placeholder="(555) 123-4567"
+                maxLength={14}
+                value={profileDraft.phone}
+                onChange={(e) =>
+                  setProfileDraft((p) => ({ ...p, phone: formatUSPhone(e.target.value) }))
+                }
+                data-testid="profile-phone"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Signed in as</Label>
+              <p className="text-sm text-slate-700">{data.user.name}</p>
+              <p className="text-xs text-slate-500">{data.user.email}</p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={removeProfile}
+              data-testid="profile-clear"
+            >
+              Clear saved profile
+            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setProfileOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={saveProfile} data-testid="profile-save">
+                Save
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

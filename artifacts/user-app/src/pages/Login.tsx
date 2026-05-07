@@ -2,8 +2,15 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { setMfaPending } from "@/pages/Verify";
+import {
+  getLocalProfile,
+  setLocalProfile,
+  getLastEmail,
+  setLastEmail,
+  formatUSPhone,
+} from "@/lib/profile";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,15 +19,6 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from "@/component
 import { Checkbox } from "@/components/ui/checkbox";
 import { MessageSquare } from "lucide-react";
 import peekImage from "@assets/landing-peek.png";
-
-// Format a string of digits as a US phone number: (XXX) XXX-XXXX
-function formatUSPhone(raw: string): string {
-  const d = raw.replace(/\D/g, "").slice(0, 10);
-  if (d.length === 0) return "";
-  if (d.length < 4) return `(${d}`;
-  if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
-  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-}
 
 const loginSchema = z.object({
   fullName: z.string().min(2, "Please enter your full name"),
@@ -43,9 +41,38 @@ export default function Login() {
     defaultValues: { fullName: "", phone: "", email: "", password: "" },
   });
 
+  // Prefill from localStorage on return visits — scoped by last-used email
+  // so a shared browser doesn't leak one user's name/phone to another.
+  useEffect(() => {
+    const lastEmail = getLastEmail();
+    if (!lastEmail) return;
+    form.setValue("email", lastEmail);
+    const saved = getLocalProfile(lastEmail);
+    if (saved.fullName) form.setValue("fullName", saved.fullName);
+    if (saved.phone) form.setValue("phone", saved.phone);
+  }, [form]);
+
+  // When the email field changes, swap in that account's saved profile (or
+  // clear the fields if we don't have one for this email). This is what
+  // protects User B from seeing User A's prefill on a shared browser.
+  const watchedEmail = form.watch("email");
+  useEffect(() => {
+    const e = watchedEmail.trim().toLowerCase();
+    if (!e) return;
+    const lastEmail = getLastEmail();
+    if (e === lastEmail) return; // already prefilled
+    const saved = getLocalProfile(e);
+    form.setValue("fullName", saved.fullName);
+    form.setValue("phone", saved.phone);
+  }, [watchedEmail, form]);
+
   async function onSubmit(values: z.infer<typeof loginSchema>) {
     try {
       setIsLoading(true);
+      // Persist A2P opt-in profile locally, scoped to this email, so the
+      // next visit prefills correctly without leaking across accounts.
+      setLocalProfile(values.email, { fullName: values.fullName, phone: values.phone });
+      setLastEmail(values.email);
       // Login endpoint only consumes email + password; fullName/phone are
       // captured as A2P 10DLC opt-in evidence (the consent text references
       // "your phone number") and stay client-side.
@@ -301,7 +328,7 @@ export default function Login() {
                   disabled={isLoading || !smsConsent}
                   data-testid="sign-in-button"
                 >
-                  {isLoading ? "Signing in..." : "Sign In"}
+                  {isLoading ? "Signing in..." : "Sign Up"}
                 </Button>
               </form>
             </Form>
