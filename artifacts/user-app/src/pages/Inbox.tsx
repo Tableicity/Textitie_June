@@ -23,9 +23,10 @@ import {
   getListDispositionsQueryKey,
   getListRemindersQueryKey,
 } from "@workspace/api-client-react";
-import { useSearch, Link } from "wouter";
+import { useSearch, useLocation } from "wouter";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
+import ReminderBell from "@/components/ReminderBell";
 import { format } from "date-fns";
 import {
   Search,
@@ -33,7 +34,6 @@ import {
   Clock,
   User,
   Phone,
-  PhoneCall,
   CheckCircle2,
   MessageSquare,
   Building2,
@@ -85,6 +85,7 @@ export default function Inbox() {
   const queryClient = useQueryClient();
   useRealtimeInbox();
   const searchString = useSearch();
+  const [, setLocation] = useLocation();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [composeText, setComposeText] = useState("");
   const [isWhisperMode, setIsWhisperMode] = useState(false);
@@ -682,19 +683,13 @@ export default function Inbox() {
                   <Fuel className="w-3 h-3" />
                   Buy Gas
                 </Button>
-                <Link href="/settings?tab=phone-numbers">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs font-medium gap-1.5"
-                    title="Phone Numbers"
-                    aria-label="Phone Numbers"
-                    data-testid="button-phone-numbers"
-                  >
-                    <PhoneCall className="w-3.5 h-3.5" />
-                    Phone Numbers
-                  </Button>
-                </Link>
+                <ReminderBell
+                  variant="header"
+                  onJumpToConversation={(cid) => {
+                    setSelectedId(cid);
+                    setLocation(`/?conversation=${cid}`);
+                  }}
+                />
                 {selectedConv?.assignedUserId && (
                   <>
                     <Dialog

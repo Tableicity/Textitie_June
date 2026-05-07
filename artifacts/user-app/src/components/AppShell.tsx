@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation, Redirect } from "wouter";
+import { Link, useLocation, useSearch, Redirect } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall } from "lucide-react";
-import ReminderBell from "@/components/ReminderBell";
 import HipaaBanner from "@/components/HipaaBanner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -49,6 +48,10 @@ const NEXT_STATUS: Record<AgentStatus, AgentStatus> = {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
+  const search = useSearch();
+  const phoneNumbersActive =
+    location === "/settings" && new URLSearchParams(search).get("tab") === "phone-numbers";
+  const settingsActive = location === "/settings" && !phoneNumbersActive;
   const queryClient = useQueryClient();
   const hasToken = !!getTenantToken();
   const { data, isLoading, isError } = useTenantMe({
@@ -216,13 +219,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Link
             href="/settings"
             className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/settings"
+              settingsActive
                 ? "bg-blue-600 text-white shadow-md"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
             title="Workspace Settings"
           >
             <Settings className="w-5 h-5" />
+          </Link>
+
+          <Link
+            href="/settings?tab=phone-numbers"
+            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
+              phoneNumbersActive
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+            title="Phone Numbers"
+            data-testid="link-phone-numbers"
+          >
+            <PhoneCall className="w-5 h-5" />
           </Link>
         </div>
 
@@ -239,11 +255,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Users className="w-5 h-5" />
           </Link>
-          <ReminderBell
-            onJumpToConversation={(cid) => {
-              setLocation(`/?conversation=${cid}`);
-            }}
-          />
           <div className="relative w-full mb-2">
             <button
               type="button"

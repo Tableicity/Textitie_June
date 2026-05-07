@@ -11,10 +11,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+type Variant = "sidebar" | "header";
+
 export default function ReminderBell({
   onJumpToConversation,
+  variant = "sidebar",
 }: {
   onJumpToConversation?: (conversationId: number) => void;
+  variant?: Variant;
 }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -37,24 +41,38 @@ export default function ReminderBell({
 
   const count = dueReminders?.length ?? 0;
 
+  const triggerClass =
+    variant === "header"
+      ? "relative h-8 px-2.5 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 text-xs font-medium transition-colors"
+      : "relative w-10 h-10 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors";
+
+  const popoverSide = variant === "header" ? "bottom" : "right";
+  const popoverAlign = variant === "header" ? "end" : "start";
+  const iconClass = variant === "header" ? "w-3.5 h-3.5" : "w-5 h-5";
+  const badgeClass =
+    variant === "header"
+      ? "absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center"
+      : "absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center";
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="relative w-10 h-10 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          className={triggerClass}
           title="Reminders"
           data-testid="button-reminder-bell"
         >
-          <Bell className="w-5 h-5" />
+          <Bell className={iconClass} />
+          {variant === "header" && <span>Reminders</span>}
           {count > 0 && (
-            <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+            <span className={badgeClass}>
               {count > 9 ? "9+" : count}
             </span>
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="right" align="start" className="w-80 p-0" data-testid="popover-reminders">
+      <PopoverContent side={popoverSide} align={popoverAlign} className="w-80 p-0" data-testid="popover-reminders">
         <div className="px-4 py-3 border-b border-slate-200">
           <div className="text-sm font-semibold text-slate-900">Due reminders</div>
           <div className="text-xs text-slate-500 mt-0.5">
