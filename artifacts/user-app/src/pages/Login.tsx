@@ -13,7 +13,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { MessageSquare } from "lucide-react";
 import peekImage from "@assets/landing-peek.png";
 
+// Format a string of digits as a US phone number: (XXX) XXX-XXXX
+function formatUSPhone(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 10);
+  if (d.length === 0) return "";
+  if (d.length < 4) return `(${d}`;
+  if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
 const loginSchema = z.object({
+  fullName: z.string().min(2, "Please enter your full name"),
+  phone: z
+    .string()
+    .refine((v) => v.replace(/\D/g, "").length === 10, "Enter a valid 10-digit US phone number"),
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(1, "Password is required"),
 });
@@ -27,16 +40,19 @@ export default function Login() {
 
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { fullName: "", phone: "", email: "", password: "" },
   });
 
   async function onSubmit(values: z.infer<typeof loginSchema>) {
     try {
       setIsLoading(true);
+      // Login endpoint only consumes email + password; fullName/phone are
+      // captured as A2P 10DLC opt-in evidence (the consent text references
+      // "your phone number") and stay client-side.
       const res = await fetch("/api/tenant-auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ email: values.email, password: values.password }),
       });
 
       if (!res.ok) {
@@ -156,6 +172,53 @@ export default function Login() {
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
+                  name="fullName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <Label className="text-slate-300 text-xs">Full Name</Label>
+                      <FormControl>
+                        <Input
+                          placeholder="Jane Doe"
+                          autoComplete="name"
+                          className="bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
+                          data-testid="login-full-name"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <Label className="text-slate-300 text-xs">Phone</Label>
+                      <FormControl>
+                        <Input
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel-national"
+                          placeholder="(555) 123-4567"
+                          maxLength={14}
+                          className="bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
+                          data-testid="login-phone"
+                          value={field.value}
+                          onChange={(e) => field.onChange(formatUSPhone(e.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name="email"
                   render={({ field }) => (
                     <FormItem>
@@ -163,7 +226,9 @@ export default function Login() {
                       <FormControl>
                         <Input
                           placeholder="you@company.com"
+                          autoComplete="email"
                           className="bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
+                          data-testid="login-email"
                           {...field}
                         />
                       </FormControl>
