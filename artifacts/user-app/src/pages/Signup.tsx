@@ -133,6 +133,12 @@ export default function Signup() {
                   ? "No credit card required · Cancel any time"
                   : "Two-way SMS for teams that actually answer"}
               </p>
+              {/* A2P 10DLC transparency note (matches Login right pane) */}
+              <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+                OTP security texts and customer support messages only.
+                Message and data rates may apply. Message frequency varies.
+                Reply HELP for help or STOP to cancel.
+              </p>
             </div>
 
             <Form {...form}>
