@@ -192,6 +192,12 @@ export default function Login() {
               </div>
               <h2 className="text-2xl font-bold tracking-tight">TEXTITIE</h2>
               <p className="text-slate-400 text-xs mt-1">Two-way SMS for teams that actually answer</p>
+              {/* A2P 10DLC transparency note (matches Signup) */}
+              <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+                OTP security texts and customer support messages only.
+                Message and data rates may apply. Message frequency varies.
+                Reply HELP for help or STOP to cancel.
+              </p>
             </div>
 
             {/* Login form */}
