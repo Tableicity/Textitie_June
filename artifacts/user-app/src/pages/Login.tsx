@@ -117,9 +117,17 @@ export default function Login() {
             <MessageSquare className="w-8 h-8" />
           </div>
           <h1 className="text-4xl font-bold tracking-tight">Textitie</h1>
+          <p className="mt-3 text-white/70 text-sm">Two-way SMS for teams that actually answer</p>
         </div>
 
-        <div className="mt-10 text-center text-sm text-white/85 space-y-1">
+        {/* A2P 10DLC transparency note (matches Signup left pane) */}
+        <p className="mt-8 max-w-sm text-center text-[11px] leading-relaxed text-white/75">
+          OTP security texts and customer support messages only. Message
+          and data rates may apply. Message frequency varies. Reply HELP
+          for help or STOP to cancel.
+        </p>
+
+        <div className="mt-6 text-center text-sm text-white/85 space-y-1">
           <p>
             Don't have an account?{" "}
             <button
