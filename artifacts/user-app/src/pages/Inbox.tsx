@@ -687,7 +687,7 @@ export default function Inbox() {
                   variant="header"
                   onJumpToConversation={(cid) => {
                     setSelectedId(cid);
-                    setLocation(`/?conversation=${cid}`);
+                    setLocation(`/inbox?conversation=${cid}`);
                   }}
                 />
                 {selectedConv?.assignedUserId && (

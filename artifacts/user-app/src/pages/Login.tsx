@@ -95,7 +95,7 @@ export default function Login() {
         return;
       }
       toast({ title: "Welcome back", description: `Logged in as ${data.user?.name ?? "user"}` });
-      setLocation("/");
+      setLocation("/inbox");
     } catch (error: any) {
       toast({
         title: "Authentication failed",

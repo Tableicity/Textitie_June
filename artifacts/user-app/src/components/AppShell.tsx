@@ -156,9 +156,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex flex-col gap-4 flex-1 w-full px-2">
           <Link
-            href="/"
+            href="/inbox"
             className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/"
+              location === "/inbox" || location === "/"
                 ? "bg-blue-600 text-white shadow-md"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}

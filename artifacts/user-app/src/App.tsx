@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
+import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Verify from "@/pages/Verify";
 import Signup from "@/pages/Signup";
@@ -23,6 +24,7 @@ const queryClient = new QueryClient();
 function Router() {
   return (
     <Switch>
+      <Route path="/" component={Landing} />
       <Route path="/login" component={Login} />
       <Route path="/verify" component={Verify} />
       <Route path="/signup" component={Signup} />
@@ -32,7 +34,7 @@ function Router() {
       <Route>
         <AppShell>
           <Switch>
-            <Route path="/" component={Inbox} />
+            <Route path="/inbox" component={Inbox} />
             <Route path="/contacts" component={Contacts} />
             <Route path="/settings" component={Settings} />
             <Route path="/billing" component={Billing} />

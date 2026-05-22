@@ -113,7 +113,7 @@ export default function Verify() {
       setTenantToken(data.token);
       clearMfaPending();
       toast({ title: "Welcome back", description: `Logged in as ${data.user.name}` });
-      setLocation("/");
+      setLocation("/inbox");
     } catch (err: any) {
       toast({
         title: "Verification failed",
