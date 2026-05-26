@@ -18,7 +18,11 @@ export async function apiFetch<T = unknown>(
 ): Promise<T> {
   const token = getTenantToken();
   const headers = new Headers(init.headers ?? {});
-  if (!headers.has("Content-Type") && init.body) {
+  // Only auto-set JSON Content-Type for plain bodies; let the browser set
+  // multipart boundaries for FormData (and other native body types).
+  const isFormData =
+    typeof FormData !== "undefined" && init.body instanceof FormData;
+  if (!headers.has("Content-Type") && init.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);

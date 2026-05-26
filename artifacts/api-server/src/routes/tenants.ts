@@ -13,6 +13,7 @@ import {
   UpdateTenantResponse,
 } from "@workspace/api-zod";
 import { provisionChatwootInbox } from "../lib/chatwoot";
+import { requireTenantAuth } from "../middleware/tenantAuth";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -144,6 +145,7 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
 
 router.post(
   "/tenants/:id/knowledge-upload",
+  requireTenantAuth,
   (req, res, next) => {
     upload.single("file")(req, res, (err) => {
       if (err) {
@@ -158,9 +160,14 @@ router.post(
     });
   },
   async (req, res): Promise<void> => {
-    const id = parseInt(req.params.id, 10);
+    const id = parseInt(String(req.params.id), 10);
     if (isNaN(id)) {
       res.status(400).json({ error: "Invalid tenant id" });
+      return;
+    }
+    // Tenant-scoped: a tenant user may only upload to their own tenant.
+    if (!req.tenantUser || req.tenantUser.tenantId !== id) {
+      res.status(403).json({ error: "Forbidden" });
       return;
     }
     const file = req.file;
