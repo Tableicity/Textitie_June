@@ -270,14 +270,9 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-6 grid md:grid-cols-4 gap-8">
           <div>
             <div className="flex items-center gap-2 mb-3">
-              <button
-                type="button"
-                onClick={() => setLocation("/knowledge")}
-                aria-label="Textitie"
-                className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center focus:outline-none cursor-default"
-              >
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <MessageSquare className="w-4 h-4 text-white" />
-              </button>
+              </div>
               <span className="font-bold text-slate-900">Textitie</span>
             </div>
             <p className="text-sm text-slate-600">
