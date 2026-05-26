@@ -4,7 +4,9 @@
 Textitie (internal codename "SAMA" — Simple but Advanced Messaging Alternative) is a multi-tenant control plane designed for robust, scalable, and intelligent communication management. The user-facing app is branded **Textitie**; the admin/control plane retains the "SAMA Control Plane" label internally. It features a Master Conductor for overseeing tenants, injecting messages, and monitoring webhooks. Key capabilities include multi-tenant management, an AI-powered knowledge base, a user-friendly messaging inbox for customer agents, and comprehensive compliance features. SAMA aims to revolutionize business communication by offering a sophisticated yet easy-to-use platform.
 
 ## User Preferences
-No specific user preferences were provided in the original document.
+- GitHub remote: `https://github.com/TransferAgent/textitie.git` (PAT stored in the `GITHUB_TEXTITIE` secret). For one-off pushes use:
+  `git push "https://TransferAgent:${GITHUB_TEXTITIE}@github.com/TransferAgent/textitie.git" main`
+- Operational status, Twilio go-live runbook, and a full Gate Table live in `John/Run_Book.md` — keep it updated when gate status changes.
 
 ## System Architecture
 
@@ -14,14 +16,14 @@ No specific user preferences were provided in the original document.
 -   **Database**: PostgreSQL with Drizzle ORM. **All data lives in the `public` schema** with explicit `tenant_id` scoping on every per-tenant table (`conversations`, `opt_outs`, `automation_rules`, `campaigns`, `reminders`, `audit_logs`, …); `messages` inherits scoping via `conversation_id`. Stage 4 schema-per-tenant isolation was attempted but only the inbound write path was migrated — the inbox UI continued reading `public.*`, which silently lost auto-replies and campaign attribution writes in any environment where the tenant schema actually existed. **Stage 4 is deferred** until we have a real isolation driver (SOC2/HIPAA/sovereign-data). `getTenantDb(slug)` and `getTenantPool(slug)` in `lib/db/src/tenant-db.ts` are now thin wrappers that return the global pool, so call sites do not need to change when we re-enable schema isolation later.
 -   **API Server**: Express.js application (`artifacts/api-server`).
 -   **Admin UI**: React application (`artifacts/eng-architect`) using Vite, wouter, and shadcn, served at `/admin/`.
--   **User UI**: React application (`artifacts/user-app`) using Vite, wouter, and shadcn, providing a Textline-style messaging inbox, served at `/` (root).
+-   **User UI**: React application (`artifacts/user-app`) using Vite, wouter, and shadcn, providing a Textline-style messaging inbox. Public marketing **Landing page is served at `/`**; the agent **Inbox lives at `/inbox`** (auth-gated). Other auth-gated routes: `/contacts`, `/settings`, `/billing`, `/automations`, `/campaigns`, `/analytics`, `/knowledge`. Public routes: `/login`, `/verify`, `/signup`, `/signup/trial`, `/privacy`, `/terms`.
 
 ### Key Features & Implementations
 -   **Modular Sender Pipeline**: Pluggable interface for message sending.
 -   **Conductor Authentication**: HTTP Basic Auth for admin APIs; Bearer tokens for admin, JWTs for tenant agents.
 -   **Multi-Tenant Intelligence**: Inbound routing by tenant phone numbers, per-tenant `From` numbers for outbound messages, and Chatwoot integration.
--   **AI Student & Knowledge Base**: Tenants upload documents (PDF/TXT/MD/CSV) for an AI Student (GPT-4o-mini) to generate RAG-contextualized responses as private notes in Chatwoot.
--   **10DLC Compliance Monitoring**: Integrates with Twilio Trust Hub APIs for real-time compliance status.
+-   **Halo AI Whisperer & Knowledge Base**: Tenants upload documents (PDF/TXT/MD/CSV, ≤5 MB) at `/knowledge` for **Halo AI** (OpenAI `gpt-4o-mini`) to generate RAG-contextualized response drafts as private notes in Chatwoot. Upload endpoint `POST /api/tenants/:id/knowledge-upload` is gated by `requireTenantAuth` and enforces tenant-scope (`tenantUser.tenantId === :id`). The inbox "Halo AI" button is currently a placeholder dialog pending wiring to the live draft API.
+-   **10DLC Compliance Monitoring**: Integrates with Twilio Trust Hub APIs for real-time compliance status. A2P 10DLC consent disclosure is rendered on both the Login (left + right panes) and Signup (right pane) screens to satisfy Twilio Error 30491 review requirements.
 -   **Conversation Management**: Features for claiming, transferring, unassigning, and event management.
 -   **Department & Agent Management**: Creation of departments, phone number assignment, agent roles, statuses, skills, languages, and routing strategies.
 -   **UI/UX**: React-based UIs with distinct branding, themes, and a two-panel inbox with agent status indicators.
