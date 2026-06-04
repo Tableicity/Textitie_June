@@ -139,11 +139,23 @@ async function uniqueSlug(base: string): Promise<string> {
 }
 
 router.post("/tenant-auth/register", async (req, res) => {
-  const { companyName, email, password, plan } = req.body ?? {};
-  if (!companyName || !email || !password) {
-    res.status(400).json({ error: "Company name, email, and password are required" });
+  const { companyName, email, password, plan, phone } = req.body ?? {};
+  const trimmedCompanyName = typeof companyName === "string" ? companyName.trim() : "";
+  if (!trimmedCompanyName || !email || !password) {
+    res.status(400).json({ error: "Full name, email, and password are required" });
     return;
   }
+  if (trimmedCompanyName.length > 200) {
+    res.status(400).json({ error: "Name must be 200 characters or fewer" });
+    return;
+  }
+  // Phone is required and must be a valid 10-digit US number (A2P 10DLC opt-in evidence).
+  const phoneDigits = String(phone ?? "").replace(/\D/g, "");
+  if (phoneDigits.length !== 10) {
+    res.status(400).json({ error: "Enter a valid 10-digit US phone number" });
+    return;
+  }
+  const normalizedPhone = phoneDigits;
   if (typeof password !== "string" || password.length < 8) {
     res.status(400).json({ error: "Password must be at least 8 characters" });
     return;
@@ -168,7 +180,7 @@ router.post("/tenant-auth/register", async (req, res) => {
       return;
     }
 
-    const slug = await uniqueSlug(companyName);
+    const slug = await uniqueSlug(trimmedCompanyName);
     const passwordHash = await hashPassword(password);
 
     const result = await db.transaction(async (tx) => {
@@ -176,7 +188,7 @@ router.post("/tenant-auth/register", async (req, res) => {
         .insert(tenantsTable)
         .values({
           slug,
-          name: String(companyName).trim(),
+          name: trimmedCompanyName,
           region: "us",
           tierCode: "starter",
           planTierCode: "starter",
@@ -194,7 +206,8 @@ router.post("/tenant-auth/register", async (req, res) => {
           tenantId: tenant.id,
           email: normalizedEmail,
           passwordHash,
-          name: normalizedEmail.split("@")[0],
+          name: trimmedCompanyName,
+          phone: normalizedPhone,
           role: "owner",
         })
         .returning();

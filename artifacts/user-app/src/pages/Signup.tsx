@@ -41,14 +41,15 @@ export default function Signup() {
   async function onSubmit(values: z.infer<typeof signupSchema>) {
     try {
       setIsLoading(true);
-      // The tenant is created under the person's full name. Phone is captured
-      // as A2P 10DLC opt-in evidence (the consent text references "your phone
-      // number") and stays client-side, mirroring the Login page.
+      // The tenant is created under the person's full name. Phone is persisted
+      // on the owner's user record as A2P 10DLC opt-in evidence (the consent
+      // text references "your phone number").
       const res = await fetch("/api/tenant-auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyName: values.fullName,
+          phone: values.phone,
           email: values.email,
           password: values.password,
           plan: isTrial ? "trial" : "paid",
