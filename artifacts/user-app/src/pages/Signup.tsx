@@ -10,11 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
+import { formatUSPhone } from "@/lib/profile";
 import { MessageSquare, Sparkles } from "lucide-react";
 import peekImage from "@assets/landing-peek.png";
 
 const signupSchema = z.object({
-  companyName: z.string().min(2, "Company name is required"),
+  fullName: z.string().min(2, "Please enter your full name"),
+  phone: z
+    .string()
+    .refine((v) => v.replace(/\D/g, "").length === 10, "Enter a valid 10-digit US phone number"),
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
@@ -31,16 +35,24 @@ export default function Signup() {
 
   const form = useForm<z.infer<typeof signupSchema>>({
     resolver: zodResolver(signupSchema),
-    defaultValues: { companyName: "", email: "", password: "" },
+    defaultValues: { fullName: "", phone: "", email: "", password: "" },
   });
 
   async function onSubmit(values: z.infer<typeof signupSchema>) {
     try {
       setIsLoading(true);
+      // The tenant is created under the person's full name. Phone is captured
+      // as A2P 10DLC opt-in evidence (the consent text references "your phone
+      // number") and stays client-side, mirroring the Login page.
       const res = await fetch("/api/tenant-auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...values, plan: isTrial ? "trial" : "paid" }),
+        body: JSON.stringify({
+          companyName: values.fullName,
+          email: values.email,
+          password: values.password,
+          plan: isTrial ? "trial" : "paid",
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Sign up failed");
@@ -110,8 +122,8 @@ export default function Signup() {
         />
         <div className="absolute inset-0 bg-blue-900/60 backdrop-blur-[2px]" />
 
-        <div className="relative z-10 w-full max-w-sm">
-          <div className="bg-slate-900/85 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl p-6 text-white">
+        <div className="relative z-10 w-full max-w-[460px]">
+          <div className="bg-slate-900/85 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl px-8 py-12 text-white min-h-[640px] flex flex-col">
             <div className="text-center mb-5">
               <div className="inline-flex items-center gap-2 mb-3">
                 <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -145,15 +157,43 @@ export default function Signup() {
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
-                  name="companyName"
+                  name="fullName"
                   render={({ field }) => (
                     <FormItem>
-                      <Label className="text-slate-300 text-xs">Company name</Label>
+                      <Label className="text-slate-300 text-xs">Full Name</Label>
                       <FormControl>
                         <Input
-                          placeholder="Acme Corp"
+                          placeholder="Jane Doe"
+                          autoComplete="name"
                           className="bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
+                          data-testid="signup-full-name"
                           {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <Label className="text-slate-300 text-xs">Phone</Label>
+                      <FormControl>
+                        <Input
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel-national"
+                          placeholder="(555) 123-4567"
+                          maxLength={14}
+                          className="bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
+                          data-testid="signup-phone"
+                          value={field.value}
+                          onChange={(e) => field.onChange(formatUSPhone(e.target.value))}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
                         />
                       </FormControl>
                       <FormMessage />
