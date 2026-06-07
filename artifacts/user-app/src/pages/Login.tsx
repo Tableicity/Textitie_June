@@ -309,13 +309,12 @@ export default function Login() {
                     data-testid="sms-consent-checkbox"
                   />
                   <span className="text-[11px] leading-relaxed text-slate-400">
-                    By providing your phone number and clicking "Sign Up", I
-                    consent to receive one-time passcode (OTP) security
-                    texts and customer support messages from Textitie.
-                    Consent is not a condition of purchase. Message and
-                    data rates may apply. Message frequency varies. Reply
-                    HELP for help or STOP to cancel. I have read and agree
-                    to the{" "}
+                    By checking this box, I consent to receive automated
+                    customer support text messages from Textitie. Consent is
+                    not required to create an account or complete a service.
+                    Message and data rates may apply. Message frequency
+                    varies. Reply HELP for help or STOP to cancel. I agree to
+                    the{" "}
                     <button
                       type="button"
                       onClick={(e) => { e.preventDefault(); setLocation("/privacy"); }}
@@ -339,7 +338,7 @@ export default function Login() {
                   type="submit"
                   className="w-full bg-blue-600 hover:bg-blue-700 font-medium"
                   size="lg"
-                  disabled={isLoading || !smsConsent}
+                  disabled={isLoading}
                   data-testid="sign-in-button"
                 >
                   {isLoading ? "Signing in..." : "Sign Up"}
