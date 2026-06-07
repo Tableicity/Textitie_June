@@ -96,6 +96,27 @@ export const GetOwnedNumbersResponse = zod.object({
   ),
 });
 
+/**
+ * @summary List the login users (agents/owner) attached to a tenant
+ */
+export const GetTenantUsersParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetTenantUsersResponse = zod.object({
+  users: zod.array(
+    zod.object({
+      id: zod.number(),
+      email: zod.string(),
+      name: zod.string(),
+      role: zod.string(),
+      status: zod.string(),
+      phone: zod.string().nullish(),
+      createdAt: zod.string().optional(),
+    }),
+  ),
+});
+
 export const GetTenantParams = zod.object({
   id: zod.coerce.number(),
 });

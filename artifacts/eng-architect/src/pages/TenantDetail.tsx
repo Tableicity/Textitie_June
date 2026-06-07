@@ -10,6 +10,8 @@ import {
   useInjectMessage,
   useUpdateTenant,
   useGetOwnedNumbers,
+  useGetTenantUsers,
+  getGetTenantUsersQueryKey,
   getListInjectionsQueryKey,
 } from "@workspace/api-client-react";
 import { getStoredAuthHeader } from "@/lib/auth";
@@ -27,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload } from "lucide-react";
+import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users } from "lucide-react";
 
 const injectSchema = z.object({
   to: z.string().min(3, "Phone number is required"),
@@ -67,6 +69,11 @@ export default function TenantDetail() {
   const ownedConfigured = ownedData?.configured ?? false;
   const ownedNumbers = ownedData?.numbers ?? [];
   const [selectedNumber, setSelectedNumber] = useState<string>("__none__");
+
+  const { data: tenantUsersData, isLoading: usersLoading } = useGetTenantUsers(tenantId, {
+    query: { enabled: !!tenantId, queryKey: getGetTenantUsersQueryKey(tenantId) },
+  });
+  const tenantUsers = tenantUsersData?.users ?? [];
 
   const injectForm = useForm<z.infer<typeof injectSchema>>({
     resolver: zodResolver(injectSchema),
@@ -387,6 +394,55 @@ export default function TenantDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Users size={16} /> Users / Logins
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            The people who can sign into this tenant's agent inbox. The owner is the account holder; agents are invited team members.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {usersLoading ? (
+            <p className="text-sm text-muted-foreground">Loading users…</p>
+          ) : tenantUsers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No login users yet for this tenant.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-2 pr-4 font-medium">Name</th>
+                    <th className="py-2 pr-4 font-medium">Email (login)</th>
+                    <th className="py-2 pr-4 font-medium">Role</th>
+                    <th className="py-2 pr-4 font-medium">Status</th>
+                    <th className="py-2 font-medium">Phone</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tenantUsers.map((u) => (
+                    <tr key={u.id} className="border-b last:border-0">
+                      <td className="py-2 pr-4">{u.name}</td>
+                      <td className="py-2 pr-4 font-mono">{u.email}</td>
+                      <td className="py-2 pr-4">
+                        <Badge variant={u.role === "owner" ? "default" : "secondary"}>{u.role}</Badge>
+                      </td>
+                      <td className="py-2 pr-4">
+                        <span className="capitalize text-muted-foreground">{u.status}</span>
+                      </td>
+                      <td className="py-2 font-mono text-muted-foreground">
+                        {u.phone ?? <em className="not-italic text-muted-foreground/60">—</em>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -425,6 +425,20 @@ export interface OwnedNumbersResponse {
   numbers: OwnedNumberItem[];
 }
 
+export interface TenantUserItem {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+  phone?: string | null;
+  createdAt?: string;
+}
+
+export interface TenantUsersResponse {
+  users: TenantUserItem[];
+}
+
 export interface ClaimResult {
   success: boolean;
   assignedUserId: number;

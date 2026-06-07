@@ -114,6 +114,8 @@ export * from "./tenantMeResult";
 export * from "./tenantNumberStatus";
 export * from "./tenantPhoneNumberItem";
 export * from "./tenantUserInfo";
+export * from "./tenantUserItem";
+export * from "./tenantUsersResponse";
 export * from "./tier";
 export * from "./tierCode";
 export * from "./topUpInput";

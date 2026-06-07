@@ -44,7 +44,7 @@ Textitie is a multi-tenant two-way SMS platform (Textline-style agent inbox) on 
 
 > Update this section at the **end of every session** so a compacted agent knows exactly what was happening. If nothing is in flight, say so.
 
-- **Active task:** None in progress. Last completed (2026-06-07): built proper Admin tenant→number assignment (`GET /tenants/owned-numbers` + validated Telephony picker on Tenant Detail), fixed the misleading Compliance "10DLC Required" badge (now classifies Toll-Free vs 10DLC by number type), and fixed ACME prod data (unassigned its stale non-owned number so it falls back to the TFN). Shipped to prod.
+- **Active task:** None in progress. Last completed (2026-06-07): added a read-only **Users / Logins** section to the Admin Tenant Detail page — new conductor-scoped `GET /tenants/:id/users` (returns `tenant_users` name/email/role/status/phone, never the password hash) + a Users/Logins card in `TenantDetail.tsx`. Contract-first, full typecheck + architect review clean, live-tested in dev. Ready to publish. (Prior 2026-06-07: Admin tenant→number assignment picker, Compliance badge fix, ACME prod data fix — all shipped to prod.)
 - **Awaiting user decision on:** which Next Step to start (see `Gate_Build.md` §5). Likely next: wiring the Halo inbox button OR Stripe live keys.
 - **Do-not-proceed-without-discussion:** The user has set a standing rule — **take no build action until it has been discussed and approved.** Honor this.
 
@@ -98,10 +98,10 @@ pnpm run typecheck
 | `artifacts/api-server/src/lib/senders/twilio.ts` | Twilio direct sender |
 | `artifacts/api-server/src/routes/webhooks.ts` | Twilio inbound + status callbacks |
 | `artifacts/api-server/src/routes/tenantAuth.ts` | Tenant register/login (phone capture) |
-| `artifacts/api-server/src/routes/tenants.ts` | Tenant CRUD + `GET /tenants/owned-numbers` (Twilio-owned numbers; declared before `/tenants/:id`) |
+| `artifacts/api-server/src/routes/tenants.ts` | Tenant CRUD + `GET /tenants/owned-numbers` (Twilio-owned numbers; declared before `/tenants/:id`) + `GET /tenants/:id/users` (conductor-scoped tenant_users list, no password hash) |
 | `artifacts/api-server/src/middleware/conductorAuth.ts` | Admin Basic Auth + exemption list |
 | `artifacts/api-server/src/routes/compliance.ts` | 10DLC/Trust Hub status |
-| `artifacts/eng-architect/src/pages/TenantDetail.tsx` | Admin tenant editor — Telephony picker (owned-number dropdown + Unassign) |
+| `artifacts/eng-architect/src/pages/TenantDetail.tsx` | Admin tenant editor — Telephony picker (owned-number dropdown + Unassign) + Users/Logins card |
 | `artifacts/eng-architect/src/pages/Compliance.tsx` | Conductor compliance page + number inventory "SMS Registration" badge |
 | `artifacts/user-app/src/pages/Inbox.tsx` | Agent inbox (Halo button placeholder ~line 1240) |
 | `artifacts/user-app/src/pages/Login.tsx` / `Signup.tsx` | Auth cards + A2P consent |

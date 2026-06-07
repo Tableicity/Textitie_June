@@ -3,13 +3,15 @@ import { eq } from "drizzle-orm";
 import multer from "multer";
 import twilio from "twilio";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { db, tenantsTable } from "@workspace/db";
+import { db, tenantsTable, tenantUsersTable } from "@workspace/db";
 import {
   ListTenantsResponse,
   CreateTenantBody,
   GetTenantParams,
   GetTenantResponse,
   GetOwnedNumbersResponse,
+  GetTenantUsersParams,
+  GetTenantUsersResponse,
   UpdateTenantBody,
   UpdateTenantParams,
   UpdateTenantResponse,
@@ -118,6 +120,38 @@ router.get("/tenants/:id", async (req, res): Promise<void> => {
     return;
   }
   res.json(GetTenantResponse.parse(row));
+});
+
+// Login users (owner + agents) attached to a tenant. Conductor-scoped read so
+// the admin can see exactly who signs into a tenant account. Never returns the
+// password hash.
+router.get("/tenants/:id/users", async (req, res): Promise<void> => {
+  const params = GetTenantUsersParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const rows = await db
+    .select({
+      id: tenantUsersTable.id,
+      email: tenantUsersTable.email,
+      name: tenantUsersTable.name,
+      role: tenantUsersTable.role,
+      status: tenantUsersTable.status,
+      phone: tenantUsersTable.phone,
+      createdAt: tenantUsersTable.createdAt,
+    })
+    .from(tenantUsersTable)
+    .where(eq(tenantUsersTable.tenantId, params.data.id))
+    .orderBy(tenantUsersTable.id);
+  res.json(
+    GetTenantUsersResponse.parse({
+      users: rows.map((r) => ({
+        ...r,
+        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : undefined,
+      })),
+    }),
+  );
 });
 
 router.patch("/tenants/:id", async (req, res): Promise<void> => {

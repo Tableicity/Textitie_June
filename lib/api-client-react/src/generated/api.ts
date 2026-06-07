@@ -97,6 +97,7 @@ import type {
   TenantLoginResult,
   TenantMeResult,
   TenantPhoneNumberItem,
+  TenantUsersResponse,
   Tier,
   TopUpInput,
   TopUpResult,
@@ -491,6 +492,93 @@ export function useGetOwnedNumbers<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetOwnedNumbersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List the login users (agents/owner) attached to a tenant
+ */
+export const getGetTenantUsersUrl = (id: number) => {
+  return `/api/tenants/${id}/users`;
+};
+
+export const getTenantUsers = async (
+  id: number,
+  options?: RequestInit,
+): Promise<TenantUsersResponse> => {
+  return customFetch<TenantUsersResponse>(getGetTenantUsersUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTenantUsersQueryKey = (id: number) => {
+  return [`/api/tenants/${id}/users`] as const;
+};
+
+export const getGetTenantUsersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTenantUsers>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTenantUsers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTenantUsersQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTenantUsers>>> = ({
+    signal,
+  }) => getTenantUsers(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTenantUsers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTenantUsersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTenantUsers>>
+>;
+export type GetTenantUsersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the login users (agents/owner) attached to a tenant
+ */
+
+export function useGetTenantUsers<
+  TData = Awaited<ReturnType<typeof getTenantUsers>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTenantUsers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTenantUsersQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

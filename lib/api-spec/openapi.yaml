@@ -131,6 +131,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/OwnedNumbersResponse"
 
+  /tenants/{id}/users:
+    get:
+      operationId: getTenantUsers
+      tags: [tenants]
+      summary: List the login users (agents/owner) attached to a tenant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Users belonging to the tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantUsersResponse"
+
   /tenants/{id}:
     get:
       operationId: getTenant
@@ -2811,6 +2830,35 @@ components:
           items:
             $ref: "#/components/schemas/OwnedNumberItem"
       required: [configured, numbers]
+
+    TenantUserItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+      required: [id, email, name, role, status]
+
+    TenantUsersResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantUserItem"
+      required: [users]
 
     ClaimResult:
       type: object
