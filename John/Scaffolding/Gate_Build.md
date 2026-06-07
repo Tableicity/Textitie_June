@@ -84,6 +84,8 @@ This is the condensed lineage of the build, oldest → newest, so any reader (or
 | Twilio outbound (per-tenant From) | ✅ | **Live-verified 2026-06-07** — delivered from TFN +18887619212 |
 | Twilio inbound routing by tenant phone | ✅ | **Live-verified 2026-06-07** — reply routed to john-reynolds, conversation created |
 | **Real Twilio number provisioned** | ✅ | **Toll-Free +18887619212 LIVE (new account)** — assigned to john-reynolds |
+| Admin tenant→number assignment (validated picker) | ✅ | **2026-06-07** — `GET /tenants/owned-numbers` + Tenant Detail dropdown of account-owned numbers (+ Unassign); replaces the free-text field that caused the 21660 trap |
+| Number inventory badge (Toll-Free vs 10DLC) | ✅ | **2026-06-07** — Compliance "SMS Registration" column classifies by number type, not `region===US` |
 | **10DLC long code** | 🔵 | **In progress (user)** |
 | Twilio delivery webhooks (status callbacks) | ✅ | Wired |
 | 10DLC Trust Hub compliance monitoring | ✅ | Wired to A2P `BrandRegistrations`/Trust Hub |
