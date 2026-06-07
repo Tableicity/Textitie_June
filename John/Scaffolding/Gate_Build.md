@@ -81,15 +81,15 @@ This is the condensed lineage of the build, oldest → newest, so any reader (or
 | Item | Status | Notes |
 |---|---|---|
 | Modular sender pipeline (pluggable) | ✅ | `senders/index.ts` auto-selects twilio→stub |
-| Twilio outbound (per-tenant From) | ✅ | Code ready |
-| Twilio inbound routing by tenant phone | ✅ | Code ready |
-| **Real Twilio number provisioned** | ✅ | **Toll-Free approved (new account)** |
+| Twilio outbound (per-tenant From) | ✅ | **Live-verified 2026-06-07** — delivered from TFN +18887619212 |
+| Twilio inbound routing by tenant phone | ✅ | **Live-verified 2026-06-07** — reply routed to john-reynolds, conversation created |
+| **Real Twilio number provisioned** | ✅ | **Toll-Free +18887619212 LIVE (new account)** — assigned to john-reynolds |
 | **10DLC long code** | 🔵 | **In progress (user)** |
 | Twilio delivery webhooks (status callbacks) | ✅ | Wired |
 | 10DLC Trust Hub compliance monitoring | ✅ | Wired to A2P `BrandRegistrations`/Trust Hub |
 | Compliance panel reflects **Toll-Free** status | ❓ | Panel is 10DLC-only — will NOT show TFN verification |
 | A2P/consent disclosure on Login + Signup | ✅ | Reworded; checkbox non-blocking |
-| Prod `SAMA_FROM_NUMBER` = approved number | ❓ | **Must verify in Production secrets** |
+| Prod `SAMA_FROM_NUMBER` = approved number | ✅ | **Verified 2026-06-07** — prod republished; outbound sends from TFN |
 | Chatwoot bridging (sovereign + note posting) | ❓ | Creds set in dev; verify prod instance |
 
 #### Gate 3 — Agent inbox
@@ -161,7 +161,7 @@ This is the condensed lineage of the build, oldest → newest, so any reader (or
 
 ## 4. Where We Are (one-line summary)
 
-**Build is feature-complete through Gate 6. The single live-traffic blocker is Twilio number go-live config — and that blocker is now mostly cleared because a Toll-Free number is approved.** Remaining go-live work is configuration (verify prod secrets, wire webhooks, smoke test), not building. Stripe and the Halo inbox button are the next real build items.
+**Build is feature-complete through Gate 6, and Textitie is LIVE on the new Twilio account.** As of 2026-06-07 the Toll-Free number +18887619212 is in production: outbound delivers from the TFN (Twilio: `delivered`), inbound replies pass signature validation and route to the assigned tenant (`john-reynolds`) landing in `/inbox`. Stripe and the Halo inbox button are the next real build items.
 
 ---
 
@@ -169,8 +169,8 @@ This is the condensed lineage of the build, oldest → newest, so any reader (or
 
 Priority order. Nothing here is started without explicit sign-off.
 
-1. **Go live on the Toll-Free number** — confirm Production secrets (`SAMA_FROM_NUMBER` = the approved TFN, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`); set Twilio webhooks (inbound `…/api/webhooks/twilio/inbound`, status `…/api/webhooks/twilio/status`); run the Run_Book §3.5 smoke test.
-2. **Fix Run_Book secret-name error** (`TWILIO_PHONE_NUMBER_SID` → `SAMA_FROM_NUMBER`) and sync its Gate Table to §3 above.
+1. ✅ **DONE 2026-06-07 — Live on the Toll-Free number.** Prod republished to load new-account secrets; `SAMA_FROM_NUMBER` = TFN +18887619212; inbound webhook `…/api/webhooks/twilio`, status `…/api/webhooks/twilio/status`; smoke test passed (outbound delivered; inbound routed to john-reynolds).
+2. ✅ **DONE 2026-06-07** — Fixed Run_Book secret-name error (`TWILIO_PHONE_NUMBER_SID` → `SAMA_FROM_NUMBER`) and the inbound webhook URL (`…/twilio/inbound` → `…/twilio`); synced its Gate Table to §3 above.
 3. **Decide compliance-panel handling for Toll-Free** — leave as-is pending the 10DLC long code, or add TFN verification status surfacing.
 4. **Wire the Halo AI inbox button** to the real draft API (replace the "coming soon" dialog).
 5. **Stripe live keys + webhook** — enable real charging.
@@ -197,3 +197,4 @@ The agent appends a dated entry here for every build action taken against this p
 - **2026-06-07** — Created `John/Scaffolding/` with `Gate_Build.md` (this ledger) and `Regeneration.md` (compaction-recovery doc). No code/feature changes. Captured the June 7 systems + document check verbatim (§1). Established the current authoritative Gate Table (§3).
 - **2026-06-07** — Moved `John/architecture.doc.md` → `John/Scaffolding/architecture.doc.md` to consolidate build-governance docs. Updated the README link. Classified it as an **append-only lessons reference** (not a per-session living doc): add a new lesson when a build decision/incident teaches something durable; do not rewrite existing entries. Wired it into the companion-doc lists in this file and `Regeneration.md`.
 - **2026-06-07** — Scaffolding triage of `John/`. Subagent review classified every loose `.md`. Actions: (1) moved the two **living build-governance** docs — `Hardening.md` (production hardening backlog) and `Database_URL_work.md` (dev/prod DB env split) — into `Scaffolding/` and wired them into companion-doc lists + key-files maps; added them to §5 Next Steps (items 8–9). (2) Created `John/Archive/` and moved 7 **static/historical, superseded** docs there: `Phase7.1.md`, `Phase7.2.md`, `Phase9.1.md`, `Stage4-Migration.md`, `MultiTenant.md`, `User_UI_Gate_Plan.md`, `Things To Do.md`. (3) Folded `John/Textline.md`'s open competitor gaps into §5 as a "Competitor-gap backlog". Left at `John/` root: `Run_Book.md` + `Twilio.md` (operational), `Privacy-Policy.md` + `Terms-of-Service.md` (published-content sources, verified to mirror the live pages), `Textline.md` (roadmap input). No code/feature changes.
+- **2026-06-07** — **WENT LIVE on the new Twilio account (Toll-Free +18887619212).** (1) Diagnosed that the running prod deployment was still on the OLD secrets — a saved-secret change does not restart an autoscale deployment; verified by an outbound inject that sent from the old long-code. (2) Republished prod (loads new secrets + ships current `main`, which also fixed pre-existing `/api` and `/api/tenants` 500s). (3) Assigned TFN +18887619212 to tenant `john-reynolds` (id 6) via the Conductor PATCH API (prod SQL is read-only). (4) Smoke test PASSED end-to-end: outbound `delivered` from the TFN; inbound reply signature-validated (201, not 403), routed to john-reynolds, conversation created in `/inbox`. Gate 2 rows flipped ❓→✅. (5) Fixed a data bug: self-signup hardcoded `region:"us"` (lowercase) which 500'd `GET /api/tenants` (whole-array Zod parse fails on one bad row) — normalized existing tenants 4/5/6 and changed the insert to `"US"` (`routes/tenantAuth.ts`). **Deferred** (flagged, not done): removing the vestigial Stage-4 `ensureTenantSchema` call (used in both `tenantAuth.ts` and `seedData.ts` — multi-file cleanup, ENOENT is caught/non-fatal).

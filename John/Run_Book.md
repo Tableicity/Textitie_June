@@ -1,6 +1,6 @@
 # Textitie Run Book
 
-_Last updated: May 26, 2026_
+_Last updated: June 7, 2026_
 _Product: **Textitie** (internal codename **SAMA** — Simple but Advanced Messaging Alternative)_
 _Live: https://textitie.com_
 
@@ -34,9 +34,9 @@ This run book is the operational source-of-truth: where every feature stands, wh
 | Item | Status | Notes |
 |---|---|---|
 | Modular sender pipeline (pluggable) | ✅ | |
-| Twilio outbound (per-tenant From numbers) | ✅ | Code ready |
-| Twilio inbound routing by tenant phone | ✅ | Code ready |
-| **A real Twilio phone number provisioned** | 🔵 | **You are here** |
+| Twilio outbound (per-tenant From numbers) | ✅ | **Live-verified 2026-06-07** (delivered from TFN) |
+| Twilio inbound routing by tenant phone | ✅ | **Live-verified 2026-06-07** (routed to john-reynolds) |
+| **A real Twilio phone number provisioned** | ✅ | **TFN +18887619212 LIVE (new account)** — assigned to john-reynolds |
 | Twilio delivery webhooks (status callbacks) | ✅ | Wired |
 | 10DLC Trust Hub compliance monitoring | ✅ | |
 | A2P 10DLC disclosure on Login + Signup | ✅ | Shipped — fixes Twilio Error 30491 |
@@ -113,7 +113,7 @@ This run book is the operational source-of-truth: where every feature stands, wh
 
 ## 2. What's blocking right now
 
-**Twilio phone number provisioning.** Everything downstream waits on this.
+**Nothing on the Twilio go-live path.** As of 2026-06-07 Textitie is LIVE on the new Twilio account (Toll-Free +18887619212): outbound, inbound routing, and webhook signature validation are all verified in production. Remaining items are non-blocking: Stripe live keys (no charging yet), the Halo inbox button, and prod verification of `OPENAI_API_KEY` / Chatwoot.
 
 ---
 
@@ -128,7 +128,7 @@ Set these in the Replit deployment secrets (Production environment):
 |---|---|
 | `TWILIO_ACCOUNT_SID` | Twilio Console → Account → API keys & tokens |
 | `TWILIO_AUTH_TOKEN` | Twilio Console → Account → API keys & tokens |
-| `TWILIO_PHONE_NUMBER_SID` | Twilio Console → Phone Numbers → Manage → Active → click number → Phone Number SID (starts with `PN…`) |
+| `SAMA_FROM_NUMBER` | The approved sending number in **E.164**, e.g. `+18887619212`. This is what the sender uses as `From` — the code does **not** read a Phone Number SID. (Sender goes live when this + `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` are all set.) |
 | `OPENAI_API_KEY` | OpenAI dashboard (required for Halo whispers) |
 
 ### 3.2 Attach the number to a tenant
@@ -142,7 +142,7 @@ In Twilio Console → Phone Numbers → Manage → Active → click the number:
 
 | Webhook | URL | Method |
 |---|---|---|
-| A message comes in | `https://textitie.com/api/webhooks/twilio/inbound` | `POST` |
+| A message comes in | `https://textitie.com/api/webhooks/twilio` | `POST` |
 | Status callback (Messaging Configuration) | `https://textitie.com/api/webhooks/twilio/status` | `POST` |
 
 ### 3.4 Verify 10DLC
@@ -186,7 +186,7 @@ In priority order:
 ### Inbound SMS doesn't appear in `/inbox`
 - Twilio Console → Monitor → Logs → Errors. Look for 4xx/5xx on the inbound webhook.
 - Check the assigned tenant's phone number row exists and is mapped to a real department.
-- Verify webhook URL is `https://textitie.com/api/webhooks/twilio/inbound` (no trailing slash, no `/api/api/`).
+- Verify webhook URL is `https://textitie.com/api/webhooks/twilio` (route is `/webhooks/:source` with source=`twilio`; no `/inbound` suffix, no trailing slash, no `/api/api/`).
 
 ### Halo whisper never appears
 - Confirm `OPENAI_API_KEY` is set in **Production** secrets (not just dev).
@@ -241,6 +241,7 @@ Use the workflows tool or `restart_workflow <name>` — never run `pnpm dev` at 
 
 ## 8. Change log highlights (recent)
 
+- **2026-06-07** — **Went LIVE on the new Twilio account (Toll-Free +18887619212).** Republished prod to load the new-account secrets (a saved-secret change does NOT restart an autoscale deployment — must republish); assigned the TFN to tenant `john-reynolds` via the Conductor PATCH API; smoke test passed end-to-end (outbound `delivered` from TFN; inbound reply signature-validated, routed to john-reynolds, conversation created in `/inbox`). Fixed a data bug: self-signup hardcoded `region:"us"` (lowercase) which 500'd `GET /api/tenants`; normalized existing tenants and changed the insert to `"US"`.
 - **2026-05-26** — Reverted footer logo backdoor entry to `/knowledge`. Route and endpoint remain.
 - **2026-05-26** — Added `/knowledge` self-serve Halo training page (tenant-auth gated, FormData upload, IDOR-checked).
 - **2026-05-26** — Hardened `apiFetch` to skip JSON Content-Type for FormData bodies.

@@ -189,7 +189,7 @@ router.post("/tenant-auth/register", async (req, res) => {
         .values({
           slug,
           name: trimmedCompanyName,
-          region: "us",
+          region: "US",
           tierCode: "starter",
           planTierCode: "starter",
           subscriptionStatus: isTrial ? "trialing" : "none",
