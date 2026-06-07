@@ -137,10 +137,13 @@ A full Gate Table (✅ shipped · 🟡 stubbed · 🔴 not built · ⏸️ defer
 | Doc | Purpose |
 |---|---|
 | [`replit.md`](replit.md) | Architecture overview, Stage 4 status, user preferences |
-| [`John/Run_Book.md`](John/Run_Book.md) | Gate Table, Twilio go-live runbook, troubleshooting |
-| [`John/Hardening.md`](John/Hardening.md) | Security hardening notes |
-| [`John/MultiTenant.md`](John/MultiTenant.md) | Multi-tenancy design notes |
+| [`John/Run_Book.md`](John/Run_Book.md) | Twilio go-live runbook, troubleshooting (operational) |
+| [`John/Scaffolding/Gate_Build.md`](John/Scaffolding/Gate_Build.md) | Build ledger + authoritative Gate Table |
+| [`John/Scaffolding/Regeneration.md`](John/Scaffolding/Regeneration.md) | Compaction-recovery / continue-the-build doc |
 | [`John/Scaffolding/architecture.doc.md`](John/Scaffolding/architecture.doc.md) | Architecture lessons + day-one checklist (reference) |
+| [`John/Scaffolding/Hardening.md`](John/Scaffolding/Hardening.md) | Production hardening backlog (living) |
+| [`John/Scaffolding/Database_URL_work.md`](John/Scaffolding/Database_URL_work.md) | Dev/prod DATABASE_URL split (active task) |
+| [`John/Archive/`](John/Archive/) | Static/historical superseded docs (phase plans, Stage 4) |
 
 ---
 

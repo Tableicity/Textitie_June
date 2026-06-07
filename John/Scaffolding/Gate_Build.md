@@ -5,7 +5,7 @@
 > _Product:_ **Textitie** (internal codename **SAMA** — Simple but Advanced Messaging Alternative)
 > _Live:_ https://textitie.com
 > _Repo:_ https://github.com/TransferAgent/textitie.git
-> _Companion docs:_ `John/Scaffolding/Regeneration.md` (compaction recovery), `John/Scaffolding/architecture.doc.md` (architecture lessons + day-one checklist — append-only reference), `John/Run_Book.md` (operational runbook)
+> _Companion docs:_ `John/Scaffolding/Regeneration.md` (compaction recovery), `John/Scaffolding/architecture.doc.md` (architecture lessons + day-one checklist — append-only reference), `John/Scaffolding/Hardening.md` (production hardening backlog — living), `John/Scaffolding/Database_URL_work.md` (dev/prod DB env split — active task), `John/Run_Book.md` (operational runbook)
 > _Created:_ June 7, 2026
 
 ---
@@ -176,6 +176,17 @@ Priority order. Nothing here is started without explicit sign-off.
 5. **Stripe live keys + webhook** — enable real charging.
 6. **Halo Library UI** — browse/delete uploaded knowledge docs.
 7. **Verify/confirm prod** `OPENAI_API_KEY` and the Chatwoot production instance.
+8. **DATABASE_URL dev/prod separation** — execute the plan in `Scaffolding/Database_URL_work.md` before real customer data lands in prod.
+9. **Production hardening pass** — work the `Scaffolding/Hardening.md` backlog (starting with Twilio webhook signature validation — HIGH) before pointing a paying customer at the system.
+
+### Competitor-gap backlog (from `John/Textline.md` — not yet built)
+Features Textline offers that SAMA/Textitie does not yet have. Lower priority than the go-live + monetization items above.
+- **MMS support** — send/receive photos, PDFs, links (media messaging).
+- **Group messaging** — multiple contacts in one thread.
+- **Native mobile apps** — iOS / Android.
+- **Self-service number provisioning** — tenants buy/text-enable their own Twilio numbers in-app.
+- **Additional CRM/channel connectors** — Salesforce, Zendesk, Slack, Zapier, Facebook/Instagram (only HubSpot is stubbed today).
+- **Web chatbot add-on**, **IP whitelisting**, **SAML/SSO**, **public developer API & webhooks**.
 
 ---
 
@@ -185,3 +196,4 @@ The agent appends a dated entry here for every build action taken against this p
 
 - **2026-06-07** — Created `John/Scaffolding/` with `Gate_Build.md` (this ledger) and `Regeneration.md` (compaction-recovery doc). No code/feature changes. Captured the June 7 systems + document check verbatim (§1). Established the current authoritative Gate Table (§3).
 - **2026-06-07** — Moved `John/architecture.doc.md` → `John/Scaffolding/architecture.doc.md` to consolidate build-governance docs. Updated the README link. Classified it as an **append-only lessons reference** (not a per-session living doc): add a new lesson when a build decision/incident teaches something durable; do not rewrite existing entries. Wired it into the companion-doc lists in this file and `Regeneration.md`.
+- **2026-06-07** — Scaffolding triage of `John/`. Subagent review classified every loose `.md`. Actions: (1) moved the two **living build-governance** docs — `Hardening.md` (production hardening backlog) and `Database_URL_work.md` (dev/prod DB env split) — into `Scaffolding/` and wired them into companion-doc lists + key-files maps; added them to §5 Next Steps (items 8–9). (2) Created `John/Archive/` and moved 7 **static/historical, superseded** docs there: `Phase7.1.md`, `Phase7.2.md`, `Phase9.1.md`, `Stage4-Migration.md`, `MultiTenant.md`, `User_UI_Gate_Plan.md`, `Things To Do.md`. (3) Folded `John/Textline.md`'s open competitor gaps into §5 as a "Competitor-gap backlog". Left at `John/` root: `Run_Book.md` + `Twilio.md` (operational), `Privacy-Policy.md` + `Terms-of-Service.md` (published-content sources, verified to mirror the live pages), `Textline.md` (roadmap input). No code/feature changes.

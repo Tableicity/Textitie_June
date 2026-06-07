@@ -3,7 +3,7 @@
 > **PRIME DIRECTIVE.** This document exists so that after a context compaction (or a brand-new agent session), the build can continue **without loss of state**. The agent maintains document control over this file: it is re-read at the start of work and updated at the end of every build session. If this file and live reality disagree, trust the code/secrets and update this file.
 >
 > _Product:_ **Textitie** (internal codename **SAMA**). _Live:_ https://textitie.com · _Repo:_ https://github.com/TransferAgent/textitie.git
-> _Companion:_ `John/Scaffolding/Gate_Build.md` (full ledger + Gate Table), `John/Scaffolding/architecture.doc.md` (architecture lessons + day-one checklist — append-only reference), `John/Run_Book.md` (ops runbook), `replit.md` (architecture).
+> _Companion:_ `John/Scaffolding/Gate_Build.md` (full ledger + Gate Table), `John/Scaffolding/architecture.doc.md` (architecture lessons + day-one checklist — append-only reference), `John/Scaffolding/Hardening.md` (production hardening backlog), `John/Scaffolding/Database_URL_work.md` (dev/prod DB env split — active task), `John/Run_Book.md` (ops runbook), `replit.md` (architecture).
 > _Last regenerated:_ June 7, 2026
 
 ---
@@ -105,6 +105,9 @@ pnpm run typecheck
 | `John/Run_Book.md` | Ops runbook + Twilio go-live |
 | `John/Scaffolding/Gate_Build.md` | Build ledger + Gate Table (authoritative) |
 | `John/Scaffolding/architecture.doc.md` | Architecture lessons + day-one checklist (append-only reference) |
+| `John/Scaffolding/Hardening.md` | Production hardening backlog (living) |
+| `John/Scaffolding/Database_URL_work.md` | Dev/prod DATABASE_URL split (active task) |
+| `John/Archive/` | Static/historical superseded docs (phase plans, Stage 4, etc.) |
 
 ---
 
