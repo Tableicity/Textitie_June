@@ -132,10 +132,16 @@ Set these in the Replit deployment secrets (Production environment):
 | `OPENAI_API_KEY` | OpenAI dashboard (required for Halo whispers) |
 
 ### 3.2 Attach the number to a tenant
+This sets the tenant's **From** (outbound) and **inbound routing** number — `tenants.phoneNumber`.
+
 1. Log in to the Conductor (admin) UI
-2. Sidebar → **Phone Numbers**
-3. Add the new `+1XXXXXXXXXX` number, assign it to the target tenant
-4. Confirm the tenant's department routing covers this number
+2. Sidebar → **Tenants** → click the tenant → **Telephony** card
+3. Pick a number from the dropdown — it lists **only numbers the connected Twilio account actually owns** (so you can't strand a tenant on a number we don't own, the Twilio 21660 trap). Choose **"Unassign — use platform default"** to fall the tenant back to `SAMA_FROM_NUMBER`.
+4. Save. The picker validates against `GET /api/tenants/owned-numbers`; if the current number isn't owned it's flagged in red.
+
+> Single-number reality: `tenants.phoneNumber` is also the **inbound** routing key, so only ONE tenant can own a given number for two-way. With one number (the TFN), `john-reynolds` owns it; other tenants left **unassigned** are outbound-only (they send from the `SAMA_FROM_NUMBER` fallback). ACME was unassigned on 2026-06-07 to clear its stale `+19094904265`.
+
+> The sidebar **Phone Numbers** page assigns numbers to **departments** (`departments.phoneNumber`) and is **not** used by the send path — don't rely on it to change a tenant's From.
 
 ### 3.3 Configure Twilio webhooks
 In Twilio Console → Phone Numbers → Manage → Active → click the number:
@@ -241,6 +247,7 @@ Use the workflows tool or `restart_workflow <name>` — never run `pnpm dev` at 
 
 ## 8. Change log highlights (recent)
 
+- **2026-06-07** — **Proper tenant-number assignment + compliance badge fix.** Added `GET /api/tenants/owned-numbers` (conductor-scoped, lists numbers the Twilio account owns) and turned the Tenant Detail **Telephony** card into a validated dropdown of owned numbers + Unassign (replaces the free-text E.164 field that let ACME get pointed at a non-owned number → 21660). Fixed ACME prod data: unassigned (`phoneNumber=null`) so it falls back to the TFN. Compliance "Tenant Number Inventory" badge now classifies by number type (**Toll-Free** vs **10DLC** vs N/A, column "SMS Registration") instead of the misleading `region===US` → "Required" — the TFN uses Toll-Free Verification, not 10DLC, and that badge was never a send gate. Backlog: optional server-side reject of non-owned numbers in `PATCH /tenants/:id`.
 - **2026-06-07** — **Went LIVE on the new Twilio account (Toll-Free +18887619212).** Republished prod to load the new-account secrets (a saved-secret change does NOT restart an autoscale deployment — must republish); assigned the TFN to tenant `john-reynolds` via the Conductor PATCH API; smoke test passed end-to-end (outbound `delivered` from TFN; inbound reply signature-validated, routed to john-reynolds, conversation created in `/inbox`). Fixed a data bug: self-signup hardcoded `region:"us"` (lowercase) which 500'd `GET /api/tenants`; normalized existing tenants and changed the insert to `"US"`.
 - **2026-05-26** — Reverted footer logo backdoor entry to `/knowledge`. Route and endpoint remain.
 - **2026-05-26** — Added `/knowledge` self-serve Halo training page (tenant-auth gated, FormData upload, IDOR-checked).
