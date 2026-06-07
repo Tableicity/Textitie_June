@@ -140,7 +140,7 @@ A full Gate Table (✅ shipped · 🟡 stubbed · 🔴 not built · ⏸️ defer
 | [`John/Run_Book.md`](John/Run_Book.md) | Gate Table, Twilio go-live runbook, troubleshooting |
 | [`John/Hardening.md`](John/Hardening.md) | Security hardening notes |
 | [`John/MultiTenant.md`](John/MultiTenant.md) | Multi-tenancy design notes |
-| [`John/architecture.doc.md`](John/architecture.doc.md) | Architecture reference |
+| [`John/Scaffolding/architecture.doc.md`](John/Scaffolding/architecture.doc.md) | Architecture lessons + day-one checklist (reference) |
 
 ---
 

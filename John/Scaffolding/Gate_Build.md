@@ -5,7 +5,7 @@
 > _Product:_ **Textitie** (internal codename **SAMA** — Simple but Advanced Messaging Alternative)
 > _Live:_ https://textitie.com
 > _Repo:_ https://github.com/TransferAgent/textitie.git
-> _Companion docs:_ `John/Scaffolding/Regeneration.md` (compaction recovery), `John/Run_Book.md` (operational runbook)
+> _Companion docs:_ `John/Scaffolding/Regeneration.md` (compaction recovery), `John/Scaffolding/architecture.doc.md` (architecture lessons + day-one checklist — append-only reference), `John/Run_Book.md` (operational runbook)
 > _Created:_ June 7, 2026
 
 ---
@@ -184,3 +184,4 @@ Priority order. Nothing here is started without explicit sign-off.
 The agent appends a dated entry here for every build action taken against this project going forward. Format: date — what changed — gate(s) affected.
 
 - **2026-06-07** — Created `John/Scaffolding/` with `Gate_Build.md` (this ledger) and `Regeneration.md` (compaction-recovery doc). No code/feature changes. Captured the June 7 systems + document check verbatim (§1). Established the current authoritative Gate Table (§3).
+- **2026-06-07** — Moved `John/architecture.doc.md` → `John/Scaffolding/architecture.doc.md` to consolidate build-governance docs. Updated the README link. Classified it as an **append-only lessons reference** (not a per-session living doc): add a new lesson when a build decision/incident teaches something durable; do not rewrite existing entries. Wired it into the companion-doc lists in this file and `Regeneration.md`.
