@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import multer from "multer";
+import twilio from "twilio";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { db, tenantsTable } from "@workspace/db";
 import {
@@ -8,6 +9,7 @@ import {
   CreateTenantBody,
   GetTenantParams,
   GetTenantResponse,
+  GetOwnedNumbersResponse,
   UpdateTenantBody,
   UpdateTenantParams,
   UpdateTenantResponse,
@@ -21,6 +23,39 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 router.get("/tenants", async (_req, res): Promise<void> => {
   const rows = await db.select().from(tenantsTable).orderBy(tenantsTable.id);
   res.json(ListTenantsResponse.parse(rows));
+});
+
+function getTwilioClient() {
+  const sid = process.env["TWILIO_ACCOUNT_SID"];
+  const token = process.env["TWILIO_AUTH_TOKEN"];
+  if (!sid || !token) return null;
+  return twilio(sid, token);
+}
+
+// Numbers actually owned by the platform Twilio account. The admin assigns a
+// tenant's From/inbound number by PICKING from this list, so a tenant can never
+// be pointed at a number the account does not own (the Twilio 21660 trap that
+// stranded ACME). Registered before "/tenants/:id" so the literal path is not
+// captured as the :id param.
+router.get("/tenants/owned-numbers", async (req, res): Promise<void> => {
+  const client = getTwilioClient();
+  if (!client) {
+    res.json(GetOwnedNumbersResponse.parse({ configured: false, numbers: [] }));
+    return;
+  }
+  try {
+    const list = await client.incomingPhoneNumbers.list({ limit: 100 });
+    const numbers = list
+      .filter((n) => !!n.phoneNumber)
+      .map((n) => ({
+        phoneNumber: n.phoneNumber,
+        friendlyName: n.friendlyName || n.phoneNumber,
+      }));
+    res.json(GetOwnedNumbersResponse.parse({ configured: true, numbers }));
+  } catch (err) {
+    req.log.error({ err }, "Failed to list owned Twilio numbers");
+    res.status(502).json({ error: "Failed to fetch numbers from Twilio" });
+  }
 });
 
 router.post("/tenants", async (req, res): Promise<void> => {

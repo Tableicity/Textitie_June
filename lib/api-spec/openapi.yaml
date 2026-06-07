@@ -118,6 +118,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/owned-numbers:
+    get:
+      operationId: getOwnedNumbers
+      tags: [tenants]
+      summary: List phone numbers owned by the platform Twilio account
+      responses:
+        "200":
+          description: Owned numbers and whether Twilio is configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnedNumbersResponse"
+
   /tenants/{id}:
     get:
       operationId: getTenant
@@ -2778,6 +2791,26 @@ components:
         departmentId:
           type: integer
       required: [phoneNumber, departmentId]
+
+    OwnedNumberItem:
+      type: object
+      properties:
+        phoneNumber:
+          type: string
+        friendlyName:
+          type: string
+      required: [phoneNumber, friendlyName]
+
+    OwnedNumbersResponse:
+      type: object
+      properties:
+        configured:
+          type: boolean
+        numbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/OwnedNumberItem"
+      required: [configured, numbers]
 
     ClaimResult:
       type: object
