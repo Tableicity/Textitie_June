@@ -77,6 +77,7 @@ import type {
   ListWebhookEventsParams,
   Message,
   OptOutItem,
+  OwnedNumbersResponse,
   PurchaseNumberInput,
   PurchasedNumberResult,
   Reminder,
@@ -422,6 +423,81 @@ export const useCreateTenant = <
 > => {
   return useMutation(getCreateTenantMutationOptions(options));
 };
+
+/**
+ * @summary List phone numbers owned by the platform Twilio account
+ */
+export const getGetOwnedNumbersUrl = () => {
+  return `/api/tenants/owned-numbers`;
+};
+
+export const getOwnedNumbers = async (
+  options?: RequestInit,
+): Promise<OwnedNumbersResponse> => {
+  return customFetch<OwnedNumbersResponse>(getGetOwnedNumbersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOwnedNumbersQueryKey = () => {
+  return [`/api/tenants/owned-numbers`] as const;
+};
+
+export const getGetOwnedNumbersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOwnedNumbers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOwnedNumbers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetOwnedNumbersQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOwnedNumbers>>> = ({
+    signal,
+  }) => getOwnedNumbers({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOwnedNumbers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOwnedNumbersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOwnedNumbers>>
+>;
+export type GetOwnedNumbersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List phone numbers owned by the platform Twilio account
+ */
+
+export function useGetOwnedNumbers<
+  TData = Awaited<ReturnType<typeof getOwnedNumbers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOwnedNumbers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOwnedNumbersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getGetTenantUrl = (id: number) => {
   return `/api/tenants/${id}`;

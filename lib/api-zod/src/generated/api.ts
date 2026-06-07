@@ -83,6 +83,19 @@ export const CreateTenantBody = zod.object({
   knowledgeBase: zod.string().nullish(),
 });
 
+/**
+ * @summary List phone numbers owned by the platform Twilio account
+ */
+export const GetOwnedNumbersResponse = zod.object({
+  configured: zod.boolean(),
+  numbers: zod.array(
+    zod.object({
+      phoneNumber: zod.string(),
+      friendlyName: zod.string(),
+    }),
+  ),
+});
+
 export const GetTenantParams = zod.object({
   id: zod.coerce.number(),
 });

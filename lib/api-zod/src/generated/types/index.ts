@@ -88,6 +88,8 @@ export * from "./listWebhookEventsParams";
 export * from "./message";
 export * from "./messageDirection";
 export * from "./optOutItem";
+export * from "./ownedNumberItem";
+export * from "./ownedNumbersResponse";
 export * from "./purchasedNumberResult";
 export * from "./purchaseNumberInput";
 export * from "./region";

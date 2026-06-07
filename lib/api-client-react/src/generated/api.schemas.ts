@@ -415,6 +415,16 @@ export interface AssignNumberInput {
   departmentId: number;
 }
 
+export interface OwnedNumberItem {
+  phoneNumber: string;
+  friendlyName: string;
+}
+
+export interface OwnedNumbersResponse {
+  configured: boolean;
+  numbers: OwnedNumberItem[];
+}
+
 export interface ClaimResult {
   success: boolean;
   assignedUserId: number;

@@ -16,6 +16,23 @@ function statusBadge(status: string | null) {
   return <Badge variant="outline">{status}</Badge>;
 }
 
+function registrationType(phoneNumber: string | null) {
+  if (!phoneNumber) return { label: "—", kind: "none" as const, title: "No number assigned" };
+  if (/^\+1(800|833|844|855|866|877|888)\d{7}$/.test(phoneNumber))
+    return {
+      label: "Toll-Free",
+      kind: "tollfree" as const,
+      title: "US Toll-Free number — requires Toll-Free Verification, not 10DLC",
+    };
+  if (/^\+1\d{10}$/.test(phoneNumber))
+    return {
+      label: "10DLC",
+      kind: "tendlc" as const,
+      title: "US local long code — requires A2P 10DLC registration",
+    };
+  return { label: "N/A", kind: "na" as const, title: "Non-US number — 10DLC / Toll-Free not applicable" };
+}
+
 function statusIcon(status: string | null) {
   if (!status) return <Clock size={20} className="text-muted-foreground" />;
   const s = status.toLowerCase();
@@ -98,7 +115,7 @@ export default function Compliance() {
             <Phone size={20} /> Tenant Number Inventory
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            All tenant numbers registered in SAMA. US numbers require 10DLC compliance for SMS deliverability.
+            All tenant numbers registered in SAMA. US local long codes require A2P 10DLC; US Toll-Free numbers require Toll-Free Verification (not 10DLC).
           </p>
         </CardHeader>
         <CardContent>
@@ -109,7 +126,7 @@ export default function Compliance() {
                 <TableHead>Slug</TableHead>
                 <TableHead>Number</TableHead>
                 <TableHead>Region</TableHead>
-                <TableHead>10DLC Required</TableHead>
+                <TableHead>SMS Registration</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -131,11 +148,14 @@ export default function Compliance() {
                       <Badge variant="outline">{t.region}</Badge>
                     </TableCell>
                     <TableCell>
-                      {t.region === "US" ? (
-                        <Badge variant="secondary" className="text-amber-600">Required</Badge>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">N/A</span>
-                      )}
+                      {(() => {
+                        const r = registrationType(t.phoneNumber);
+                        if (r.kind === "tollfree")
+                          return <Badge variant="secondary" className="text-emerald-600" title={r.title}>Toll-Free</Badge>;
+                        if (r.kind === "tendlc")
+                          return <Badge variant="secondary" className="text-amber-600" title={r.title}>10DLC</Badge>;
+                        return <span className="text-sm text-muted-foreground" title={r.title}>{r.label}</span>;
+                      })()}
                     </TableCell>
                   </TableRow>
                 ))

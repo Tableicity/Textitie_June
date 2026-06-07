@@ -9,6 +9,7 @@ import {
   getGetTenantQueryKey,
   useInjectMessage,
   useUpdateTenant,
+  useGetOwnedNumbers,
   getListInjectionsQueryKey,
 } from "@workspace/api-client-react";
 import { getStoredAuthHeader } from "@/lib/auth";
@@ -18,6 +19,13 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload } from "lucide-react";
 
@@ -55,6 +63,11 @@ export default function TenantDetail() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
+  const { data: ownedData } = useGetOwnedNumbers();
+  const ownedConfigured = ownedData?.configured ?? false;
+  const ownedNumbers = ownedData?.numbers ?? [];
+  const [selectedNumber, setSelectedNumber] = useState<string>("__none__");
+
   const injectForm = useForm<z.infer<typeof injectSchema>>({
     resolver: zodResolver(injectSchema),
     defaultValues: { to: "", body: "" },
@@ -78,6 +91,7 @@ export default function TenantDetail() {
       setKbDirty(false);
       phoneForm.reset({ phoneNumber: tenant.phoneNumber ?? "" });
       setPhoneDirty(false);
+      setSelectedNumber(tenant.phoneNumber ?? "__none__");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id, tenant?.knowledgeBase, tenant?.phoneNumber]);
@@ -96,6 +110,32 @@ export default function TenantDetail() {
             description: next
               ? `Inbound texts to ${next} now route to ${tenant.name}.`
               : `${tenant.name} no longer has an assigned number.`,
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const currentNum = tenant?.phoneNumber ?? null;
+  const currentIsOwned =
+    !currentNum || ownedNumbers.some((n) => n.phoneNumber === currentNum);
+
+  const onSaveSelectedNumber = () => {
+    if (!tenant) return;
+    const next = selectedNumber === "__none__" ? null : selectedNumber;
+    updateTenant.mutate(
+      { id: tenant.id, data: { phoneNumber: next } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
+          toast({
+            title: "Tenant Number Saved",
+            description: next
+              ? `${tenant.name} now sends and receives on ${next}.`
+              : `${tenant.name} unassigned — outbound falls back to the platform default number.`,
           });
         },
         onError: (err) => {
@@ -256,37 +296,77 @@ export default function TenantDetail() {
               <span className="text-muted-foreground">Current</span>
               <span className="font-mono">{tenant.phoneNumber ?? <em className="text-muted-foreground">unset</em>}</span>
             </div>
-            <Form {...phoneForm}>
-              <form
-                onSubmit={phoneForm.handleSubmit(onSavePhone)}
-                onChange={() => setPhoneDirty(true)}
-                className="space-y-2"
-              >
-                <FormField
-                  control={phoneForm.control}
-                  name="phoneNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground">
-                        Twilio number (E.164, e.g. +19094904265)
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder="+1XXXXXXXXXX" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            {ownedConfigured && currentNum && !currentIsOwned && (
+              <p className="text-xs text-amber-600">
+                This number is not owned by the connected Twilio account — outbound
+                will fail (Twilio 21660). Pick an owned number below.
+              </p>
+            )}
+            {ownedConfigured ? (
+              <div className="space-y-2">
+                <span className="text-xs text-muted-foreground">
+                  Assign a number owned by the Twilio account
+                </span>
+                <Select value={selectedNumber} onValueChange={setSelectedNumber}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a number" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Unassign — use platform default</SelectItem>
+                    {currentNum && !currentIsOwned && (
+                      <SelectItem value={currentNum}>{currentNum} (current — not owned)</SelectItem>
+                    )}
+                    {ownedNumbers.map((n) => (
+                      <SelectItem key={n.phoneNumber} value={n.phoneNumber}>
+                        {n.phoneNumber}
+                        {n.friendlyName && n.friendlyName !== n.phoneNumber ? ` · ${n.friendlyName}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button
-                  type="submit"
+                  type="button"
                   size="sm"
-                  disabled={updateTenant.isPending || !phoneDirty}
                   className="w-full"
+                  disabled={updateTenant.isPending || selectedNumber === (tenant.phoneNumber ?? "__none__")}
+                  onClick={onSaveSelectedNumber}
                 >
                   {updateTenant.isPending ? "Saving..." : "Save Tenant Number"}
                 </Button>
-              </form>
-            </Form>
+              </div>
+            ) : (
+              <Form {...phoneForm}>
+                <form
+                  onSubmit={phoneForm.handleSubmit(onSavePhone)}
+                  onChange={() => setPhoneDirty(true)}
+                  className="space-y-2"
+                >
+                  <FormField
+                    control={phoneForm.control}
+                    name="phoneNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-muted-foreground">
+                          Twilio number (E.164, e.g. +19094904265)
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="+1XXXXXXXXXX" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={updateTenant.isPending || !phoneDirty}
+                    className="w-full"
+                  >
+                    {updateTenant.isPending ? "Saving..." : "Save Tenant Number"}
+                  </Button>
+                </form>
+              </Form>
+            )}
           </CardContent>
         </Card>
         <Card>
