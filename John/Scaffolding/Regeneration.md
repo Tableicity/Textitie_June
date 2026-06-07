@@ -44,8 +44,8 @@ Textitie is a multi-tenant two-way SMS platform (Textline-style agent inbox) on 
 
 > Update this section at the **end of every session** so a compacted agent knows exactly what was happening. If nothing is in flight, say so.
 
-- **Active task:** None in progress. Last completed: provisioned `John/Scaffolding/` with `Gate_Build.md` + `Regeneration.md` (this file).
-- **Awaiting user decision on:** which Next Step to start (see `Gate_Build.md` §5). Most likely next: Toll-Free go-live config OR wiring the Halo inbox button.
+- **Active task:** None in progress. Last completed (2026-06-07): built proper Admin tenant→number assignment (`GET /tenants/owned-numbers` + validated Telephony picker on Tenant Detail), fixed the misleading Compliance "10DLC Required" badge (now classifies Toll-Free vs 10DLC by number type), and fixed ACME prod data (unassigned its stale non-owned number so it falls back to the TFN). Shipped to prod.
+- **Awaiting user decision on:** which Next Step to start (see `Gate_Build.md` §5). Likely next: wiring the Halo inbox button OR Stripe live keys.
 - **Do-not-proceed-without-discussion:** The user has set a standing rule — **take no build action until it has been discussed and approved.** Honor this.
 
 ---
@@ -80,12 +80,12 @@ pnpm run typecheck
 - **No `pnpm dev` at repo root.** Apps run via Replit workflows. Restart with `restart_workflow <name>`. After changing api-server code, restart its workflow or the running server keeps the old code (verified trap).
 - **Verify with `typecheck`, not `build`** (`build` needs workflow-provided `PORT`/`BASE_PATH`).
 - **Lib change → run `pnpm run typecheck:libs` first**, then leaf artifacts. After DB schema change run `pnpm --filter @workspace/db run push`.
-- **Run_Book §3.1 has a wrong secret name:** it says `TWILIO_PHONE_NUMBER_SID`; the code reads **`SAMA_FROM_NUMBER`** (E.164 number). Fix pending.
+- **Sender secret name:** the code reads **`SAMA_FROM_NUMBER`** (E.164 number), NOT `TWILIO_PHONE_NUMBER_SID`. (Run_Book §3.1 had the wrong name — fixed 2026-06-07.)
 - **Toll-Free ≠ 10DLC.** Sending works identically; the compliance panel is wired to 10DLC `BrandRegistrations`/Trust Hub and won't show TFN verification status.
 - **A2P consent checkbox is intentionally non-blocking** (Twilio rejection fix) — do not re-gate submit on it. Approved wording lives on all three auth cards.
 - **GitHub push** (one-off): `git push "https://TransferAgent:${GITHUB_TEXTITIE}@github.com/TransferAgent/textitie.git" main`. Destructive git ops are blocked for the main agent.
 - **Stage 4 is deferred** — do not reintroduce schema-per-tenant reads; everything is `public.*` scoped by `tenant_id`.
-- **Webhook URLs:** inbound `https://textitie.com/api/webhooks/twilio/inbound`, status `https://textitie.com/api/webhooks/twilio/status` (no trailing slash, no `/api/api/`).
+- **Webhook URLs:** inbound `https://textitie.com/api/webhooks/twilio`, status `https://textitie.com/api/webhooks/twilio/status` (no trailing slash, no `/api/api/`). Inbound is the dynamic `/webhooks/:source` route (`source=twilio`) — there is **no** `/twilio/inbound` path.
 
 ---
 
@@ -98,8 +98,11 @@ pnpm run typecheck
 | `artifacts/api-server/src/lib/senders/twilio.ts` | Twilio direct sender |
 | `artifacts/api-server/src/routes/webhooks.ts` | Twilio inbound + status callbacks |
 | `artifacts/api-server/src/routes/tenantAuth.ts` | Tenant register/login (phone capture) |
+| `artifacts/api-server/src/routes/tenants.ts` | Tenant CRUD + `GET /tenants/owned-numbers` (Twilio-owned numbers; declared before `/tenants/:id`) |
 | `artifacts/api-server/src/middleware/conductorAuth.ts` | Admin Basic Auth + exemption list |
 | `artifacts/api-server/src/routes/compliance.ts` | 10DLC/Trust Hub status |
+| `artifacts/eng-architect/src/pages/TenantDetail.tsx` | Admin tenant editor — Telephony picker (owned-number dropdown + Unassign) |
+| `artifacts/eng-architect/src/pages/Compliance.tsx` | Conductor compliance page + number inventory "SMS Registration" badge |
 | `artifacts/user-app/src/pages/Inbox.tsx` | Agent inbox (Halo button placeholder ~line 1240) |
 | `artifacts/user-app/src/pages/Login.tsx` / `Signup.tsx` | Auth cards + A2P consent |
 | `artifacts/user-app/src/pages/Knowledge.tsx` | Halo training upload |
