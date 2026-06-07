@@ -1,5 +1,6 @@
 import type { Twilio } from "twilio";
 import { logger } from "../logger";
+import { verifyOutboundFromOwnership } from "../outboundFrom";
 import type { MessageSender, SendInput, SendResult } from "./types";
 
 /**
@@ -36,6 +37,23 @@ export class TwilioSender implements MessageSender {
   }
 
   async send(input: SendInput): Promise<SendResult> {
+    // Backstop: a tenant-scoped send must carry a number the tenant OWNS. Never
+    // let a numberless tenant fall through to `this.defaultFrom` (the global
+    // SAMA_FROM_NUMBER, itself a real tenant's number), and never let a caller
+    // send on another tenant's number — either splits replies into the wrong
+    // inbox. Every send path funnels through here.
+    const guard = await verifyOutboundFromOwnership({
+      tenantId: input.tenantId,
+      fromOverride: input.fromOverride,
+    });
+    if (!guard.ok) {
+      logger.warn(
+        { to: input.to, tenantId: input.tenantId, reason: guard.reason },
+        "SAMA: refused tenant-scoped send — number not owned by tenant",
+      );
+      return { status: "failed", responseSummary: guard.message, externalId: null };
+    }
+
     const from = input.fromOverride ?? this.defaultFrom;
     const baseCallback = this.statusCallbackUrl();
     const statusCallback =

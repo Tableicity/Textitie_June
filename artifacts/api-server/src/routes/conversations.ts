@@ -12,6 +12,7 @@ import { checkOutboundCompliance } from "../lib/compliance";
 import { recordAudit } from "../lib/audit";
 import { enqueueSync } from "../lib/integrations/syncWorker";
 import { maybeEnqueueSurveyForClose } from "../lib/surveyDispatcher";
+import { guardOutboundFrom } from "../lib/outboundFrom";
 
 const router = Router();
 
@@ -508,7 +509,12 @@ router.post(
         const dept = await db
           .select({ phoneNumber: departmentsTable.phoneNumber })
           .from(departmentsTable)
-          .where(eq(departmentsTable.id, conv.departmentId))
+          .where(
+            and(
+              eq(departmentsTable.id, conv.departmentId),
+              eq(departmentsTable.tenantId, tenantId),
+            ),
+          )
           .limit(1);
         fromOverride = dept[0]?.phoneNumber ?? null;
       }
@@ -519,6 +525,15 @@ router.post(
           .where(eq(tenantsTable.id, tenantId))
           .limit(1);
         fromOverride = tenant[0]?.phoneNumber ?? null;
+      }
+
+      // Guardrail: refuse loudly if this account has no number of its own
+      // rather than silently borrowing the global default (which belongs to a
+      // real tenant and splits replies into that tenant's inbox).
+      const fromGuard = guardOutboundFrom({ tenantId, fromOverride });
+      if (!fromGuard.ok) {
+        res.status(422).json({ error: fromGuard.message, reason: fromGuard.reason });
+        return;
       }
 
       // Persist-first: insert as 'pending' BEFORE calling carrier so a crash

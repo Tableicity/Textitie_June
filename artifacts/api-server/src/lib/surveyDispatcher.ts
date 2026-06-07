@@ -152,12 +152,23 @@ async function processPendingSurveysForTenant(tenantSlug: string): Promise<numbe
       const url = buildSurveyUrl(item.token);
       const body = `${survey.prompt} ${url}`;
 
+      // Resolve the tenant's own number so the send carries a valid From.
+      // A numberless tenant will be refused by the sender guard (and marked
+      // failed below) rather than blasting surveys from another tenant's number.
+      const tenantRow = await db
+        .select({ phoneNumber: tenantsTable.phoneNumber })
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, item.tenantId))
+        .limit(1);
+      const fromOverride = tenantRow[0]?.phoneNumber ?? null;
+
       const sender = getSender();
       const result = await sender.send({
         to: item.contactPhone,
         body,
         tenantId: item.tenantId,
         conductorAuthorized: false,
+        fromOverride,
       });
 
       if (result.status === "failed") {
