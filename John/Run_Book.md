@@ -51,6 +51,9 @@ This run book is the operational source-of-truth: where every feature stands, wh
 | Dispositions | ✅ | |
 | Contacts + tagging + history | ✅ | |
 | Inbox contact card (click header → ⋮ Edit) | ✅ | 2026-06-08 — edit Name/Preferred Language/Email/Tags/Notes; find-or-create by phone; inbox shows name. UI polish: header status word replaced with vertical ⋮ affordance; card ⋮ menu moved top-left, level with the X close |
+| Auto-save inbound texters as contacts (+ ProfileName display name) | ✅ | 2026-06-08 — inbound webhook upserts sender as a tenant-scoped contact on first text |
+| Contact-card actions: Block/Unblock, Archive, Unsubscribe, View in address book | ✅ | 2026-06-08 — `contacts.blocked` col, `POST /contacts/block`, `POST /opt-outs` |
+| Blocked-number activity review + unblock ("Blocked" view in `/contacts`) | ✅ | 2026-06-08 — `GET /contacts/blocked-activity`; attempts/last-attempt/last-dropped preview; inline unblock |
 | Conversation search & filters | ✅ | |
 | Reminders (per-user, conversation-linked, ReminderBell) | ✅ | |
 | Agent status indicators | ✅ | |
@@ -76,6 +79,7 @@ This run book is the operational source-of-truth: where every feature stands, wh
 | Quiet hours (tenant-level) | ✅ | |
 | Frequency caps | ✅ | |
 | Outbound compliance gate (blocks violations) | ✅ | |
+| Blocked-number enforcement (two-way) | ✅ | 2026-06-08 — blocked contacts rejected on outbound + excluded from campaigns; inbound from blocked numbers dropped pre-agent, with `inbound.blocked` audit + `webhook_events` trail |
 | Audit log (indexed by entity/action/time) | ✅ | |
 | HIPAA plan flag + BAA ack + PHI redaction | ✅ | Tier-gated |
 
@@ -259,6 +263,7 @@ Use the workflows tool or `restart_workflow <name>` — never run `pnpm dev` at 
 
 ## 8. Change log highlights (recent)
 
+- **2026-06-08** — **Contact-lifecycle + number-blocking feature wave** (Gates 3/5/8, merged via parallel task agents; ledger back-filled to match the build). Auto-save inbound texters as contacts (with `ProfileName` display name); contact-card ⋮ actions Block/Unblock, Archive, Unsubscribe, View-in-address-book (`contacts.blocked`, `POST /contacts/block`, `POST /opt-outs`); two-way blocked-number enforcement (outbound reject + campaign exclusion; inbound dropped pre-agent with `inbound.blocked` audit + `webhook_events` trail); Blocked-activity review/unblock view in `/contacts` (`GET /contacts/blocked-activity`); newly auto-saved contacts auto-enqueue to the CRM sync worker. Verified Hardening item 1 (Twilio webhook signature validation) is DONE on both webhook routes and marked it ✅ in `Hardening.md`.
 - **2026-06-08** — **Diagnosed a 30003 delivery dispute against Twilio's API (no code change).** Outbound "Beep" to a contact on **T-Mobile** (+19093308683) showed `undelivered` / 30003. Verified via Twilio REST from the dev shell: 4 attempts all `undelivered`/30003, zero inbound from that number, while the same TFN delivers fine to **Verizon** mobiles and other toll-free numbers; toll-free verification `TWILIO_APPROVED`. Root cause is a carrier/handset-side block on that one T-Mobile line, not the platform. Added a §6 troubleshooting entry documenting the Twilio-API diagnostic method (message-by-SID, To/From traffic, Lookup line-type, toll-free verification).
 - **2026-06-07** — **Proper tenant-number assignment + compliance badge fix.** Added `GET /api/tenants/owned-numbers` (conductor-scoped, lists numbers the Twilio account owns) and turned the Tenant Detail **Telephony** card into a validated dropdown of owned numbers + Unassign (replaces the free-text E.164 field that let ACME get pointed at a non-owned number → 21660). Fixed ACME prod data: unassigned (`phoneNumber=null`) so it falls back to the TFN. Compliance "Tenant Number Inventory" badge now classifies by number type (**Toll-Free** vs **10DLC** vs N/A, column "SMS Registration") instead of the misleading `region===US` → "Required" — the TFN uses Toll-Free Verification, not 10DLC, and that badge was never a send gate. Backlog: optional server-side reject of non-owned numbers in `PATCH /tenants/:id`.
 - **2026-06-07** — **Went LIVE on the new Twilio account (Toll-Free +18887619212).** Republished prod to load the new-account secrets (a saved-secret change does NOT restart an autoscale deployment — must republish); assigned the TFN to tenant `john-reynolds` via the Conductor PATCH API; smoke test passed end-to-end (outbound `delivered` from TFN; inbound reply signature-validated, routed to john-reynolds, conversation created in `/inbox`). Fixed a data bug: self-signup hardcoded `region:"us"` (lowercase) which 500'd `GET /api/tenants`; normalized existing tenants and changed the insert to `"US"`.

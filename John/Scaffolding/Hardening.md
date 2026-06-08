@@ -4,7 +4,9 @@ Items intentionally deferred from feature work to a dedicated end-of-Build harde
 
 ---
 
-## 1. Twilio Webhook Signature Validation — HIGH
+## 1. Twilio Webhook Signature Validation — ✅ DONE
+
+**Status (2026-06-08, verified in code + live prod):** Implemented in `artifacts/api-server/src/lib/twilioSignature.ts` (`twilio.validateRequest`). Applied to **both** routes — inbound `POST /webhooks/:source` via inline `checkTwilioSignature` (shared with chatwoot/n8n, so it rejects only a present-but-invalid Twilio signature) and delivery-status `POST /webhooks/twilio/status` via `requireTwilioSignature()` middleware. Live prod inbound smoke test returned 201 (valid) / 403 (invalid). The original problem statement below is retained for history.
 
 **Where:** All Twilio-facing webhook endpoints in `artifacts/api-server/src/routes/webhooks.ts`
 - `POST /api/webhooks/:source` (inbound SMS — pre-existing, since earlier phase)
@@ -61,11 +63,12 @@ Items intentionally deferred from feature work to a dedicated end-of-Build harde
 | Date | Decision | Rationale |
 |---|---|---|
 | 2026-05-04 | Defer all three to end-of-Build hardening pass | All demo-only or scale-only concerns; fixing piecemeal would create inconsistent patterns. Will revisit before first real-customer cutover. |
+| 2026-06-08 | Item 1 (Twilio webhook signature validation) completed & verified | Was promoted ahead of the batch when the Toll-Free go-live exposed the API on a public prod domain. Implemented on both webhook routes; verified in code + live prod. Items 2–3 remain deferred. |
 
 ## Promotion Checklist
 
 Before going live with a real (non-demo) tenant, complete in this order:
-1. [ ] Item 1 — Twilio signature validation on **both** webhook routes
+1. [x] Item 1 — Twilio signature validation on **both** webhook routes — DONE 2026-06-08
 2. [ ] Item 2 (quick-win variant at minimum) — concurrency cap on scheduler loop
 3. [ ] Item 3 — only if it actually shows up in production logs
 4. [ ] Re-run full Phase 6 e2e test suite to confirm no regressions

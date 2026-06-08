@@ -103,6 +103,9 @@ This is the condensed lineage of the build, oldest → newest, so any reader (or
 | Whispers, dispositions | ✅ | |
 | Contacts + tagging + history | ✅ | |
 | Inbox contact card (click header → info card → ⋮ Edit) | ✅ | **2026-06-08** — header is a button → Sheet card; ⋮ menu Edit → form (Name editable, Number read-only, Preferred Language, Email, Tags, Notes); find-or-create by phone on save (409-safe recovery); inbox shows contact name via COALESCE. **UI polish (2026-06-08):** header status word ("Open") replaced with a vertical ⋮ affordance; contact card ⋮ menu moved to top-left, aligned with the Sheet X close on the same level |
+| Auto-save inbound texters as contacts (+ display name) | ✅ | 2026-06-08 — inbound webhook upserts the sender as a tenant-scoped contact on first text and captures the carrier `ProfileName` as the display name |
+| Contact-card actions: Block/Unblock, Archive, Unsubscribe, View in address book | ✅ | 2026-06-08 — ⋮ menu actions added; Block sets `contacts.blocked`, Unsubscribe writes an opt-out |
+| Blocked-number activity review + unblock (`/contacts` "Blocked" view) | ✅ | 2026-06-08 — lists blocked numbers with suppressed-inbound stats (attempts, last attempt, last dropped preview) from `audit_logs`; inline unblock |
 | Conversation search & filters | ✅ | |
 | Reminders (per-user, conversation-linked) | ✅ | |
 | Agent status indicators | ✅ | |
@@ -128,6 +131,7 @@ This is the condensed lineage of the build, oldest → newest, so any reader (or
 | Quiet hours (tenant-level) | ✅ | |
 | Frequency caps | ✅ | |
 | Outbound compliance gate | ✅ | Blocks violations |
+| Blocked-number enforcement (two-way) | ✅ | 2026-06-08 — blocked contacts rejected on outbound + excluded from campaigns; inbound texts from blocked numbers dropped before agents (no Chatwoot/Halo/realtime), with an `inbound.blocked` audit row + raw `webhook_events` trail |
 | Audit log (indexed) | ✅ | |
 | HIPAA flag + BAA ack + PHI redaction | ✅ | Tier-gated |
 
@@ -151,7 +155,7 @@ This is the condensed lineage of the build, oldest → newest, so any reader (or
 #### Gate 8 — Integrations
 | Item | Status | Notes |
 |---|---|---|
-| HubSpot connector (queue + worker + sim log) | 🟡 | Stub-first; needs real OAuth app |
+| HubSpot connector (queue + worker + sim log) | 🟡 | Stub-first; needs real OAuth app. 2026-06-08 — auto-saved inbound texters now auto-enqueue to the CRM sync worker on first insert |
 | Other CRM connectors | 🔴 | None |
 
 #### Gate 9 — Public surface
@@ -181,7 +185,7 @@ Priority order. Nothing here is started without explicit sign-off.
 6. **Halo Library UI** — browse/delete uploaded knowledge docs.
 7. **Verify/confirm prod** `OPENAI_API_KEY` and the Chatwoot production instance.
 8. **DATABASE_URL dev/prod separation** — execute the plan in `Scaffolding/Database_URL_work.md` before real customer data lands in prod.
-9. **Production hardening pass** — work the `Scaffolding/Hardening.md` backlog (starting with Twilio webhook signature validation — HIGH) before pointing a paying customer at the system.
+9. **Production hardening pass** — work the `Scaffolding/Hardening.md` backlog before pointing a paying customer at the system. _Item 1 (Twilio webhook signature validation — HIGH) is ✅ DONE & verified 2026-06-08;_ remaining: item 2 (scheduler concurrency/queue — MEDIUM), item 3 (sim-vibe shutdown warning — LOW).
 
 ### Competitor-gap backlog (from `John/Textline.md` — not yet built)
 Features Textline offers that SAMA/Textitie does not yet have. Lower priority than the go-live + monetization items above.
@@ -198,6 +202,8 @@ Features Textline offers that SAMA/Textitie does not yet have. Lower priority th
 
 The agent appends a dated entry here for every build action taken against this project going forward. Format: date — what changed — gate(s) affected.
 
+- **2026-06-08** — **Contact-lifecycle + number-blocking feature wave** (Gates 3, 5, 8) — merged via parallel task agents; **ledger back-filled to match the build** (the task agents updated `replit.md` but not this gate ledger). Shipped: (1) **auto-save inbound texters** as tenant-scoped contacts on first text, capturing the carrier `ProfileName` as display name (Gate 3); (2) **contact-card ⋮ actions** Block/Unblock, Archive, Unsubscribe (writes opt-out), View-in-address-book, backed by a new `contacts.blocked` column + `POST /contacts/block` + `POST /opt-outs` (Gate 3/5); (3) **two-way blocked-number enforcement** — blocked contacts rejected on outbound and excluded from campaigns, **and** inbound texts from blocked numbers dropped before agents (no Chatwoot/Halo/realtime/automation), with an `inbound.blocked` audit row + raw `webhook_events` trail (Gate 5); (4) **Blocked-activity review** — a "Blocked" toggle on `/contacts` listing suppressed-inbound stats (attempt count, last attempt, last dropped preview) via `GET /contacts/blocked-activity`, with inline unblock (Gate 3/5); (5) newly auto-saved contacts **auto-enqueue to the HubSpot/CRM sync worker** (Gate 8). Gate Table §3 (Gate 3/5/8 rows) + Run_Book §3 updated in lockstep. No status flips beyond ✅ additions.
+- **2026-06-08** — **Verified Hardening item 1 (Twilio webhook signature validation) is DONE** — no code change, doc correction. Confirmed in code (`lib/twilioSignature.ts` → `twilio.validateRequest`) applied to **both** webhook routes (inbound `POST /webhooks/:source` via inline `checkTwilioSignature`; status `POST /webhooks/twilio/status` via `requireTwilioSignature()` middleware) and live in prod (inbound smoke test 201 valid / 403 invalid). Marked Item 1 ✅ DONE in `Hardening.md` (header, promotion checklist, decision log).
 - **2026-06-07** — Created `John/Scaffolding/` with `Gate_Build.md` (this ledger) and `Regeneration.md` (compaction-recovery doc). No code/feature changes. Captured the June 7 systems + document check verbatim (§1). Established the current authoritative Gate Table (§3).
 - **2026-06-07** — Moved `John/architecture.doc.md` → `John/Scaffolding/architecture.doc.md` to consolidate build-governance docs. Updated the README link. Classified it as an **append-only lessons reference** (not a per-session living doc): add a new lesson when a build decision/incident teaches something durable; do not rewrite existing entries. Wired it into the companion-doc lists in this file and `Regeneration.md`.
 - **2026-06-07** — Scaffolding triage of `John/`. Subagent review classified every loose `.md`. Actions: (1) moved the two **living build-governance** docs — `Hardening.md` (production hardening backlog) and `Database_URL_work.md` (dev/prod DB env split) — into `Scaffolding/` and wired them into companion-doc lists + key-files maps; added them to §5 Next Steps (items 8–9). (2) Created `John/Archive/` and moved 7 **static/historical, superseded** docs there: `Phase7.1.md`, `Phase7.2.md`, `Phase9.1.md`, `Stage4-Migration.md`, `MultiTenant.md`, `User_UI_Gate_Plan.md`, `Things To Do.md`. (3) Folded `John/Textline.md`'s open competitor gaps into §5 as a "Competitor-gap backlog". Left at `John/` root: `Run_Book.md` + `Twilio.md` (operational), `Privacy-Policy.md` + `Terms-of-Service.md` (published-content sources, verified to mirror the live pages), `Textline.md` (roadmap input). No code/feature changes.
