@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { desc, eq, and } from "drizzle-orm";
-import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable } from "@workspace/db";
+import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable, contactsTable } from "@workspace/db";
 import {
   ReceiveWebhookParams,
   ListWebhookEventsQueryParams,
@@ -157,8 +157,29 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
           const tenantSlug = tenant.slug;
           void (async () => {
             try {
+              // ---- Auto-save inbound texter as a contact ----
+              // Upsert a tenant-scoped contact keyed on E.164 phone so every
+              // new texter lands in the address book without a manual save.
+              // Repeat texters hit the unique (tenant_id, phone) index and
+              // only bump last_interaction_at — no duplicate rows.
+              const now = new Date();
+              const [contact] = await tdb
+                .insert(contactsTable)
+                .values({
+                  tenantId: tenant.id,
+                  phone: fromNumber,
+                  firstSeenAt: now,
+                  lastInteractionAt: now,
+                })
+                .onConflictDoUpdate({
+                  target: [contactsTable.tenantId, contactsTable.phone],
+                  set: { lastInteractionAt: now, updatedAt: now },
+                })
+                .returning({ id: contactsTable.id });
+              const contactId = contact.id;
+
               const existing = await tdb
-                .select({ id: conversationsTable.id })
+                .select({ id: conversationsTable.id, contactId: conversationsTable.contactId })
                 .from(conversationsTable)
                 .where(
                   and(
@@ -173,11 +194,20 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
               let isNewConversation = false;
               if (existing.length > 0) {
                 conversationId = existing[0].id;
+                // Backfill contactId on pre-existing conversations created
+                // before auto-save so name edits flow through the contact.
+                if (existing[0].contactId == null) {
+                  await tdb
+                    .update(conversationsTable)
+                    .set({ contactId })
+                    .where(eq(conversationsTable.id, conversationId));
+                }
               } else {
                 const [newConv] = await tdb
                   .insert(conversationsTable)
                   .values({
                     tenantId: tenant.id,
+                    contactId,
                     contactPhone: fromNumber,
                     contactName: fromNumber,
                     status: "open",
