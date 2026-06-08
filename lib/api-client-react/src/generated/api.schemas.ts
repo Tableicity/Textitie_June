@@ -1018,6 +1018,8 @@ export interface Contact {
   /** @nullable */
   location: string | null;
   /** @nullable */
+  preferredLanguage?: string | null;
+  /** @nullable */
   tags?: string[] | null;
   firstSeenAt: string;
   /** @nullable */
@@ -1051,6 +1053,8 @@ export interface CreateContactInput {
   /** @nullable */
   location?: string | null;
   /** @nullable */
+  preferredLanguage?: string | null;
+  /** @nullable */
   tags?: string[] | null;
 }
 
@@ -1063,6 +1067,8 @@ export interface UpdateContactInput {
   notes?: string | null;
   /** @nullable */
   location?: string | null;
+  /** @nullable */
+  preferredLanguage?: string | null;
   /** @nullable */
   tags?: string[] | null;
 }

@@ -1639,6 +1639,7 @@ export const ListContactsResponseItem = zod.object({
   email: zod.string().nullable(),
   notes: zod.string().nullable(),
   location: zod.string().nullable(),
+  preferredLanguage: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
   firstSeenAt: zod.coerce.date(),
   lastInteractionAt: zod.coerce.date().nullable(),
@@ -1657,6 +1658,7 @@ export const CreateContactBody = zod.object({
   email: zod.string().nullish(),
   notes: zod.string().nullish(),
   location: zod.string().nullish(),
+  preferredLanguage: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
 });
 
@@ -1682,6 +1684,7 @@ export const GetContactResponse = zod
     email: zod.string().nullable(),
     notes: zod.string().nullable(),
     location: zod.string().nullable(),
+    preferredLanguage: zod.string().nullish(),
     tags: zod.array(zod.string()).nullish(),
     firstSeenAt: zod.coerce.date(),
     lastInteractionAt: zod.coerce.date().nullable(),
@@ -1714,6 +1717,7 @@ export const UpdateContactBody = zod.object({
   email: zod.string().nullish(),
   notes: zod.string().nullish(),
   location: zod.string().nullish(),
+  preferredLanguage: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
 });
 
@@ -1725,6 +1729,7 @@ export const UpdateContactResponse = zod.object({
   email: zod.string().nullable(),
   notes: zod.string().nullable(),
   location: zod.string().nullable(),
+  preferredLanguage: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
   firstSeenAt: zod.coerce.date(),
   lastInteractionAt: zod.coerce.date().nullable(),

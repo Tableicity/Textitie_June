@@ -19,6 +19,8 @@ export interface Contact {
   /** @nullable */
   location: string | null;
   /** @nullable */
+  preferredLanguage?: string | null;
+  /** @nullable */
   tags?: string[] | null;
   firstSeenAt: Date;
   /** @nullable */

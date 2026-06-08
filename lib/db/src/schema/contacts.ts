@@ -13,6 +13,7 @@ export const contactsTable = pgTable(
     email: text("email"),
     notes: text("notes"),
     location: text("location"),
+    preferredLanguage: text("preferred_language"),
     tags: text("tags").array(),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
       .notNull()

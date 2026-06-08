@@ -109,7 +109,7 @@ router.get("/contacts/:id", requireTenantAuth, async (req, res) => {
 
 router.post("/contacts", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
-  const { phone, name, email, notes, location, tags } = req.body ?? {};
+  const { phone, name, email, notes, location, preferredLanguage, tags } = req.body ?? {};
   if (!phone || typeof phone !== "string" || phone.trim().length === 0) {
     res.status(400).json({ error: "phone is required" });
     return;
@@ -127,6 +127,10 @@ router.post("/contacts", requireTenantAuth, async (req, res) => {
         email: typeof email === "string" && email.trim().length > 0 ? email.trim() : null,
         notes: typeof notes === "string" ? notes : null,
         location: typeof location === "string" && location.trim().length > 0 ? location.trim() : null,
+        preferredLanguage:
+          typeof preferredLanguage === "string" && preferredLanguage.trim().length > 0
+            ? preferredLanguage.trim()
+            : null,
         tags: cleanTags,
       })
       .returning();
@@ -168,12 +172,13 @@ router.post("/contacts", requireTenantAuth, async (req, res) => {
 router.patch("/contacts/:id", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
   const id = Number(req.params.id);
-  const { name, email, notes, location, tags } = req.body ?? {};
+  const { name, email, notes, location, preferredLanguage, tags } = req.body ?? {};
   const patch: Partial<typeof contactsTable.$inferInsert> = { updatedAt: new Date() };
   if (name !== undefined) patch.name = typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
   if (email !== undefined) patch.email = typeof email === "string" && email.trim().length > 0 ? email.trim() : null;
   if (notes !== undefined) patch.notes = typeof notes === "string" ? notes : null;
   if (location !== undefined) patch.location = typeof location === "string" && location.trim().length > 0 ? location.trim() : null;
+  if (preferredLanguage !== undefined) patch.preferredLanguage = typeof preferredLanguage === "string" && preferredLanguage.trim().length > 0 ? preferredLanguage.trim() : null;
   if (tags !== undefined) {
     patch.tags = Array.isArray(tags)
       ? tags.filter((t): t is string => typeof t === "string" && t.trim().length > 0).map((t) => t.trim()).slice(0, 50)

@@ -16,5 +16,7 @@ export interface UpdateContactInput {
   /** @nullable */
   location?: string | null;
   /** @nullable */
+  preferredLanguage?: string | null;
+  /** @nullable */
   tags?: string[] | null;
 }

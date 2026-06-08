@@ -3733,6 +3733,7 @@ components:
         email: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         location: { type: ["string", "null"] }
+        preferredLanguage: { type: ["string", "null"] }
         tags:
           type: ["array", "null"]
           items: { type: string }
@@ -3771,6 +3772,7 @@ components:
         email: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         location: { type: ["string", "null"] }
+        preferredLanguage: { type: ["string", "null"] }
         tags:
           type: ["array", "null"]
           items: { type: string }
@@ -3783,6 +3785,7 @@ components:
         email: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
         location: { type: ["string", "null"] }
+        preferredLanguage: { type: ["string", "null"] }
         tags:
           type: ["array", "null"]
           items: { type: string }

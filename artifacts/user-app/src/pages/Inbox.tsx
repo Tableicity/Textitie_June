@@ -15,6 +15,9 @@ import {
   useUpdateConversation,
   useListDispositions,
   useCreateReminder,
+  useListContacts,
+  useCreateContact,
+  useUpdateContact,
   getListMessagesQueryKey,
   getListConversationsQueryKey,
   getGetConversationQueryKey,
@@ -22,6 +25,7 @@ import {
   getListShortcutsQueryKey,
   getListDispositionsQueryKey,
   getListRemindersQueryKey,
+  getListContactsQueryKey,
 } from "@workspace/api-client-react";
 import { useSearch, useLocation } from "wouter";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
@@ -53,7 +57,23 @@ import {
   Sparkles,
   Fuel,
   Paperclip,
+  MoreVertical,
+  Mail,
+  Globe,
+  Tag,
 } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -80,6 +100,42 @@ import {
 } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatPhone, cityStateForPhone, toE164 } from "@/lib/phone";
+
+type ContactCardDraft = {
+  name: string;
+  email: string;
+  preferredLanguage: string;
+  tagsCsv: string;
+  notes: string;
+};
+
+const blankContactDraft: ContactCardDraft = {
+  name: "",
+  email: "",
+  preferredLanguage: "",
+  tagsCsv: "",
+  notes: "",
+};
+
+const PREFERRED_LANGUAGES = [
+  "English",
+  "Spanish",
+  "Chinese (Mandarin)",
+  "Vietnamese",
+  "Tagalog",
+  "Korean",
+  "French",
+  "Arabic",
+  "Other",
+];
+
+function contactCsvToTags(s: string): string[] | null {
+  const arr = s
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  return arr.length ? arr : null;
+}
 
 export default function Inbox() {
   const queryClient = useQueryClient();
@@ -121,6 +177,9 @@ export default function Inbox() {
   ];
   const [showEmoji, setShowEmoji] = useState(false);
   const [showAttach, setShowAttach] = useState(false);
+  const [showContactCard, setShowContactCard] = useState(false);
+  const [editingContact, setEditingContact] = useState(false);
+  const [contactDraft, setContactDraft] = useState<ContactCardDraft>(blankContactDraft);
 
   // Auto-select conversation from URL param (e.g. from reminder bell jump)
   useEffect(() => {
@@ -209,6 +268,88 @@ export default function Inbox() {
       queryKey: getListConversationEventsQueryKey(selectedId as number),
     },
   });
+
+  // Contact card: look up the stored contact for the selected conversation's
+  // phone. The inbound webhook never creates a contact row, so this may be
+  // empty — in which case saving creates one (find-or-create on save).
+  const contactPhone = selectedConv?.contactPhone ?? "";
+  const { data: contactMatches } = useListContacts(
+    { q: contactPhone },
+    {
+      query: {
+        enabled: showContactCard && contactPhone.length > 0,
+        queryKey: getListContactsQueryKey({ q: contactPhone }),
+      },
+    },
+  );
+  const existingContact =
+    contactMatches?.find((c) => c.phone === contactPhone) ?? null;
+
+  // Close/reset the contact card whenever the selected conversation changes.
+  useEffect(() => {
+    setShowContactCard(false);
+    setEditingContact(false);
+  }, [selectedId]);
+
+  const invalidateContactViews = () => {
+    queryClient.invalidateQueries({
+      predicate: (qq) => {
+        const k = qq.queryKey?.[0];
+        return (
+          typeof k === "string" &&
+          (k.startsWith("/api/contacts") || k.startsWith("/api/conversations"))
+        );
+      },
+    });
+  };
+
+  const createContactMut = useCreateContact({
+    mutation: {
+      onSuccess: () => {
+        invalidateContactViews();
+        setEditingContact(false);
+      },
+    },
+  });
+
+  const updateContactMut = useUpdateContact({
+    mutation: {
+      onSuccess: () => {
+        invalidateContactViews();
+        setEditingContact(false);
+      },
+    },
+  });
+
+  const openContactEdit = () => {
+    setContactDraft({
+      name: existingContact?.name ?? (selectedConv?.contactName && selectedConv.contactName !== contactPhone ? selectedConv.contactName : ""),
+      email: existingContact?.email ?? "",
+      preferredLanguage: existingContact?.preferredLanguage ?? "",
+      tagsCsv: existingContact?.tags?.join(", ") ?? "",
+      notes: existingContact?.notes ?? "",
+    });
+    setEditingContact(true);
+  };
+
+  const handleSaveContact = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!contactPhone) return;
+    const body = {
+      name: contactDraft.name.trim() || null,
+      email: contactDraft.email.trim() || null,
+      preferredLanguage: contactDraft.preferredLanguage.trim() || null,
+      tags: contactCsvToTags(contactDraft.tagsCsv),
+      notes: contactDraft.notes.trim() || null,
+    };
+    if (existingContact) {
+      updateContactMut.mutate({ id: existingContact.id, data: body });
+    } else {
+      createContactMut.mutate({ data: { phone: contactPhone, ...body } });
+    }
+  };
+
+  const contactSaving = createContactMut.isPending || updateContactMut.isPending;
 
   const invalidateConv = () => {
     if (selectedId) {
@@ -565,12 +706,18 @@ export default function Inbox() {
           <>
             {/* Header */}
             <div className="border-b border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0 bg-white z-10">
-              <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setShowContactCard(true)}
+                className="flex items-center gap-4 text-left rounded-lg -mx-1 px-1 py-0.5 hover:bg-slate-50 transition-colors group"
+                data-testid="button-open-contact-card"
+                title="View contact info"
+              >
                 <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
                   <User className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="font-semibold text-slate-900 leading-tight">
+                  <h2 className="font-semibold text-slate-900 leading-tight group-hover:text-blue-700 transition-colors">
                     {loadingConv ? (
                       <Skeleton className="h-5 w-32" />
                     ) : (
@@ -613,7 +760,7 @@ export default function Inbox() {
                     )}
                   </div>
                 </div>
-              </div>
+              </button>
 
               <div className="flex items-center gap-1.5">
                 {/* Order: Claim → Resolve → New Message → Halo AI → Buy Gas */}
@@ -1445,6 +1592,226 @@ export default function Inbox() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Contact info card / edit (opened by clicking the conversation header) */}
+      <Sheet open={showContactCard} onOpenChange={setShowContactCard}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto p-0">
+          {editingContact ? (
+            <form onSubmit={handleSaveContact} className="flex flex-col h-full">
+              <SheetHeader className="px-6 py-4 border-b border-slate-200">
+                <SheetTitle>Edit Contact</SheetTitle>
+              </SheetHeader>
+              <div className="flex-1 space-y-4 px-6 py-5">
+                <div>
+                  <Label className="mb-1.5 block">Name</Label>
+                  <Input
+                    value={contactDraft.name}
+                    onChange={(e) => setContactDraft({ ...contactDraft, name: e.target.value })}
+                    placeholder="Full name"
+                    autoFocus
+                    data-testid="input-contact-name"
+                  />
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Number</Label>
+                  <Input value={formatPhone(contactPhone)} disabled className="bg-slate-50" />
+                  <p className="text-xs text-slate-400 mt-1">Phone numbers cannot be changed.</p>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Preferred Language</Label>
+                  <Select
+                    value={contactDraft.preferredLanguage || undefined}
+                    onValueChange={(v) => setContactDraft({ ...contactDraft, preferredLanguage: v })}
+                  >
+                    <SelectTrigger data-testid="select-contact-language">
+                      <SelectValue placeholder="Select a language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PREFERRED_LANGUAGES.map((lang) => (
+                        <SelectItem key={lang} value={lang}>
+                          {lang}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Email</Label>
+                  <Input
+                    type="email"
+                    value={contactDraft.email}
+                    onChange={(e) => setContactDraft({ ...contactDraft, email: e.target.value })}
+                    placeholder="name@example.com"
+                    data-testid="input-contact-email"
+                  />
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Tags (comma separated)</Label>
+                  <Input
+                    value={contactDraft.tagsCsv}
+                    onChange={(e) => setContactDraft({ ...contactDraft, tagsCsv: e.target.value })}
+                    placeholder="vip, spanish, returning"
+                    data-testid="input-contact-tags"
+                  />
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Notes</Label>
+                  <Textarea
+                    value={contactDraft.notes}
+                    onChange={(e) => setContactDraft({ ...contactDraft, notes: e.target.value })}
+                    rows={3}
+                    data-testid="input-contact-notes"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-200">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditingContact(false)}
+                  data-testid="button-cancel-contact"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700"
+                  disabled={contactSaving}
+                  data-testid="button-save-contact"
+                >
+                  {contactSaving && <Loader2 className="w-3 h-3 animate-spin mr-2" />}
+                  Save
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="flex flex-col h-full">
+              <SheetHeader className="px-6 py-4 border-b border-slate-200">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
+                      <User className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <SheetTitle className="truncate">
+                        {existingContact?.name ||
+                          (selectedConv?.contactName && selectedConv.contactName !== contactPhone
+                            ? selectedConv.contactName
+                            : formatPhone(contactPhone))}
+                      </SheetTitle>
+                      <p className="text-xs text-slate-500 mt-0.5">{formatPhone(contactPhone)}</p>
+                    </div>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 flex-shrink-0"
+                        data-testid="button-contact-menu"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={openContactEdit} data-testid="menu-edit-contact">
+                        <PencilLine className="w-4 h-4 mr-2" />
+                        Edit
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </SheetHeader>
+
+              <div className="flex-1 px-6 py-5 space-y-5">
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">
+                    Info
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <Phone className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-400">Number</p>
+                        <p className="text-sm text-slate-700">{formatPhone(contactPhone)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <Mail className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-400">Email</p>
+                        <p className="text-sm text-slate-700 break-all">
+                          {existingContact?.email || <span className="text-slate-400">—</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <Globe className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-400">Preferred Language</p>
+                        <p className="text-sm text-slate-700">
+                          {existingContact?.preferredLanguage || (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <MapPin className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-400">Location</p>
+                        <p className="text-sm text-slate-700">
+                          {existingContact?.location ||
+                            selectedConv?.contactLocation || (
+                              <span className="text-slate-400">—</span>
+                            )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {existingContact?.tags && existingContact.tags.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2 flex items-center gap-1.5">
+                      <Tag className="w-3 h-3" /> Tags
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {existingContact.tags.map((t) => (
+                        <Badge key={t} variant="secondary" className="text-xs">
+                          {t}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {existingContact?.notes && (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2 flex items-center gap-1.5">
+                      <StickyNote className="w-3 h-3" /> Notes
+                    </h4>
+                    <p className="text-sm text-slate-600 whitespace-pre-wrap">
+                      {existingContact.notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-200">
+                <Button
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                  onClick={openContactEdit}
+                  data-testid="button-edit-contact"
+                >
+                  <PencilLine className="w-4 h-4 mr-2" />
+                  Edit Contact
+                </Button>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
