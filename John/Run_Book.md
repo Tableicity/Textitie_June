@@ -1,6 +1,6 @@
 # Textitie Run Book
 
-_Last updated: June 7, 2026_
+_Last updated: June 8, 2026_
 _Product: **Textitie** (internal codename **SAMA** — Simple but Advanced Messaging Alternative)_
 _Live: https://textitie.com_
 
@@ -204,6 +204,17 @@ In priority order:
 - Check tenant quiet-hours and frequency-cap settings.
 - Check billing — tenant may be out of credits or trial expired.
 
+### Outbound shows `undelivered` / error 30003 ("Unreachable destination handset")
+This is a **carrier/handset-side** result, not a platform bug. A row with a real Twilio `external_id` (`SM…`) means our code handed the message to Twilio and Twilio accepted it — the send fired. `30003` is written **only** by Twilio's status callback after the destination carrier refuses delivery; the code never fabricates it.
+
+**How to diagnose against Twilio's own records** (the dev shell has the real Twilio creds in its environment; the code_execution sandbox does **not** — `viewEnvVars` only reports existence there). From the shell, basic-auth with `$TWILIO_ACCOUNT_SID` / `$TWILIO_AUTH_TOKEN` and never print the values:
+- **Message by SID:** `GET api.twilio.com/2010-04-01/Accounts/{acc}/Messages/{SID}.json` → `status`, `error_code`, `from`, `to`, `date_sent`.
+- **All traffic to/from a number:** `Messages.json?To=%2B1…` and `?From=%2B1…` (URL-encode the `+`). Zero inbound + all outbound 30003 to one number = two-way carrier/device block.
+- **Line type / carrier:** `lookups.twilio.com/v2/PhoneNumbers/{num}?Fields=line_type_intelligence` → `carrier_name`, `type`.
+- **Toll-free verification:** `messaging.twilio.com/v1/Tollfree/Verifications` → `status`.
+
+**Observed case (2026-06-08):** the TFN +18887619212 delivers reliably to **Verizon** mobiles (e.g. +19096977635, +19097141794) and to other toll-free numbers, but every attempt to one specific **T-Mobile** mobile (+19093308683) returned 30003, in both directions (zero inbound from it). Toll-free verification was `TWILIO_APPROVED`, ruling out registration. Conclusion: a carrier/handset-side block on that one T-Mobile line. Resolution path is on the recipient/carrier side (T-Mobile Scam Shield `#662#`/`#732#`, device block list, line SMS provisioning) or a Twilio carrier escalation — no code change fixes it.
+
 ### "Conductor authentication required" on a tenant route
 - That route isn't in the conductorAuth exemption list at `artifacts/api-server/src/middleware/conductorAuth.ts`. Add the path prefix.
 
@@ -247,6 +258,7 @@ Use the workflows tool or `restart_workflow <name>` — never run `pnpm dev` at 
 
 ## 8. Change log highlights (recent)
 
+- **2026-06-08** — **Diagnosed a 30003 delivery dispute against Twilio's API (no code change).** Outbound "Beep" to a contact on **T-Mobile** (+19093308683) showed `undelivered` / 30003. Verified via Twilio REST from the dev shell: 4 attempts all `undelivered`/30003, zero inbound from that number, while the same TFN delivers fine to **Verizon** mobiles and other toll-free numbers; toll-free verification `TWILIO_APPROVED`. Root cause is a carrier/handset-side block on that one T-Mobile line, not the platform. Added a §6 troubleshooting entry documenting the Twilio-API diagnostic method (message-by-SID, To/From traffic, Lookup line-type, toll-free verification).
 - **2026-06-07** — **Proper tenant-number assignment + compliance badge fix.** Added `GET /api/tenants/owned-numbers` (conductor-scoped, lists numbers the Twilio account owns) and turned the Tenant Detail **Telephony** card into a validated dropdown of owned numbers + Unassign (replaces the free-text E.164 field that let ACME get pointed at a non-owned number → 21660). Fixed ACME prod data: unassigned (`phoneNumber=null`) so it falls back to the TFN. Compliance "Tenant Number Inventory" badge now classifies by number type (**Toll-Free** vs **10DLC** vs N/A, column "SMS Registration") instead of the misleading `region===US` → "Required" — the TFN uses Toll-Free Verification, not 10DLC, and that badge was never a send gate. Backlog: optional server-side reject of non-owned numbers in `PATCH /tenants/:id`.
 - **2026-06-07** — **Went LIVE on the new Twilio account (Toll-Free +18887619212).** Republished prod to load the new-account secrets (a saved-secret change does NOT restart an autoscale deployment — must republish); assigned the TFN to tenant `john-reynolds` via the Conductor PATCH API; smoke test passed end-to-end (outbound `delivered` from TFN; inbound reply signature-validated, routed to john-reynolds, conversation created in `/inbox`). Fixed a data bug: self-signup hardcoded `region:"us"` (lowercase) which 500'd `GET /api/tenants`; normalized existing tenants and changed the insert to `"US"`.
 - **2026-05-26** — Reverted footer logo backdoor entry to `/knowledge`. Route and endpoint remain.

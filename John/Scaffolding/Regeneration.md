@@ -6,7 +6,7 @@
 >
 > _Product:_ **Textitie** (internal codename **SAMA**). _Live:_ https://textitie.com · _Repo:_ https://github.com/TransferAgent/textitie.git
 > _Companion:_ `John/Scaffolding/Gate_Build.md` (full ledger + Gate Table), `John/Scaffolding/architecture.doc.md` (architecture lessons + day-one checklist — append-only reference), `John/Scaffolding/Hardening.md` (production hardening backlog), `John/Scaffolding/Database_URL_work.md` (dev/prod DB env split — active task), `John/Run_Book.md` (ops runbook), `replit.md` (architecture).
-> _Last regenerated:_ June 7, 2026
+> _Last regenerated:_ June 8, 2026
 
 ---
 
@@ -44,7 +44,7 @@ Textitie is a multi-tenant two-way SMS platform (Textline-style agent inbox) on 
 
 > Update this section at the **end of every session** so a compacted agent knows exactly what was happening. If nothing is in flight, say so.
 
-- **Active task:** None in progress. Last completed (2026-06-07): added a read-only **Users / Logins** section to the Admin Tenant Detail page — new conductor-scoped `GET /tenants/:id/users` (returns `tenant_users` name/email/role/status/phone, never the password hash) + a Users/Logins card in `TenantDetail.tsx`. Contract-first, full typecheck + architect review clean, live-tested in dev. Ready to publish. (Prior 2026-06-07: Admin tenant→number assignment picker, Compliance badge fix, ACME prod data fix — all shipped to prod.)
+- **Active task:** None in progress. Last activity (2026-06-08): diagnosed a 30003 outbound-delivery dispute against Twilio's API (no code change) — proved the message fired out (real `SM…` SID) and that 30003 is a carrier-side block on one **T-Mobile** number; the same TFN delivers fine to Verizon + other toll-free; toll-free verification `TWILIO_APPROVED`. Recorded the Twilio-API diagnostic method in `Run_Book.md` §6 + memory. Prior (2026-06-07): read-only **Users / Logins** card on Admin Tenant Detail (`GET /tenants/:id/users`, never the password hash); Admin tenant→number assignment picker; Compliance badge fix; ACME prod data fix — all shipped to prod.
 - **Awaiting user decision on:** which Next Step to start (see `Gate_Build.md` §5). Likely next: wiring the Halo inbox button OR Stripe live keys.
 - **Do-not-proceed-without-discussion:** The user has set a standing rule — **take no build action until it has been discussed and approved.** Honor this.
 
