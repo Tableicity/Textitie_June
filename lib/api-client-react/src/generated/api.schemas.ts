@@ -239,6 +239,16 @@ export interface TenantMeResult {
   user: TenantUserInfo;
 }
 
+export interface TenantChangePasswordInput {
+  currentPassword: string;
+  /** @minLength 8 */
+  newPassword: string;
+}
+
+export interface TenantChangePasswordResult {
+  message: string;
+}
+
 export type ConversationStatus =
   (typeof ConversationStatus)[keyof typeof ConversationStatus];
 

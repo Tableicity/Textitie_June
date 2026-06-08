@@ -390,6 +390,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenant-auth/change-password:
+    post:
+      operationId: changeTenantPassword
+      tags: [tenant-auth]
+      summary: Change the signed-in tenant user's password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantChangePasswordInput"
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantChangePasswordResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Not authenticated or current password incorrect
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /conversations:
     post:
       operationId: createConversation
@@ -2555,6 +2586,23 @@ components:
         user:
           $ref: "#/components/schemas/TenantUserInfo"
       required: [user]
+
+    TenantChangePasswordInput:
+      type: object
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+      required: [currentPassword, newPassword]
+
+    TenantChangePasswordResult:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
 
     ConversationStatus:
       type: string

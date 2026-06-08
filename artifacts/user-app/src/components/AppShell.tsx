@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, useSearch, Redirect } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall } from "lucide-react";
+import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall, User } from "lucide-react";
 import HipaaBanner from "@/components/HipaaBanner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -243,6 +243,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="mt-auto w-full px-2 flex flex-col gap-2 items-center">
+          <Link
+            href="/profile"
+            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
+              location === "/profile"
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+            title="Profile"
+            data-testid="link-profile"
+          >
+            <User className="w-5 h-5" />
+          </Link>
           <Link
             href="/contacts"
             className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${

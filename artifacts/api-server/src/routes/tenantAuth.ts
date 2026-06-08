@@ -535,5 +535,71 @@ router.get("/tenant-auth/me", async (req, res) => {
   }
 });
 
+router.post("/tenant-auth/change-password", async (req, res) => {
+  const header = req.header("authorization") ?? "";
+  if (!header.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  const payload = verifyToken(header.slice(7));
+  if (!payload || payload.scope !== "tenant") {
+    res.status(401).json({ error: "Invalid or expired token" });
+    return;
+  }
+
+  const { currentPassword, newPassword } = req.body ?? {};
+  if (
+    !currentPassword ||
+    !newPassword ||
+    typeof currentPassword !== "string" ||
+    typeof newPassword !== "string"
+  ) {
+    res
+      .status(400)
+      .json({ error: "Current and new password are required" });
+    return;
+  }
+  if (newPassword.length < 8) {
+    res
+      .status(400)
+      .json({ error: "New password must be at least 8 characters" });
+    return;
+  }
+
+  try {
+    const rows = await db
+      .select({
+        id: tenantUsersTable.id,
+        passwordHash: tenantUsersTable.passwordHash,
+      })
+      .from(tenantUsersTable)
+      .where(eq(tenantUsersTable.id, payload.tenantUserId as number))
+      .limit(1);
+
+    if (rows.length === 0) {
+      res.status(401).json({ error: "User not found" });
+      return;
+    }
+
+    const valid = await verifyPassword(currentPassword, rows[0].passwordHash);
+    if (!valid) {
+      res.status(401).json({ error: "Current password is incorrect" });
+      return;
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+    await db
+      .update(tenantUsersTable)
+      .set({ passwordHash })
+      .where(eq(tenantUsersTable.id, rows[0].id));
+
+    res.json({ message: "Password updated successfully" });
+  } catch (err) {
+    logger.error({ err }, "Tenant change-password error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export { hashPassword as hashTenantPassword };
 export default router;

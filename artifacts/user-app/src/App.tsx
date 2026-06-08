@@ -18,6 +18,7 @@ import Automations from "@/pages/Automations";
 import Campaigns from "@/pages/Campaigns";
 import Analytics from "@/pages/Analytics";
 import Knowledge from "@/pages/Knowledge";
+import Profile from "@/pages/Profile";
 import AppShell from "@/components/AppShell";
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ function Router() {
             <Route path="/campaigns" component={Campaigns} />
             <Route path="/analytics" component={Analytics} />
             <Route path="/knowledge" component={Knowledge} />
+            <Route path="/profile" component={Profile} />
             <Route component={NotFound} />
           </Switch>
         </AppShell>

@@ -93,6 +93,8 @@ import type {
   SuccessResult,
   TagsResult,
   Tenant,
+  TenantChangePasswordInput,
+  TenantChangePasswordResult,
   TenantLoginInput,
   TenantLoginResult,
   TenantMeResult,
@@ -1422,6 +1424,93 @@ export function useTenantMe<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Change the signed-in tenant user's password
+ */
+export const getChangeTenantPasswordUrl = () => {
+  return `/api/tenant-auth/change-password`;
+};
+
+export const changeTenantPassword = async (
+  tenantChangePasswordInput: TenantChangePasswordInput,
+  options?: RequestInit,
+): Promise<TenantChangePasswordResult> => {
+  return customFetch<TenantChangePasswordResult>(getChangeTenantPasswordUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(tenantChangePasswordInput),
+  });
+};
+
+export const getChangeTenantPasswordMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changeTenantPassword>>,
+    TError,
+    { data: BodyType<TenantChangePasswordInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof changeTenantPassword>>,
+  TError,
+  { data: BodyType<TenantChangePasswordInput> },
+  TContext
+> => {
+  const mutationKey = ["changeTenantPassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof changeTenantPassword>>,
+    { data: BodyType<TenantChangePasswordInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return changeTenantPassword(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ChangeTenantPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof changeTenantPassword>>
+>;
+export type ChangeTenantPasswordMutationBody =
+  BodyType<TenantChangePasswordInput>;
+export type ChangeTenantPasswordMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Change the signed-in tenant user's password
+ */
+export const useChangeTenantPassword = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof changeTenantPassword>>,
+    TError,
+    { data: BodyType<TenantChangePasswordInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof changeTenantPassword>>,
+  TError,
+  { data: BodyType<TenantChangePasswordInput> },
+  TContext
+> => {
+  return useMutation(getChangeTenantPasswordMutationOptions(options));
+};
 
 /**
  * @summary Start a new conversation by phone number (upserts contact, reuses open conversation if one exists)

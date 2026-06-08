@@ -382,6 +382,20 @@ export const TenantMeResponse = zod.object({
 });
 
 /**
+ * @summary Change the signed-in tenant user's password
+ */
+export const changeTenantPasswordBodyNewPasswordMin = 8;
+
+export const ChangeTenantPasswordBody = zod.object({
+  currentPassword: zod.string(),
+  newPassword: zod.string().min(changeTenantPasswordBodyNewPasswordMin),
+});
+
+export const ChangeTenantPasswordResponse = zod.object({
+  message: zod.string(),
+});
+
+/**
  * @summary Start a new conversation by phone number (upserts contact, reuses open conversation if one exists)
  */
 

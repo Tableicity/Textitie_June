@@ -108,6 +108,8 @@ export * from "./successResponse";
 export * from "./successResult";
 export * from "./tagsResult";
 export * from "./tenant";
+export * from "./tenantChangePasswordInput";
+export * from "./tenantChangePasswordResult";
 export * from "./tenantLoginInput";
 export * from "./tenantLoginResult";
 export * from "./tenantMeResult";
