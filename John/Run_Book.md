@@ -50,7 +50,7 @@ This run book is the operational source-of-truth: where every feature stands, wh
 | Whispers (internal notes) | ✅ | |
 | Dispositions | ✅ | |
 | Contacts + tagging + history | ✅ | |
-| Inbox contact card (click header → ⋮ Edit) | ✅ | 2026-06-08 — edit Name/Preferred Language/Email/Tags/Notes; find-or-create by phone; inbox shows name |
+| Inbox contact card (click header → ⋮ Edit) | ✅ | 2026-06-08 — edit Name/Preferred Language/Email/Tags/Notes; find-or-create by phone; inbox shows name. UI polish: header status word replaced with vertical ⋮ affordance; card ⋮ menu moved top-left, level with the X close |
 | Conversation search & filters | ✅ | |
 | Reminders (per-user, conversation-linked, ReminderBell) | ✅ | |
 | Agent status indicators | ✅ | |

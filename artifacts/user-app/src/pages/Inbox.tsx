@@ -748,8 +748,6 @@ export default function Inbox() {
                   <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                     <Phone className="w-3 h-3" />
                     {formatPhone(selectedConv?.contactPhone)}
-                    <span className="w-1 h-1 rounded-full bg-slate-300 mx-1"></span>
-                    <span className="capitalize">{selectedConv?.status}</span>
                     {selectedConv?.departmentId &&
                       deptMap.get(selectedConv.departmentId) && (
                         <>
@@ -781,6 +779,7 @@ export default function Inbox() {
                     )}
                   </div>
                 </div>
+                <MoreVertical className="w-5 h-5 text-slate-400 group-hover:text-blue-600 transition-colors flex-shrink-0 self-center" />
               </button>
 
               <div className="flex items-center gap-1.5">
@@ -1715,40 +1714,38 @@ export default function Inbox() {
             </form>
           ) : (
             <div className="flex flex-col h-full">
-              <SheetHeader className="px-6 py-4 border-b border-slate-200">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
-                      <User className="w-6 h-6" />
-                    </div>
-                    <div className="min-w-0">
-                      <SheetTitle className="truncate">
-                        {existingContact?.name ||
-                          (selectedConv?.contactName && selectedConv.contactName !== contactPhone
-                            ? selectedConv.contactName
-                            : formatPhone(contactPhone))}
-                      </SheetTitle>
-                      <p className="text-xs text-slate-500 mt-0.5">{formatPhone(contactPhone)}</p>
-                    </div>
+              <SheetHeader className="relative px-6 pt-12 pb-4 border-b border-slate-200">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="absolute left-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      data-testid="button-contact-menu"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                      <span className="sr-only">Contact actions</span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={openContactEdit} data-testid="menu-edit-contact">
+                      <PencilLine className="w-4 h-4 mr-2" />
+                      Edit
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
+                    <User className="w-6 h-6" />
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 flex-shrink-0"
-                        data-testid="button-contact-menu"
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={openContactEdit} data-testid="menu-edit-contact">
-                        <PencilLine className="w-4 h-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="min-w-0">
+                    <SheetTitle className="truncate">
+                      {existingContact?.name ||
+                        (selectedConv?.contactName && selectedConv.contactName !== contactPhone
+                          ? selectedConv.contactName
+                          : formatPhone(contactPhone))}
+                    </SheetTitle>
+                    <p className="text-xs text-slate-500 mt-0.5">{formatPhone(contactPhone)}</p>
+                  </div>
                 </div>
               </SheetHeader>
 
