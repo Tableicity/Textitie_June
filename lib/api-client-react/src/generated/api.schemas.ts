@@ -1080,6 +1080,20 @@ export interface SetContactBlockedInput {
   blocked: boolean;
 }
 
+export interface BlockedActivityItem {
+  id: number;
+  phone: string;
+  /** @nullable */
+  name: string | null;
+  /** @nullable */
+  blockedAt: string | null;
+  attemptCount: number;
+  /** @nullable */
+  lastAttemptAt: string | null;
+  /** @nullable */
+  lastAttemptPreview: string | null;
+}
+
 export interface CreateOptOutInput {
   /** @minLength 1 */
   phone: string;

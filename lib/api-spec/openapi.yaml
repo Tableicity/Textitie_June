@@ -2123,6 +2123,21 @@ paths:
                 items:
                   type: string
 
+  /contacts/blocked-activity:
+    get:
+      operationId: listBlockedActivity
+      tags: [contacts]
+      summary: Blocked contacts and their suppressed inbound attempts
+      responses:
+        "200":
+          description: List of blocked contacts with suppressed-inbound stats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BlockedActivityItem"
+
   /contacts/{id}:
     get:
       operationId: getContact
@@ -3845,6 +3860,18 @@ components:
         phone: { type: string, minLength: 1 }
         blocked: { type: boolean }
       required: [phone, blocked]
+
+    BlockedActivityItem:
+      type: object
+      properties:
+        id: { type: integer }
+        phone: { type: string }
+        name: { type: ["string", "null"] }
+        blockedAt: { type: ["string", "null"], format: date-time }
+        attemptCount: { type: integer }
+        lastAttemptAt: { type: ["string", "null"], format: date-time }
+        lastAttemptPreview: { type: ["string", "null"] }
+      required: [id, phone, name, blockedAt, attemptCount, lastAttemptAt, lastAttemptPreview]
 
     CreateOptOutInput:
       type: object

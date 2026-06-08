@@ -70,6 +70,62 @@ router.get("/contacts/tags", requireTenantAuth, async (req, res) => {
   }
 });
 
+router.get("/contacts/blocked-activity", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  try {
+    // Blocked contacts, left-joined with aggregated suppressed-inbound audit
+    // rows (action='inbound.blocked', entity_id = the sender phone). Both sides
+    // are tenant-scoped. Numbers blocked but never re-attempted still appear
+    // with attemptCount = 0.
+    const result = await db.execute(sql`
+      SELECT
+        c.id AS id,
+        c.phone AS phone,
+        c.name AS name,
+        c.updated_at AS blocked_at,
+        COALESCE(a.attempt_count, 0)::int AS attempt_count,
+        a.last_attempt_at AS last_attempt_at,
+        a.last_preview AS last_attempt_preview
+      FROM contacts c
+      LEFT JOIN (
+        SELECT
+          entity_id,
+          COUNT(*) AS attempt_count,
+          MAX(created_at) AS last_attempt_at,
+          (ARRAY_AGG(after_json->>'bodyPreview' ORDER BY created_at DESC))[1] AS last_preview
+        FROM audit_logs
+        WHERE tenant_id = ${tenantId} AND action = 'inbound.blocked'
+        GROUP BY entity_id
+      ) a ON a.entity_id = c.phone
+      WHERE c.tenant_id = ${tenantId} AND c.blocked = true
+      ORDER BY a.last_attempt_at DESC NULLS LAST, c.updated_at DESC
+    `);
+    const rows = result.rows as Array<{
+      id: number;
+      phone: string;
+      name: string | null;
+      blocked_at: string | null;
+      attempt_count: number;
+      last_attempt_at: string | null;
+      last_attempt_preview: string | null;
+    }>;
+    res.json(
+      rows.map((r) => ({
+        id: r.id,
+        phone: r.phone,
+        name: r.name,
+        blockedAt: r.blocked_at,
+        attemptCount: r.attempt_count,
+        lastAttemptAt: r.last_attempt_at,
+        lastAttemptPreview: r.last_attempt_preview,
+      })),
+    );
+  } catch (err) {
+    logger.error({ err }, "List blocked activity error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/contacts/:id", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
   const id = Number(req.params.id);

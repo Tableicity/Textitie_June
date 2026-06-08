@@ -29,6 +29,7 @@ export * from "./autoRouteResult";
 export * from "./availableNumberItem";
 export * from "./billingEventItem";
 export * from "./billingPlanItem";
+export * from "./blockedActivityItem";
 export * from "./campaignItem";
 export * from "./campaignItemSegmentFilter";
 export * from "./campaignMessageItem";

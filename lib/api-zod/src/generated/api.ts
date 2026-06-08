@@ -1705,6 +1705,22 @@ export const ListContactTagsResponseItem = zod.string();
 export const ListContactTagsResponse = zod.array(ListContactTagsResponseItem);
 
 /**
+ * @summary Blocked contacts and their suppressed inbound attempts
+ */
+export const ListBlockedActivityResponseItem = zod.object({
+  id: zod.number(),
+  phone: zod.string(),
+  name: zod.string().nullable(),
+  blockedAt: zod.coerce.date().nullable(),
+  attemptCount: zod.number(),
+  lastAttemptAt: zod.coerce.date().nullable(),
+  lastAttemptPreview: zod.string().nullable(),
+});
+export const ListBlockedActivityResponse = zod.array(
+  ListBlockedActivityResponseItem,
+);
+
+/**
  * @summary Get a contact with conversation history
  */
 export const GetContactParams = zod.object({

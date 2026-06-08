@@ -34,6 +34,7 @@ import type {
   AvailableNumberItem,
   BillingEventItem,
   BillingPlanItem,
+  BlockedActivityItem,
   CampaignItem,
   CampaignMessageItem,
   CampaignSendResult,
@@ -7648,6 +7649,81 @@ export function useListContactTags<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListContactTagsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Blocked contacts and their suppressed inbound attempts
+ */
+export const getListBlockedActivityUrl = () => {
+  return `/api/contacts/blocked-activity`;
+};
+
+export const listBlockedActivity = async (
+  options?: RequestInit,
+): Promise<BlockedActivityItem[]> => {
+  return customFetch<BlockedActivityItem[]>(getListBlockedActivityUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListBlockedActivityQueryKey = () => {
+  return [`/api/contacts/blocked-activity`] as const;
+};
+
+export const getListBlockedActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof listBlockedActivity>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listBlockedActivity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListBlockedActivityQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listBlockedActivity>>
+  > = ({ signal }) => listBlockedActivity({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listBlockedActivity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListBlockedActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listBlockedActivity>>
+>;
+export type ListBlockedActivityQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Blocked contacts and their suppressed inbound attempts
+ */
+
+export function useListBlockedActivity<
+  TData = Awaited<ReturnType<typeof listBlockedActivity>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listBlockedActivity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListBlockedActivityQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

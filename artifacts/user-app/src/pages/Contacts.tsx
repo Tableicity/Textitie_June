@@ -8,9 +8,12 @@ import {
   useUpdateContact,
   useDeleteContact,
   useGetContact,
+  useListBlockedActivity,
+  useSetContactBlocked,
   getListContactsQueryKey,
   getListContactTagsQueryKey,
   getGetContactQueryKey,
+  getListBlockedActivityQueryKey,
   type Contact,
 } from "@workspace/api-client-react";
 import { format } from "date-fns";
@@ -26,6 +29,9 @@ import {
   Tag,
   Loader2,
   X,
+  ShieldOff,
+  ShieldCheck,
+  Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,6 +91,7 @@ export default function Contacts() {
   const [editing, setEditing] = useState<Contact | null>(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<ContactDraft>(blankDraft);
+  const [view, setView] = useState<"contacts" | "blocked">("contacts");
 
   const listParams = useMemo(
     () => ({
@@ -155,6 +162,25 @@ export default function Contacts() {
     },
   });
 
+  const { data: blockedActivity, isLoading: blockedLoading } = useListBlockedActivity({
+    query: {
+      queryKey: getListBlockedActivityQueryKey(),
+      enabled: view === "blocked",
+    },
+  });
+
+  const unblockMutation = useSetContactBlocked({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListBlockedActivityQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListContactsQueryKey(listParams) });
+        if (selectedId) {
+          queryClient.invalidateQueries({ queryKey: getGetContactQueryKey(selectedId) });
+        }
+      },
+    },
+  });
+
   const startEdit = (c: Contact) => {
     setEditing(c);
     setDraft({
@@ -207,21 +233,140 @@ export default function Contacts() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Contacts</h1>
             <p className="text-slate-500 text-sm mt-1">
-              People you've messaged with — manage names, tags, and notes.
+              {view === "contacts"
+                ? "People you've messaged with — manage names, tags, and notes."
+                : "Numbers you've blocked — review suppressed inbound texts and unblock."}
             </p>
           </div>
         </div>
-        <Button
-          className="bg-blue-600 hover:bg-blue-700"
-          onClick={() => {
-            setDraft(blankDraft);
-            setCreating(true);
-          }}
-          data-testid="button-new-contact"
-        >
-          <Plus className="w-4 h-4 mr-2" /> New Contact
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+            <button
+              onClick={() => setView("contacts")}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                view === "contacts"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+              data-testid="tab-contacts"
+            >
+              <Users className="w-3.5 h-3.5" /> Contacts
+            </button>
+            <button
+              onClick={() => setView("blocked")}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                view === "blocked"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+              data-testid="tab-blocked"
+            >
+              <Ban className="w-3.5 h-3.5" /> Blocked
+            </button>
+          </div>
+          {view === "contacts" && (
+            <Button
+              className="bg-blue-600 hover:bg-blue-700"
+              onClick={() => {
+                setDraft(blankDraft);
+                setCreating(true);
+              }}
+              data-testid="button-new-contact"
+            >
+              <Plus className="w-4 h-4 mr-2" /> New Contact
+            </Button>
+          )}
+        </div>
       </div>
+
+      {view === "blocked" ? (
+        <div className="flex-1 overflow-auto p-8 bg-slate-50">
+          <div className="max-w-4xl mx-auto">
+            {blockedLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-20 w-full" />
+                ))}
+              </div>
+            ) : !blockedActivity || blockedActivity.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                <ShieldCheck className="w-10 h-10 mb-3 opacity-30" />
+                <p className="text-sm">No blocked numbers. Texts from everyone are reaching your inbox.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {blockedActivity.map((b) => (
+                  <div
+                    key={b.id}
+                    className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                    data-testid={`blocked-row-${b.id}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <Ban className="w-4 h-4 text-red-500 flex-shrink-0" />
+                        <span className="font-semibold text-slate-900 truncate">
+                          {b.name || b.phone}
+                        </span>
+                        {b.name && (
+                          <span className="text-xs text-slate-400">{b.phone}</span>
+                        )}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                        <span className="flex items-center gap-1">
+                          {b.attemptCount > 0 ? (
+                            <Badge variant="secondary" className="text-[10px] h-5">
+                              {b.attemptCount} suppressed{" "}
+                              {b.attemptCount === 1 ? "attempt" : "attempts"}
+                            </Badge>
+                          ) : (
+                            <span className="text-slate-400">No inbound attempts since blocking</span>
+                          )}
+                        </span>
+                        {b.lastAttemptAt && (
+                          <span>
+                            Last tried {format(new Date(b.lastAttemptAt), "MMM d, h:mm a")}
+                          </span>
+                        )}
+                        {b.blockedAt && (
+                          <span className="text-slate-400">
+                            Blocked {format(new Date(b.blockedAt), "MMM d, yyyy")}
+                          </span>
+                        )}
+                      </div>
+                      {b.lastAttemptPreview && (
+                        <p className="mt-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-xs text-slate-600 line-clamp-2">
+                          "{b.lastAttemptPreview}"
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-shrink-0 text-green-700 hover:bg-green-50 border-green-200"
+                      disabled={
+                        unblockMutation.isPending &&
+                        unblockMutation.variables?.data.phone === b.phone
+                      }
+                      onClick={() =>
+                        unblockMutation.mutate({ data: { phone: b.phone, blocked: false } })
+                      }
+                      data-testid={`button-unblock-${b.id}`}
+                    >
+                      {unblockMutation.isPending &&
+                      unblockMutation.variables?.data.phone === b.phone ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      ) : (
+                        <ShieldOff className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      Unblock
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
 
       <div className="flex-1 flex divide-x divide-slate-200 overflow-hidden">
         {/* List */}
@@ -411,6 +556,7 @@ export default function Contacts() {
           )}
         </div>
       </div>
+      )}
 
       {/* Create dialog */}
       <Dialog open={creating} onOpenChange={setCreating}>
