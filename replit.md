@@ -41,6 +41,7 @@ Textitie (internal codename "SAMA" — Simple but Advanced Messaging Alternative
 -   **Integrations & Compliance**:
     -   **Audit Log**: Comprehensive `audit_logs` table for tracking actions, indexed by entity, action, and timestamp.
     -   **TCPA Compliance Enhancements**: `opt_ins` table, tenant-level quiet hours, frequency caps, and double opt-in requirements. Outbound compliance checks prevent sending messages violating these rules.
+    -   **Contact Block (two-way)**: When a contact is blocked (`contacts.blocked = true`, tenant-scoped on `tenant_id` + `phone`), outbound sends are rejected by `checkOutboundCompliance` and the contact is excluded from campaigns. Inbound is also enforced in `routes/webhooks.ts`: a text from a blocked number is **dropped** before it reaches agents (no Chatwoot forward, no Halo AI whisper, no conversation create/update, no realtime push, no automation/attribution). The drop is **not silent for audit** — an `inbound.blocked` `audit_logs` row (with a 500-char body preview) plus the raw `webhook_events` record (`_sama.blocked = true`) preserve a trail.
     -   **HubSpot Connector (stub-first)**: Integration with HubSpot for CRM syncing (contacts, conversation activity) via a queue and a worker, with a simulation log for testing.
     -   **HIPAA Plan Flag**: Tier-based HIPAA eligibility with tenant-level `hipaaEnabled`, BAA acknowledgment, and PHI redaction in logs.
 -   **Auto-Seed Strategy**: Idempotent seed data for consistent environment setup (tiers, demo tenants, departments, conversations, billing, etc.).

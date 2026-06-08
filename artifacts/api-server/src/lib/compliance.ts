@@ -65,7 +65,7 @@ async function isOptedOut(tenantSlug: string, tenantId: number, phone: string): 
   return rows.length > 0;
 }
 
-async function isBlocked(tenantSlug: string, tenantId: number, phone: string): Promise<boolean> {
+export async function isBlocked(tenantSlug: string, tenantId: number, phone: string): Promise<boolean> {
   const tdb = getTenantDb(tenantSlug);
   const rows = await tdb
     .select({ id: contactsTable.id })

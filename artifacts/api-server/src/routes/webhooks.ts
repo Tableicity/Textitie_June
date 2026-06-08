@@ -17,6 +17,7 @@ import { eventBus } from "../lib/eventBus";
 import { logger } from "../lib/logger";
 import { checkTwilioSignature, requireTwilioSignature } from "../lib/twilioSignature";
 import { enqueueSync } from "../lib/integrations/syncWorker";
+import { isBlocked } from "../lib/compliance";
 
 const router: IRouter = Router();
 
@@ -76,7 +77,56 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
     if (toNumber) {
       const tenant = await resolveTenantByPhoneNumber(toNumber);
 
-      if (tenant) {
+      // ---- Block enforcement (inbound) ----
+      // A tenant can "Block" a contact from the inbox contact card. Outbound
+      // sends to a blocked number are already rejected in
+      // checkOutboundCompliance; here we honor the same block on the way in.
+      // A blocked number's text must never reach an agent, so we drop it
+      // entirely — no Chatwoot forward, no AI whisper, no conversation
+      // create/update, no realtime push, no automation/attribution. We still
+      // record a tenant-scoped audit-log entry (and the raw webhook event
+      // below) so there is a trail of the suppressed inbound for compliance.
+      const senderBlocked =
+        tenant != null && fromNumber != null
+          ? await isBlocked(tenant.slug, tenant.id, fromNumber)
+          : false;
+
+      if (tenant && senderBlocked) {
+        try {
+          await db.insert(auditLogsTable).values({
+            tenantId: tenant.id,
+            actorUserId: null,
+            actorEmail: "system:inbound-webhook",
+            action: "inbound.blocked",
+            entityType: "contact",
+            entityId: fromNumber ?? "",
+            afterJson: {
+              phone: fromNumber,
+              bodyPreview: messageBody.slice(0, 500),
+              source: "inbound-webhook",
+            },
+          });
+        } catch (err) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err), from: fromNumber },
+            "Inbound block: audit log write failed (non-blocking)",
+          );
+        }
+        req.log.info(
+          { tenantSlug: tenant.slug, from: fromNumber },
+          "SAMA Inbound Router: dropped message from blocked sender",
+        );
+        payload = {
+          ...rawBody,
+          _sama: {
+            routed: false,
+            blocked: true,
+            tenantId: tenant.id,
+            tenantSlug: tenant.slug,
+            reason: "sender is blocked for this tenant",
+          },
+        };
+      } else if (tenant) {
         let chatwootResult = null;
         if (tenant.chatwootAccountId && tenant.chatwootInboxId && fromNumber) {
           chatwootResult = await postChatwootMessage({
