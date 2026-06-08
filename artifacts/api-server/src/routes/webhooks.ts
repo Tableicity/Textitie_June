@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { desc, eq, and, sql } from "drizzle-orm";
-import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable, contactsTable } from "@workspace/db";
+import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable, contactsTable, auditLogsTable } from "@workspace/db";
 import {
   ReceiveWebhookParams,
   ListWebhookEventsQueryParams,
@@ -16,6 +16,7 @@ import { resolveTenantByPhoneNumber } from "../lib/tenantPhoneLookup";
 import { eventBus } from "../lib/eventBus";
 import { logger } from "../lib/logger";
 import { checkTwilioSignature, requireTwilioSignature } from "../lib/twilioSignature";
+import { enqueueSync } from "../lib/integrations/syncWorker";
 
 const router: IRouter = Router();
 
@@ -200,9 +201,56 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                   target: [contactsTable.tenantId, contactsTable.phone],
                   set: updateSet,
                 })
-                .returning({ id: contactsTable.id, name: contactsTable.name });
+                // `xmax = 0` is true only for a freshly INSERTed row; an
+                // ON CONFLICT UPDATE (repeat texter) sets xmax non-zero. This
+                // lets us tell brand-new contacts from returning ones in a
+                // single round-trip, so we only sync/audit once per contact.
+                .returning({
+                  id: contactsTable.id,
+                  name: contactsTable.name,
+                  inserted: sql<boolean>`(xmax = 0)`,
+                });
               const contactId = contact.id;
               const resolvedContactName = contact.name ?? fromNumber;
+
+              // Only newly auto-saved texters get pushed to a connected CRM and
+              // audited — repeat texters just bumped last_interaction_at above
+              // and must not be re-synced on every inbound message.
+              if (contact.inserted) {
+                try {
+                  // enqueueSync no-ops when no CRM is connected for the tenant,
+                  // mirroring the manual POST /contacts create path.
+                  await enqueueSync({
+                    tenantId: tenant.id,
+                    tenantSlug,
+                    provider: "hubspot",
+                    entityType: "contact",
+                    entityId: contactId,
+                    op: "upsert",
+                    payload: {
+                      phone: fromNumber,
+                      email: null,
+                      firstName: null,
+                      lastName: null,
+                      tags: [],
+                    },
+                  });
+                  await tdb.insert(auditLogsTable).values({
+                    tenantId: tenant.id,
+                    actorUserId: null,
+                    actorEmail: "system:inbound-webhook",
+                    action: "contact.created",
+                    entityType: "contact",
+                    entityId: String(contactId),
+                    afterJson: { phone: fromNumber, source: "inbound-webhook" },
+                  });
+                } catch (err) {
+                  logger.warn(
+                    { err: err instanceof Error ? err.message : String(err), contactId },
+                    "Auto-save contact CRM sync/audit failed (non-blocking)",
+                  );
+                }
+              }
 
               const existing = await tdb
                 .select({
