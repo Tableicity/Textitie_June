@@ -193,6 +193,10 @@ export async function buildAudience(
         SELECT 1 FROM opt_outs o
         WHERE o.tenant_id = c.tenant_id AND o.phone_number = c.contact_phone
       )
+      AND NOT EXISTS (
+        SELECT 1 FROM contacts ct
+        WHERE ct.tenant_id = c.tenant_id AND ct.phone = c.contact_phone AND ct.blocked = true
+      )
   `;
   const params: any[] = [tenantId];
   let paramIdx = 2;

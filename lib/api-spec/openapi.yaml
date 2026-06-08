@@ -1445,6 +1445,29 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/OptOutItem"
+    post:
+      operationId: createOptOut
+      tags: [opt-outs]
+      summary: Opt a phone number out (unsubscribe)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOptOutInput"
+      responses:
+        "201":
+          description: Opt-out recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptOutItem"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /opt-outs/{id}:
     delete:
@@ -2055,6 +2078,31 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "409":
           description: Duplicate phone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /contacts/block:
+    post:
+      operationId: setContactBlocked
+      tags: [contacts]
+      summary: Block or unblock a contact by phone (find-or-create)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetContactBlockedInput"
+      responses:
+        "200":
+          description: Updated contact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "400":
+          description: Invalid input
           content:
             application/json:
               schema:
@@ -3737,11 +3785,12 @@ components:
         tags:
           type: ["array", "null"]
           items: { type: string }
+        blocked: { type: boolean }
         firstSeenAt: { type: string, format: date-time }
         lastInteractionAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, tenantId, phone, name, email, notes, location, firstSeenAt, lastInteractionAt, createdAt, updatedAt]
+      required: [id, tenantId, phone, name, email, notes, location, blocked, firstSeenAt, lastInteractionAt, createdAt, updatedAt]
 
     ContactConversationSummary:
       type: object
@@ -3789,6 +3838,20 @@ components:
         tags:
           type: ["array", "null"]
           items: { type: string }
+
+    SetContactBlockedInput:
+      type: object
+      properties:
+        phone: { type: string, minLength: 1 }
+        blocked: { type: boolean }
+      required: [phone, blocked]
+
+    CreateOptOutInput:
+      type: object
+      properties:
+        phone: { type: string, minLength: 1 }
+        reason: { type: ["string", "null"] }
+      required: [phone]
 
     CreateConversationInput:
       type: object

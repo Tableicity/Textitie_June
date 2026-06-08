@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { tenantsTable } from "./tenants";
 
 export const contactsTable = pgTable(
@@ -15,6 +15,7 @@ export const contactsTable = pgTable(
     location: text("location"),
     preferredLanguage: text("preferred_language"),
     tags: text("tags").array(),
+    blocked: boolean("blocked").notNull().default(false),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

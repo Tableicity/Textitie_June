@@ -18,6 +18,8 @@ import {
   useListContacts,
   useCreateContact,
   useUpdateContact,
+  useSetContactBlocked,
+  useCreateOptOut,
   listContacts,
   getListMessagesQueryKey,
   getListConversationsQueryKey,
@@ -62,6 +64,10 @@ import {
   Mail,
   Globe,
   Tag,
+  Ban,
+  Archive,
+  BellOff,
+  BookUser,
 } from "lucide-react";
 import {
   Sheet,
@@ -99,6 +105,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatPhone, cityStateForPhone, toE164 } from "@/lib/phone";
 
@@ -322,6 +338,29 @@ export default function Inbox() {
     },
   });
 
+  const setBlockedMut = useSetContactBlocked({
+    mutation: { onSuccess: () => invalidateContactViews() },
+  });
+
+  const createOptOutMut = useCreateOptOut({
+    mutation: { onSuccess: () => invalidateContactViews() },
+  });
+
+  // Which destructive contact-card action is awaiting confirmation.
+  const [contactConfirm, setContactConfirm] = useState<
+    "block" | "archive" | "unsubscribe" | null
+  >(null);
+
+  const handleViewInAddressBook = () => {
+    setShowContactCard(false);
+    setLocation(`/contacts?q=${encodeURIComponent(contactPhone)}`);
+  };
+
+  const handleUnblock = async () => {
+    if (!contactPhone) return;
+    await setBlockedMut.mutateAsync({ data: { phone: contactPhone, blocked: false } });
+  };
+
   const openContactEdit = () => {
     setContactSaveError(null);
     setContactDraft({
@@ -425,6 +464,28 @@ export default function Inbox() {
       },
     },
   });
+
+  const contactActionPending =
+    setBlockedMut.isPending ||
+    createOptOutMut.isPending ||
+    updateConv.isPending;
+
+  const confirmContactAction = async () => {
+    if (!contactPhone) return;
+    try {
+      if (contactConfirm === "block") {
+        await setBlockedMut.mutateAsync({ data: { phone: contactPhone, blocked: true } });
+      } else if (contactConfirm === "unsubscribe") {
+        await createOptOutMut.mutateAsync({ data: { phone: contactPhone } });
+      } else if (contactConfirm === "archive" && selectedId) {
+        await updateConv.mutateAsync({ id: selectedId, data: { status: "closed" } });
+      }
+      setContactConfirm(null);
+      setShowContactCard(false);
+    } catch {
+      // Keep the dialog open so the agent can retry.
+    }
+  };
 
   const createReminder = useCreateReminder({
     mutation: {
@@ -1746,6 +1807,63 @@ export default function Inbox() {
                     </SheetTitle>
                     <p className="text-xs text-slate-500 mt-0.5">{formatPhone(contactPhone)}</p>
                   </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 flex-shrink-0"
+                        data-testid="button-contact-menu"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={openContactEdit} data-testid="menu-edit-contact">
+                        <PencilLine className="w-4 h-4 mr-2" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={handleViewInAddressBook}
+                        data-testid="menu-view-address-book"
+                      >
+                        <BookUser className="w-4 h-4 mr-2" />
+                        View in address book
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setContactConfirm("archive")}
+                        data-testid="menu-archive-contact"
+                      >
+                        <Archive className="w-4 h-4 mr-2" />
+                        Archive conversation
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setContactConfirm("unsubscribe")}
+                        data-testid="menu-unsubscribe-contact"
+                      >
+                        <BellOff className="w-4 h-4 mr-2" />
+                        Unsubscribe
+                      </DropdownMenuItem>
+                      {existingContact?.blocked ? (
+                        <DropdownMenuItem
+                          onClick={handleUnblock}
+                          data-testid="menu-unblock-contact"
+                        >
+                          <Ban className="w-4 h-4 mr-2" />
+                          Unblock
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={() => setContactConfirm("block")}
+                          className="text-red-600 focus:text-red-600"
+                          data-testid="menu-block-contact"
+                        >
+                          <Ban className="w-4 h-4 mr-2" />
+                          Block
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </SheetHeader>
 
@@ -1838,6 +1956,56 @@ export default function Inbox() {
           )}
         </SheetContent>
       </Sheet>
+
+      <AlertDialog
+        open={contactConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setContactConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {contactConfirm === "block" && "Block this contact?"}
+              {contactConfirm === "archive" && "Archive this conversation?"}
+              {contactConfirm === "unsubscribe" && "Unsubscribe this contact?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {contactConfirm === "block" &&
+                `${formatPhone(contactPhone)} will be blocked. You won't be able to send them messages until you unblock them.`}
+              {contactConfirm === "archive" &&
+                "This conversation will be marked closed and removed from your open inbox. You can reopen it later."}
+              {contactConfirm === "unsubscribe" &&
+                `${formatPhone(contactPhone)} will be opted out (STOP). They won't receive any further outbound messages.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-contact-action">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmContactAction();
+              }}
+              disabled={contactActionPending}
+              className={
+                contactConfirm === "archive"
+                  ? undefined
+                  : "bg-red-600 hover:bg-red-700"
+              }
+              data-testid="button-confirm-contact-action"
+            >
+              {contactActionPending && (
+                <Loader2 className="w-3 h-3 animate-spin mr-2" />
+              )}
+              {contactConfirm === "block" && "Block"}
+              {contactConfirm === "archive" && "Archive"}
+              {contactConfirm === "unsubscribe" && "Unsubscribe"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

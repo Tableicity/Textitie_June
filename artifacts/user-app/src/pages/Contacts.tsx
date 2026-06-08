@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListContacts,
@@ -70,7 +71,15 @@ function csvToTags(s: string): string[] | null {
 
 export default function Contacts() {
   const queryClient = useQueryClient();
+  const searchString = useSearch();
   const [search, setSearch] = useState("");
+
+  // Prefill the search box from the ?q= URL param (e.g. "View in address book"
+  // jump from the inbox contact card).
+  useEffect(() => {
+    const q = new URLSearchParams(searchString).get("q");
+    if (q) setSearch(q);
+  }, [searchString]);
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editing, setEditing] = useState<Contact | null>(null);

@@ -1021,6 +1021,7 @@ export interface Contact {
   preferredLanguage?: string | null;
   /** @nullable */
   tags?: string[] | null;
+  blocked: boolean;
   firstSeenAt: string;
   /** @nullable */
   lastInteractionAt: string | null;
@@ -1071,6 +1072,19 @@ export interface UpdateContactInput {
   preferredLanguage?: string | null;
   /** @nullable */
   tags?: string[] | null;
+}
+
+export interface SetContactBlockedInput {
+  /** @minLength 1 */
+  phone: string;
+  blocked: boolean;
+}
+
+export interface CreateOptOutInput {
+  /** @minLength 1 */
+  phone: string;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface CreateConversationInput {

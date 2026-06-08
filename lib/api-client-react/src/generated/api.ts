@@ -52,6 +52,7 @@ import type {
   CreateConversationInput,
   CreateDepartmentInput,
   CreateDispositionInput,
+  CreateOptOutInput,
   CreateReminderInput,
   CreateShortcutInput,
   CreateTenantInput,
@@ -85,6 +86,7 @@ import type {
   SearchAvailableNumbersParams,
   SendMessageInput,
   SetAgentStatusInput,
+  SetContactBlockedInput,
   ShortcutItem,
   SubscribeInput,
   SubscriptionDetail,
@@ -5214,6 +5216,92 @@ export function useListOptOuts<
 }
 
 /**
+ * @summary Opt a phone number out (unsubscribe)
+ */
+export const getCreateOptOutUrl = () => {
+  return `/api/opt-outs`;
+};
+
+export const createOptOut = async (
+  createOptOutInput: CreateOptOutInput,
+  options?: RequestInit,
+): Promise<OptOutItem> => {
+  return customFetch<OptOutItem>(getCreateOptOutUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createOptOutInput),
+  });
+};
+
+export const getCreateOptOutMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOptOut>>,
+    TError,
+    { data: BodyType<CreateOptOutInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createOptOut>>,
+  TError,
+  { data: BodyType<CreateOptOutInput> },
+  TContext
+> => {
+  const mutationKey = ["createOptOut"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createOptOut>>,
+    { data: BodyType<CreateOptOutInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createOptOut(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateOptOutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createOptOut>>
+>;
+export type CreateOptOutMutationBody = BodyType<CreateOptOutInput>;
+export type CreateOptOutMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Opt a phone number out (unsubscribe)
+ */
+export const useCreateOptOut = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOptOut>>,
+    TError,
+    { data: BodyType<CreateOptOutInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createOptOut>>,
+  TError,
+  { data: BodyType<CreateOptOutInput> },
+  TContext
+> => {
+  return useMutation(getCreateOptOutMutationOptions(options));
+};
+
+/**
  * @summary Remove an opt-out record (re-subscribe)
  */
 export const getDeleteOptOutUrl = (id: number) => {
@@ -7405,6 +7493,92 @@ export const useCreateContact = <
   TContext
 > => {
   return useMutation(getCreateContactMutationOptions(options));
+};
+
+/**
+ * @summary Block or unblock a contact by phone (find-or-create)
+ */
+export const getSetContactBlockedUrl = () => {
+  return `/api/contacts/block`;
+};
+
+export const setContactBlocked = async (
+  setContactBlockedInput: SetContactBlockedInput,
+  options?: RequestInit,
+): Promise<Contact> => {
+  return customFetch<Contact>(getSetContactBlockedUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setContactBlockedInput),
+  });
+};
+
+export const getSetContactBlockedMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setContactBlocked>>,
+    TError,
+    { data: BodyType<SetContactBlockedInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setContactBlocked>>,
+  TError,
+  { data: BodyType<SetContactBlockedInput> },
+  TContext
+> => {
+  const mutationKey = ["setContactBlocked"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setContactBlocked>>,
+    { data: BodyType<SetContactBlockedInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return setContactBlocked(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetContactBlockedMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setContactBlocked>>
+>;
+export type SetContactBlockedMutationBody = BodyType<SetContactBlockedInput>;
+export type SetContactBlockedMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Block or unblock a contact by phone (find-or-create)
+ */
+export const useSetContactBlocked = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setContactBlocked>>,
+    TError,
+    { data: BodyType<SetContactBlockedInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setContactBlocked>>,
+  TError,
+  { data: BodyType<SetContactBlockedInput> },
+  TContext
+> => {
+  return useMutation(getSetContactBlockedMutationOptions(options));
 };
 
 /**

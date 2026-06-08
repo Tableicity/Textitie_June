@@ -1186,6 +1186,15 @@ export const ListOptOutsResponseItem = zod.object({
 export const ListOptOutsResponse = zod.array(ListOptOutsResponseItem);
 
 /**
+ * @summary Opt a phone number out (unsubscribe)
+ */
+
+export const CreateOptOutBody = zod.object({
+  phone: zod.string().min(1),
+  reason: zod.string().nullish(),
+});
+
+/**
  * @summary Remove an opt-out record (re-subscribe)
  */
 export const DeleteOptOutParams = zod.object({
@@ -1641,6 +1650,7 @@ export const ListContactsResponseItem = zod.object({
   location: zod.string().nullable(),
   preferredLanguage: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
+  blocked: zod.boolean(),
   firstSeenAt: zod.coerce.date(),
   lastInteractionAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
@@ -1660,6 +1670,32 @@ export const CreateContactBody = zod.object({
   location: zod.string().nullish(),
   preferredLanguage: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
+});
+
+/**
+ * @summary Block or unblock a contact by phone (find-or-create)
+ */
+
+export const SetContactBlockedBody = zod.object({
+  phone: zod.string().min(1),
+  blocked: zod.boolean(),
+});
+
+export const SetContactBlockedResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  phone: zod.string(),
+  name: zod.string().nullable(),
+  email: zod.string().nullable(),
+  notes: zod.string().nullable(),
+  location: zod.string().nullable(),
+  preferredLanguage: zod.string().nullish(),
+  tags: zod.array(zod.string()).nullish(),
+  blocked: zod.boolean(),
+  firstSeenAt: zod.coerce.date(),
+  lastInteractionAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
 });
 
 /**
@@ -1686,6 +1722,7 @@ export const GetContactResponse = zod
     location: zod.string().nullable(),
     preferredLanguage: zod.string().nullish(),
     tags: zod.array(zod.string()).nullish(),
+    blocked: zod.boolean(),
     firstSeenAt: zod.coerce.date(),
     lastInteractionAt: zod.coerce.date().nullable(),
     createdAt: zod.coerce.date(),
@@ -1731,6 +1768,7 @@ export const UpdateContactResponse = zod.object({
   location: zod.string().nullable(),
   preferredLanguage: zod.string().nullish(),
   tags: zod.array(zod.string()).nullish(),
+  blocked: zod.boolean(),
   firstSeenAt: zod.coerce.date(),
   lastInteractionAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),

@@ -169,6 +169,41 @@ router.post("/contacts", requireTenantAuth, async (req, res) => {
   }
 });
 
+router.post("/contacts/block", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const { phone, blocked } = req.body ?? {};
+  if (!phone || typeof phone !== "string" || phone.trim().length === 0) {
+    res.status(400).json({ error: "phone is required" });
+    return;
+  }
+  if (typeof blocked !== "boolean") {
+    res.status(400).json({ error: "blocked must be a boolean" });
+    return;
+  }
+  const cleanPhone = phone.trim();
+  try {
+    const rows = await db
+      .insert(contactsTable)
+      .values({ tenantId, phone: cleanPhone, blocked })
+      .onConflictDoUpdate({
+        target: [contactsTable.tenantId, contactsTable.phone],
+        set: { blocked, updatedAt: new Date() },
+      })
+      .returning();
+    const updated = rows[0];
+    await recordAudit(req, {
+      action: blocked ? "contact.blocked" : "contact.unblocked",
+      entityType: "contact",
+      entityId: updated.id,
+      after: { phone: updated.phone, blocked: updated.blocked },
+    });
+    res.json(updated);
+  } catch (err) {
+    logger.error({ err }, "Set contact blocked error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.patch("/contacts/:id", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
   const id = Number(req.params.id);

@@ -154,6 +154,36 @@ router.get("/opt-outs", requireTenantAuth, async (req, res) => {
   }
 });
 
+router.post("/opt-outs", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const { phone, reason } = req.body ?? {};
+  if (!phone || typeof phone !== "string" || phone.trim().length === 0) {
+    res.status(400).json({ error: "phone is required" });
+    return;
+  }
+  try {
+    const rows = await db
+      .insert(optOutsTable)
+      .values({
+        tenantId,
+        phoneNumber: phone.trim(),
+        reason: typeof reason === "string" && reason.trim().length > 0 ? reason.trim() : "agent_unsubscribe",
+      })
+      .onConflictDoUpdate({
+        target: [optOutsTable.tenantId, optOutsTable.phoneNumber],
+        set: {
+          reason: typeof reason === "string" && reason.trim().length > 0 ? reason.trim() : "agent_unsubscribe",
+          optedOutAt: new Date(),
+        },
+      })
+      .returning();
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    logger.error({ err }, "Create opt-out error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.delete("/opt-outs/:id", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
   const id = Number(req.params.id);

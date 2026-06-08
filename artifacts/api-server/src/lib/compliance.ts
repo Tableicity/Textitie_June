@@ -1,8 +1,9 @@
-import { db, getTenantDb, tenantsTable, optInsTable, optOutsTable, messagesTable, conversationsTable } from "@workspace/db";
+import { db, getTenantDb, tenantsTable, optInsTable, optOutsTable, messagesTable, conversationsTable, contactsTable } from "@workspace/db";
 import { and, eq, gte, isNull, sql } from "drizzle-orm";
 
 export type ComplianceBlock =
   | { ok: true }
+  | { ok: false; reason: "blocked"; message: string }
   | { ok: false; reason: "opted_out"; message: string }
   | { ok: false; reason: "no_consent"; message: string }
   | { ok: false; reason: "quiet_hours"; message: string }
@@ -64,6 +65,22 @@ async function isOptedOut(tenantSlug: string, tenantId: number, phone: string): 
   return rows.length > 0;
 }
 
+async function isBlocked(tenantSlug: string, tenantId: number, phone: string): Promise<boolean> {
+  const tdb = getTenantDb(tenantSlug);
+  const rows = await tdb
+    .select({ id: contactsTable.id })
+    .from(contactsTable)
+    .where(
+      and(
+        eq(contactsTable.tenantId, tenantId),
+        eq(contactsTable.phone, phone),
+        eq(contactsTable.blocked, true),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 async function hasConsent(tenantSlug: string, tenantId: number, phone: string): Promise<boolean> {
   const tdb = getTenantDb(tenantSlug);
   const rows = await tdb
@@ -106,6 +123,10 @@ export async function checkOutboundCompliance(
 ): Promise<ComplianceBlock> {
   const t = await loadTenantCompliance(tenantId);
   if (!t) return { ok: true };
+
+  if (await isBlocked(tenantSlug, tenantId, phone)) {
+    return { ok: false, reason: "blocked", message: "Recipient is blocked." };
+  }
 
   if (await isOptedOut(tenantSlug, tenantId, phone)) {
     return { ok: false, reason: "opted_out", message: "Recipient has opted out (STOP)." };

@@ -22,6 +22,7 @@ export interface Contact {
   preferredLanguage?: string | null;
   /** @nullable */
   tags?: string[] | null;
+  blocked: boolean;
   firstSeenAt: Date;
   /** @nullable */
   lastInteractionAt: Date | null;
