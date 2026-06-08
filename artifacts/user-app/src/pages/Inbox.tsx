@@ -18,6 +18,7 @@ import {
   useListContacts,
   useCreateContact,
   useUpdateContact,
+  listContacts,
   getListMessagesQueryKey,
   getListConversationsQueryKey,
   getGetConversationQueryKey,
@@ -322,6 +323,7 @@ export default function Inbox() {
   });
 
   const openContactEdit = () => {
+    setContactSaveError(null);
     setContactDraft({
       name: existingContact?.name ?? (selectedConv?.contactName && selectedConv.contactName !== contactPhone ? selectedConv.contactName : ""),
       email: existingContact?.email ?? "",
@@ -332,9 +334,12 @@ export default function Inbox() {
     setEditingContact(true);
   };
 
-  const handleSaveContact = (e: React.FormEvent) => {
+  const [contactSaveError, setContactSaveError] = useState<string | null>(null);
+
+  const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!contactPhone) return;
+    setContactSaveError(null);
     const body = {
       name: contactDraft.name.trim() || null,
       email: contactDraft.email.trim() || null,
@@ -342,10 +347,26 @@ export default function Inbox() {
       tags: contactCsvToTags(contactDraft.tagsCsv),
       notes: contactDraft.notes.trim() || null,
     };
-    if (existingContact) {
-      updateContactMut.mutate({ id: existingContact.id, data: body });
-    } else {
-      createContactMut.mutate({ data: { phone: contactPhone, ...body } });
+    try {
+      if (existingContact) {
+        await updateContactMut.mutateAsync({ id: existingContact.id, data: body });
+      } else {
+        try {
+          await createContactMut.mutateAsync({ data: { phone: contactPhone, ...body } });
+        } catch (err) {
+          // The contact was created between our lookup and this save (POST
+          // returns 409 on duplicate phone). Recover by re-fetching the row by
+          // phone and applying the edit as an update instead of failing.
+          const status = (err as { status?: number } | null)?.status;
+          if (status !== 409) throw err;
+          const matches = await listContacts({ q: contactPhone });
+          const conflicting = matches?.find((c) => c.phone === contactPhone);
+          if (!conflicting) throw err;
+          await updateContactMut.mutateAsync({ id: conflicting.id, data: body });
+        }
+      }
+    } catch {
+      setContactSaveError("Couldn't save the contact. Please try again.");
     }
   };
 
@@ -1664,6 +1685,14 @@ export default function Inbox() {
                   />
                 </div>
               </div>
+              {contactSaveError && (
+                <p
+                  className="px-6 pb-2 text-sm text-red-600"
+                  data-testid="text-contact-save-error"
+                >
+                  {contactSaveError}
+                </p>
+              )}
               <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-200">
                 <Button
                   type="button"
