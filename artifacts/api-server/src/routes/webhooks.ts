@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, sql } from "drizzle-orm";
 import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable, contactsTable } from "@workspace/db";
 import {
   ReceiveWebhookParams,
@@ -58,6 +58,19 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
     const toNumber = pickString(rawBody, ["To", "to"]);
     const fromNumber = pickString(rawBody, ["From", "from"]);
     const messageBody = pickString(rawBody, ["Body", "body"]) ?? "";
+    // Sender display name, when the channel provides one. Twilio WhatsApp/RCS
+    // send `ProfileName`; other bridges may use generic name keys. We fall back
+    // to the raw phone number when none is present so the contact is never blank.
+    const senderDisplayName = pickString(rawBody, [
+      "ProfileName",
+      "profileName",
+      "SenderName",
+      "senderName",
+      "ContactName",
+      "contactName",
+      "Author",
+      "author",
+    ]);
 
     if (toNumber) {
       const tenant = await resolveTenantByPhoneNumber(toNumber);
@@ -162,24 +175,41 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
               // new texter lands in the address book without a manual save.
               // Repeat texters hit the unique (tenant_id, phone) index and
               // only bump last_interaction_at — no duplicate rows.
+              // When the channel gives us a real display name, populate the
+              // contact's name. On repeat texters we only fill a blank name
+              // (COALESCE keeps any name an agent already edited) — we never
+              // clobber a curated name with a profile name.
               const now = new Date();
+              const updateSet: Record<string, unknown> = {
+                lastInteractionAt: now,
+                updatedAt: now,
+              };
+              if (senderDisplayName) {
+                updateSet["name"] = sql`coalesce(${contactsTable.name}, ${senderDisplayName})`;
+              }
               const [contact] = await tdb
                 .insert(contactsTable)
                 .values({
                   tenantId: tenant.id,
                   phone: fromNumber,
+                  name: senderDisplayName,
                   firstSeenAt: now,
                   lastInteractionAt: now,
                 })
                 .onConflictDoUpdate({
                   target: [contactsTable.tenantId, contactsTable.phone],
-                  set: { lastInteractionAt: now, updatedAt: now },
+                  set: updateSet,
                 })
-                .returning({ id: contactsTable.id });
+                .returning({ id: contactsTable.id, name: contactsTable.name });
               const contactId = contact.id;
+              const resolvedContactName = contact.name ?? fromNumber;
 
               const existing = await tdb
-                .select({ id: conversationsTable.id, contactId: conversationsTable.contactId })
+                .select({
+                  id: conversationsTable.id,
+                  contactId: conversationsTable.contactId,
+                  contactName: conversationsTable.contactName,
+                })
                 .from(conversationsTable)
                 .where(
                   and(
@@ -196,10 +226,23 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 conversationId = existing[0].id;
                 // Backfill contactId on pre-existing conversations created
                 // before auto-save so name edits flow through the contact.
+                // Also fill in a display name when the conversation only ever
+                // showed the raw phone number — but leave any real name alone.
+                const convUpdate: Record<string, unknown> = {};
                 if (existing[0].contactId == null) {
+                  convUpdate["contactId"] = contactId;
+                }
+                if (
+                  senderDisplayName &&
+                  (existing[0].contactName == null ||
+                    existing[0].contactName === fromNumber)
+                ) {
+                  convUpdate["contactName"] = resolvedContactName;
+                }
+                if (Object.keys(convUpdate).length > 0) {
                   await tdb
                     .update(conversationsTable)
-                    .set({ contactId })
+                    .set(convUpdate)
                     .where(eq(conversationsTable.id, conversationId));
                 }
               } else {
@@ -209,7 +252,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                     tenantId: tenant.id,
                     contactId,
                     contactPhone: fromNumber,
-                    contactName: fromNumber,
+                    contactName: resolvedContactName,
                     status: "open",
                     lastMessageAt: new Date(),
                   })
@@ -222,7 +265,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 conversationId,
                 direction: "inbound",
                 body: messageBody,
-                senderName: fromNumber,
+                senderName: resolvedContactName,
                 read: false,
               });
 
