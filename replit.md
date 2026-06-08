@@ -6,7 +6,8 @@ Textitie (internal codename "SAMA" — Simple but Advanced Messaging Alternative
 ## User Preferences
 - GitHub remote: `https://github.com/TransferAgent/textitie.git` (PAT stored in the `GITHUB_TEXTITIE` secret). For one-off pushes use:
   `git push "https://TransferAgent:${GITHUB_TEXTITIE}@github.com/TransferAgent/textitie.git" main`
-- Operational status, Twilio go-live runbook, and a full Gate Table live in `John/Run_Book.md` — keep it updated when gate status changes.
+- Status tracking is the agent's job, not the user's, and not a separate ledger. `replit.md` (this file) is the single source of truth for build status. The "Scaffolding" gate-ledger experiment (`Gate_Build.md` + `Regeneration.md`) was retired 2026-06-08 — it required manual reconciliation after every parallel task-agent merge and paid off only in friction; both are archived in `John/Archive/`. Do NOT recreate a gate ledger or ask the user to maintain build-status docs.
+- `John/` keeps only living **operational** docs at its root: `Run_Book.md` (Twilio go-live runbook, secrets, diagnostics), `Hardening.md` (prod-hardening backlog), `Database_URL_work.md` (dev/prod DB split task), `architecture.doc.md` (append-only durable lessons). Update these when the relevant operational facts change — they are references, not a status ceremony.
 
 ## System Architecture
 
