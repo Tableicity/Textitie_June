@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { Checkbox } from "@/components/ui/checkbox";
 import { MessageSquare } from "lucide-react";
 import peekImage from "@assets/landing-peek.png";
 
@@ -33,8 +32,6 @@ export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  // A2P 10DLC affirmative consent — must be unchecked by default
-  const [smsConsent, setSmsConsent] = useState(false);
 
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -200,12 +197,6 @@ export default function Login() {
               </div>
               <h2 className="text-2xl font-bold tracking-tight">TEXTITIE</h2>
               <p className="text-slate-400 text-xs mt-1">Two-way SMS for teams that actually answer</p>
-              {/* A2P 10DLC transparency note (matches Signup) */}
-              <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
-                OTP security texts and customer support messages only.
-                Message and data rates may apply. Message frequency varies.
-                Reply HELP for help or STOP to cancel.
-              </p>
             </div>
 
             {/* Login form */}
@@ -296,43 +287,6 @@ export default function Login() {
                     </FormItem>
                   )}
                 />
-
-                {/* A2P 10DLC affirmative-consent checkbox (must be unchecked by default) */}
-                <label
-                  className="flex items-start gap-3 pt-1 cursor-pointer select-none"
-                  data-testid="sms-consent-row"
-                >
-                  <Checkbox
-                    checked={smsConsent}
-                    onCheckedChange={(v) => setSmsConsent(v === true)}
-                    className="mt-0.5 border-white/30 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-                    data-testid="sms-consent-checkbox"
-                  />
-                  <span className="text-[11px] leading-relaxed text-slate-400">
-                    By checking this box, I consent to receive automated
-                    customer support text messages from Textitie. Consent is
-                    not required to create an account or complete a service.
-                    Message and data rates may apply. Message frequency
-                    varies. Reply HELP for help or STOP to cancel. I agree to
-                    the{" "}
-                    <button
-                      type="button"
-                      onClick={(e) => { e.preventDefault(); setLocation("/privacy"); }}
-                      className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
-                    >
-                      Privacy Policy
-                    </button>{" "}
-                    and{" "}
-                    <button
-                      type="button"
-                      onClick={(e) => { e.preventDefault(); setLocation("/terms"); }}
-                      className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
-                    >
-                      Terms of Service
-                    </button>
-                    .
-                  </span>
-                </label>
 
                 <Button
                   type="submit"
