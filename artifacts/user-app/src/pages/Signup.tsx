@@ -301,18 +301,6 @@ export default function Signup() {
                   Sign in
                 </button>
               </p>
-              {!isTrial && (
-                <p className="mt-1">
-                  Or{" "}
-                  <button
-                    type="button"
-                    onClick={() => setLocation("/signup/trial")}
-                    className="text-blue-400 hover:text-blue-300 font-medium"
-                  >
-                    Start a Free Trial
-                  </button>
-                </p>
-              )}
             </div>
 
             <p className="mt-5 text-center text-xs text-slate-500">info@textitie.com</p>
