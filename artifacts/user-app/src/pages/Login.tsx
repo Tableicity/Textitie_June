@@ -295,7 +295,7 @@ export default function Login() {
                   disabled={isLoading}
                   data-testid="sign-in-button"
                 >
-                  {isLoading ? "Signing in..." : "Sign Up"}
+                  {isLoading ? "Signing in..." : "Login"}
                 </Button>
               </form>
             </Form>
