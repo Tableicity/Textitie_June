@@ -72,7 +72,7 @@ export default function Landing() {
               onClick={() => setLocation("/login")}
               data-testid="button-nav-login"
             >
-              Sign in
+              Login
             </Button>
             <Button
               onClick={() => setLocation("/signup")}
@@ -103,7 +103,7 @@ export default function Landing() {
             className="bg-blue-600 hover:bg-blue-700 text-base px-6 py-6"
             data-testid="button-hero-signup"
           >
-            Start your free trial
+            Sign Up
           </Button>
           <Button
             size="lg"
@@ -112,7 +112,7 @@ export default function Landing() {
             className="text-base px-6 py-6"
             data-testid="button-hero-login"
           >
-            Sign in
+            Login
           </Button>
         </div>
         <p className="mt-4 text-sm text-slate-500">
@@ -251,7 +251,7 @@ export default function Landing() {
               className="bg-blue-600 hover:bg-blue-700 text-base px-6 py-6"
               data-testid="button-cta-signup"
             >
-              Start your free trial
+              Sign Up
             </Button>
             <Button
               size="lg"
@@ -259,7 +259,7 @@ export default function Landing() {
               onClick={() => setLocation("/login")}
               className="text-base px-6 py-6"
             >
-              Sign in
+              Login
             </Button>
           </div>
         </div>
@@ -292,7 +292,7 @@ export default function Landing() {
             <ul className="space-y-2 text-sm text-slate-600">
               <li>
                 <button onClick={() => setLocation("/login")} className="hover:text-slate-900">
-                  Sign in
+                  Login
                 </button>
               </li>
               <li>
