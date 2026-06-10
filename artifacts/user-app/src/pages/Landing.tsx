@@ -79,7 +79,7 @@ export default function Landing() {
               className="bg-blue-600 hover:bg-blue-700"
               data-testid="button-nav-signup"
             >
-              Start free trial
+              Sign Up
             </Button>
           </nav>
         </div>
