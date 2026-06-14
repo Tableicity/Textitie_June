@@ -4,6 +4,10 @@ import { db, departmentsTable } from "@workspace/db";
 import { eq, and, isNotNull } from "drizzle-orm";
 import { requireTenantAuth } from "../middleware/tenantAuth";
 import { logger } from "../lib/logger";
+import {
+  setDepartmentNumber,
+  PhoneNumberConflictError,
+} from "../lib/phoneNumberRegistry";
 
 const router = Router();
 
@@ -87,10 +91,20 @@ router.post("/phone-numbers/purchase", requireTenantAuth, async (req, res) => {
     );
 
     if (departmentId) {
-      await db
-        .update(departmentsTable)
-        .set({ phoneNumber: purchased.phoneNumber, twilioSid: purchased.sid })
-        .where(eq(departmentsTable.id, departmentId));
+      try {
+        await setDepartmentNumber(
+          tenantId,
+          departmentId,
+          purchased.phoneNumber,
+          purchased.sid,
+        );
+      } catch (err) {
+        if (err instanceof PhoneNumberConflictError) {
+          res.status(409).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
     }
 
     res.status(201).json({
@@ -153,12 +167,25 @@ router.post("/phone-numbers/assign", requireTenantAuth, async (req, res) => {
       res.status(404).json({ error: "Department not found" });
       return;
     }
-    const rows = await db
-      .update(departmentsTable)
-      .set({ phoneNumber, twilioSid: twilioSid || null })
-      .where(eq(departmentsTable.id, departmentId))
-      .returning();
-    res.json(rows[0]);
+    try {
+      await setDepartmentNumber(
+        tenantId,
+        departmentId,
+        phoneNumber,
+        twilioSid || null,
+      );
+    } catch (err) {
+      if (err instanceof PhoneNumberConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    const [updated] = await db
+      .select()
+      .from(departmentsTable)
+      .where(eq(departmentsTable.id, departmentId));
+    res.json(updated);
   } catch (err) {
     req.log.error({ err }, "Failed to assign phone number");
     res.status(500).json({ error: "Internal server error" });

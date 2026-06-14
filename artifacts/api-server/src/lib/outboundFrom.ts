@@ -1,5 +1,6 @@
-import { db, tenantsTable, departmentsTable } from "@workspace/db";
+import { db, phoneNumbersTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
+import { normalizePhoneE164 } from "./phoneNumberRegistry";
 
 /**
  * Strict number↔tenant binding for outbound SMS.
@@ -72,24 +73,27 @@ export async function verifyOutboundFromOwnership(params: {
     };
   }
 
-  const ownTenant = await db
-    .select({ id: tenantsTable.id })
-    .from(tenantsTable)
-    .where(and(eq(tenantsTable.id, tenantId), eq(tenantsTable.phoneNumber, fromOverride)))
-    .limit(1);
-  if (ownTenant.length > 0) return { ok: true };
-
-  const ownDept = await db
-    .select({ id: departmentsTable.id })
-    .from(departmentsTable)
-    .where(
-      and(
-        eq(departmentsTable.tenantId, tenantId),
-        eq(departmentsTable.phoneNumber, fromOverride),
-      ),
-    )
-    .limit(1);
-  if (ownDept.length > 0) return { ok: true };
+  // Canonical ownership: the number must be registered to THIS tenant in the
+  // single source of truth (covers both primary and department numbers).
+  let normalizedFrom: string | null;
+  try {
+    normalizedFrom = normalizePhoneE164(fromOverride);
+  } catch {
+    normalizedFrom = null;
+  }
+  if (normalizedFrom) {
+    const owned = await db
+      .select({ phoneNumber: phoneNumbersTable.phoneNumber })
+      .from(phoneNumbersTable)
+      .where(
+        and(
+          eq(phoneNumbersTable.phoneNumber, normalizedFrom),
+          eq(phoneNumbersTable.tenantId, tenantId),
+        ),
+      )
+      .limit(1);
+    if (owned.length > 0) return { ok: true };
+  }
 
   return {
     ok: false,

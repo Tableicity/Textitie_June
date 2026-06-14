@@ -18,6 +18,10 @@ import {
 } from "@workspace/api-zod";
 import { provisionChatwootInbox } from "../lib/chatwoot";
 import { requireTenantAuth } from "../middleware/tenantAuth";
+import {
+  setTenantPrimaryNumber,
+  PhoneNumberConflictError,
+} from "../lib/phoneNumberRegistry";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -95,13 +99,32 @@ router.post("/tenants", async (req, res): Promise<void> => {
       region: parsed.data.region,
       tierCode: parsed.data.tierCode,
       sovereignToggle: parsed.data.sovereignToggle ?? false,
-      phoneNumber: parsed.data.phoneNumber ?? null,
+      phoneNumber: null,
       chatwootAccountId,
       chatwootInboxId,
       knowledgeBase: parsed.data.knowledgeBase ?? null,
     })
     .returning();
   req.log.info({ tenantId: row?.id, slug: row?.slug }, "Tenant created");
+
+  // Register the primary number through the canonical registry (the single
+  // source of truth) instead of trusting the denormalized column on its own.
+  if (parsed.data.phoneNumber) {
+    try {
+      const result = await setTenantPrimaryNumber(
+        row!.id,
+        parsed.data.phoneNumber,
+      );
+      row!.phoneNumber = result.phoneNumber;
+    } catch (err) {
+      if (err instanceof PhoneNumberConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  }
+
   res.status(201).json(GetTenantResponse.parse(row));
 });
 
@@ -179,34 +202,67 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
       .json({ error: "phoneNumber must be E.164 format, e.g. +19094904265" });
     return;
   }
+  const hasPhone = "phoneNumber" in body.data;
   const patch: Record<string, unknown> = {};
   for (const k of [
     "name",
     "region",
     "tierCode",
     "sovereignToggle",
-    "phoneNumber",
     "chatwootAccountId",
     "chatwootInboxId",
     "knowledgeBase",
   ] as const) {
     if (k in body.data) patch[k] = body.data[k];
   }
-  if (Object.keys(patch).length === 0) {
+  if (!hasPhone && Object.keys(patch).length === 0) {
     res.status(400).json({ error: "No fields to update" });
     return;
   }
-  const [row] = await db
-    .update(tenantsTable)
-    .set(patch)
-    .where(eq(tenantsTable.id, params.data.id))
-    .returning();
-  if (!row) {
+
+  const [existing] = await db
+    .select({ id: tenantsTable.id })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, params.data.id));
+  if (!existing) {
     res.status(404).json({ error: "Tenant not found" });
     return;
   }
+
+  if (Object.keys(patch).length > 0) {
+    await db
+      .update(tenantsTable)
+      .set(patch)
+      .where(eq(tenantsTable.id, params.data.id));
+  }
+
+  // Phone number ownership is written only through the canonical registry, so
+  // inbound routing and the denormalized column can never disagree.
+  if (hasPhone) {
+    const raw = body.data.phoneNumber;
+    try {
+      await setTenantPrimaryNumber(
+        params.data.id,
+        raw === "" || raw == null ? null : raw,
+      );
+    } catch (err) {
+      if (err instanceof PhoneNumberConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  }
+
+  const [row] = await db
+    .select()
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, params.data.id));
   req.log.info(
-    { tenantId: row.id, fields: Object.keys(patch) },
+    {
+      tenantId: params.data.id,
+      fields: [...Object.keys(patch), ...(hasPhone ? ["phoneNumber"] : [])],
+    },
     "Tenant patched",
   );
   res.json(UpdateTenantResponse.parse(row));

@@ -22,13 +22,17 @@ conditions must also hold, none enforced end-to-end by the app:
    signature instead.
    **Why:** this absence-of-code is the #1 "number won't receive texts" trap and is invisible from the admin UI, which says "inbound texts now route to X" on save.
 
-3. **Assign as the tenant PRIMARY number, not a department.** Inbound resolver
-   (`lib/tenantPhoneLookup.ts`) step 1 = exact `tenants.phone_number == To` (E.164, correct).
-   Step 2 (department fallback) is BROKEN since Stage 4 was rolled back: `getTenantPool(slug)` now
-   returns the global pool, so `SELECT 1 FROM departments WHERE phone_number=$1` is unscoped and
-   returns the FIRST tenant iterated whenever any department holds that number — wrong-tenant
-   attribution. Avoid the purchase→department path for go-live until the resolver re-adds a
-   `tenant_id` filter.
+3. **Routing is ONE deterministic lookup against the canonical `phone_numbers` table.**
+   `lib/tenantPhoneLookup.ts` normalizes `To` to E.164 and does a single PK lookup on
+   `phone_numbers` (phone_number → tenant_id). BOTH a tenant's primary number and a department
+   number route to their true owner; an unknown number FAILS CLOSED (returns null) and is NEVER
+   resolved to "the first tenant". This replaced the original two-source resolver (exact
+   `tenants.phone_number` match + an unscoped `departments` fallback returning the first tenant
+   iterated) that caused the verified +18887619212 cross-tenant leak.
+   **Write rule:** never write `tenants.phone_number` / `departments.phone_number` directly — go
+   through `artifacts/api-server/src/lib/phoneNumberRegistry.ts`, the only writer; it rejects
+   cross-tenant conflicts and keeps the canonical table + denorm columns in lockstep. See
+   `phone-number-canonical-routing.md` and John/architecture.doc.md Part 5.
 
 Signup (`POST /tenant-auth/register`) creates tenant + owner user in one txn (no number). The
 owner's required 10-digit phone is A2P opt-in evidence, distinct from the tenant's sending number.

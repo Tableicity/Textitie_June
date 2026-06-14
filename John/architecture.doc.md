@@ -157,3 +157,41 @@ If you take nothing else from this:
 > **On day one, write down which tables are global and which are per-tenant, and make the database client refuse to query a per-tenant table without a tenant context.**
 
 That single guardrail would have eliminated 80% of the work in Stage 4 and 100% of the silent-corruption risk. Everything else in this document is downstream of that decision.
+
+---
+
+## Part 5 — Case Study: The `+18887619212` Cross-Tenant Number Leak
+
+A real production incident, verified against the prod database (read-only), that proves the thesis of this document: **a wrong-tenant operation does not throw — it silently routes a customer's text into the wrong company's inbox.**
+
+### Symptoms (as reported)
+- Toll-free number `+18887619212` "leaked" between two accounts: `abc16@gmail.com` and `abc17@gmail.com`.
+- "Default ACME tried to hijack the number."
+- Believed fixed; the number now works two-way.
+
+### Verified ground truth (prod, read-only)
+- `+18887619212` is now the **primary** number of tenant **6 `john-reynolds`** (owner `abc16@gmail.com`). It is on no department and on no other tenant's primary. So today it resolves deterministically and two-way works.
+- `abc17@gmail.com` is an **admin on tenant 1 = ACME** — the demo/default tenant.
+- `tenants.phone_number` has **no uniqueness constraint** (only `id` pkey and `slug` unique). Numbers also live in a second place: `departments.phone_number`. There is no cross-table guard.
+
+### Root cause (two independent mechanisms, both pointing at ACME)
+ACME is tenant **id 1**, the first row every tenant iteration touches, and `abc17` is an admin on ACME. The inbound resolver (`lib/tenantPhoneLookup.ts`) had two defects:
+
+1. **Non-deterministic primary match.** Step 1 (`tenants.phone_number == To`) has **no `ORDER BY`**, and nothing stops two tenants from holding the same primary number. If the number ever sat on two tenants at once, inbound flipped non-deterministically between abc16 and abc17 — the "leak between two owners."
+2. **Unscoped department fallback (the ACME magnet).** Step 2 iterates all tenants running `getTenantPool(slug).query("SELECT 1 FROM departments WHERE phone_number = $1")`. After the Stage 4 rollback, `getTenantPool` returns the **global** pool (see `lib/db/src/tenant-db.ts`), so this query is **unscoped** and returns the **first tenant iterated = ACME (id 1)**. Any department-held number routes to ACME — the "hijack."
+
+This is the document's central failure mode in production code: a silent wrong-tenant route, with no guardrail to make it loud.
+
+### What "we sorted it out" actually fixed
+Only the **data** was cleaned: ACME's primary was blanked, the number left solely on `john-reynolds`, no department copy. The **code that allowed it was unchanged** — so the platform would let it recur the next time two tenants touch one number or a number is assigned to a department.
+
+### The permanent fix (Guardrail B — the hard fix, "not glue")
+A canonical, **global `phone_numbers` routing table** is the single source of truth for inbound routing and outbound ownership:
+- `phone_number` is the **PRIMARY KEY** → platform-wide uniqueness across *both* primary and department numbers (a number belongs to exactly one tenant). This supersedes the cheaper "unique index on `tenants.phone_number` + `ORDER BY`" patch, which can't enforce cross-table uniqueness.
+- The resolver becomes **one deterministic lookup** — no iteration, no `getTenantPool`, no "first row wins."
+- Every write path (tenant create/patch, number purchase/assign, seed, department/tenant delete) funnels through **one helper** that upserts the canonical row transactionally and **rejects (409)** if the number already belongs to another tenant.
+- It **fails closed**: ambiguous or missing canonical ownership refuses the route rather than falling back to ACME or the global default.
+- Legacy rows are migrated by an **idempotent boot-time backfill** of this *global* table; duplicates that map to more than one tenant are logged loudly and skipped, never silently resolved.
+
+### The durable lesson
+**A routable identifier (phone number, subdomain, external ID) that selects a tenant must have exactly one home with a platform-wide uniqueness constraint, and the lookup that resolves it must be deterministic and fail closed.** Two storage locations for the same routing key, plus a "pick the first row" lookup, is a cross-tenant data-leak waiting to happen — and it will point at whichever tenant sorts first (here, the demo tenant ACME).

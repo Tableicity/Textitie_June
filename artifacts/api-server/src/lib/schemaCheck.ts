@@ -20,6 +20,7 @@ const REQUIRED_TABLES = [
   "opt_outs",
   "campaigns",
   "campaign_messages",
+  "phone_numbers",
 ];
 
 export async function checkSchema(): Promise<string[]> {

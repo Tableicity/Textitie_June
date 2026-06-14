@@ -8,6 +8,19 @@ This run book is the operational source-of-truth: where every feature stands, wh
 
 ---
 
+## 0. Pre-Publish blockers (do these BEFORE the next deploy)
+
+- **Create the `phone_numbers` table in prod.** Inbound routing now reads the canonical
+  `phone_numbers` table and FAILS CLOSED (unknown number → unrouted) — see
+  `John/architecture.doc.md` Part 5. The autoscale deploy build has **no migration step**, so the
+  table will not exist in prod until you push the schema. Before (or as part of) the next Publish,
+  run `pnpm --filter @workspace/db run push` against the **prod** `DATABASE_URL`. Verified safe to
+  migrate: prod currently has exactly one number (+18887619212 → john-reynolds) and **zero**
+  multi-owner numbers, so the boot backfill migrates it with zero conflicts. If you Publish without
+  this, inbound texts stall until the table is created.
+
+---
+
 ## 1. Gate Table
 
 ### Legend
