@@ -8,16 +8,20 @@ This run book is the operational source-of-truth: where every feature stands, wh
 
 ---
 
-## 0. Pre-Publish blockers (do these BEFORE the next deploy)
+## 0. Phone-number routing — prod provisioning (self-healing on Publish)
 
-- **Create the `phone_numbers` table in prod.** Inbound routing now reads the canonical
-  `phone_numbers` table and FAILS CLOSED (unknown number → unrouted) — see
-  `John/architecture.doc.md` Part 5. The autoscale deploy build has **no migration step**, so the
-  table will not exist in prod until you push the schema. Before (or as part of) the next Publish,
-  run `pnpm --filter @workspace/db run push` against the **prod** `DATABASE_URL`. Verified safe to
-  migrate: prod currently has exactly one number (+18887619212 → john-reynolds) and **zero**
-  multi-owner numbers, so the boot backfill migrates it with zero conflicts. If you Publish without
-  this, inbound texts stall until the table is created.
+- **The `phone_numbers` canonical table self-provisions on boot.** Inbound routing now reads the
+  canonical `phone_numbers` table and FAILS CLOSED (unknown number → unrouted) — see
+  `John/architecture.doc.md` Part 5. The autoscale deploy has **no migration step** and dev/prod are
+  **separate databases**, so a `drizzle push` from the workspace shell targets dev and can't reach
+  prod. Instead the API server runs an **idempotent `CREATE TABLE IF NOT EXISTS`**
+  (`ensurePhoneNumbersSchema`) at startup, then backfills from the legacy columns. So the **next
+  Publish** creates the table in prod and migrates the one existing number (+18887619212 →
+  john-reynolds; verified zero multi-owner numbers, zero conflicts) automatically — **no manual prod
+  push required**.
+- **After that Publish, verify:** prod deployment logs show `phone_numbers canonical table ensured`
+  and `phone backfill complete ... conflicts:0`, and a read-only `SELECT * FROM phone_numbers` in
+  prod shows +18887619212 → tenant `john-reynolds`.
 
 ---
 

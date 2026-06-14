@@ -195,3 +195,13 @@ A canonical, **global `phone_numbers` routing table** is the single source of tr
 
 ### The durable lesson
 **A routable identifier (phone number, subdomain, external ID) that selects a tenant must have exactly one home with a platform-wide uniqueness constraint, and the lookup that resolves it must be deterministic and fail closed.** Two storage locations for the same routing key, plus a "pick the first row" lookup, is a cross-tenant data-leak waiting to happen — and it will point at whichever tenant sorts first (here, the demo tenant ACME).
+
+### Hardening after first code review (concurrency + provisioning)
+The first cut of Guardrail B was a check-then-write: read the canonical row, then upsert. Code review caught the **TOCTOU race** — two concurrent writers both pass the pre-check, then the second `onConflictDoUpdate` silently *steals* the number. The "single source of truth" was still corruptible. What closed it:
+
+- **DB-level uniqueness, not just app logic.** Two *partial* unique indexes — one primary per tenant (`WHERE kind='primary'`) and one row per department (`WHERE department_id IS NOT NULL`) — turn a concurrent steal into a loud unique-violation instead of silent corruption. App-layer guards alone can't enforce this; the constraint has to live in the database.
+- **Race-guarded upserts.** Each upsert is `ON CONFLICT DO UPDATE ... WHERE` the existing row *already* belongs to this exact owner; otherwise `.returning()` is empty and we throw (fail closed). The pre-check stays only for friendly error messages.
+- **Symmetric drift detection.** The boot/health drift check compares denorm→canonical **and** canonical→denorm, plus kind↔department consistency and duplicate-primary/duplicate-department counts — so manual or out-of-band corruption is caught loudly rather than routing silently.
+
+### Provisioning lesson: the deploy has no migration step
+A second, separate trap surfaced at go-live: **the autoscale deploy build runs no migrations, and dev and prod are *separate* databases**, so a `drizzle push` from the workspace shell targets dev and can never reach prod. A fail-closed resolver reading a table that doesn't exist in prod would have stalled all inbound. The fix is **idempotent self-provisioning at boot** (`ensurePhoneNumbersSchema` → `CREATE TABLE IF NOT EXISTS` + the partial indexes, mirroring the Drizzle schema), running before the backfill. A republish provisions prod automatically; it is a no-op in dev. This is also safer than a manual full `push --force` against prod, which would diff the *entire* schema. **Durable lesson: if your deploy pipeline has no migration step, a new table reaches prod only via boot-time idempotent DDL or an explicit, scoped manual migration — never assume "push" covers prod.**

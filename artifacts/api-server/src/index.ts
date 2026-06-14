@@ -7,6 +7,7 @@ import { seedDemoData } from "./lib/seedData";
 import { startTimerEngine } from "./lib/timerEngine";
 import { bootstrapHipaaState } from "./lib/hipaaBootstrap";
 import {
+  ensurePhoneNumbersSchema,
   backfillPhoneNumbers,
   detectPhoneNumberDrift,
 } from "./lib/phoneNumberRegistry";
@@ -32,26 +33,32 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
-  checkSchema().then(async (missing) => {
-    await seedSuperuser(missing);
-    await seedTenantUsers(missing);
-    await seedDemoData(missing);
-    await bootstrapHipaaState();
+  // Self-provision the canonical phone_numbers table FIRST (idempotent). The
+  // autoscale deploy has no migration step and dev/prod are separate databases,
+  // so this is how the table reaches prod — automatically, on republish. No-op
+  // in dev where the table already exists.
+  ensurePhoneNumbersSchema()
+    .catch((err) =>
+      logger.error({ err }, "ensurePhoneNumbersSchema failed (continuing)"),
+    )
+    .then(() => checkSchema())
+    .then(async (missing) => {
+      await seedSuperuser(missing);
+      await seedTenantUsers(missing);
+      await seedDemoData(missing);
+      await bootstrapHipaaState();
 
-    // Populate the canonical phone_numbers table from the legacy denormalized
-    // columns (idempotent), then surface any drift loudly. Gated on the table
-    // existing so a not-yet-migrated environment still boots.
-    if (!missing.includes("phone_numbers")) {
+      // Backfill the canonical table from the legacy denormalized columns
+      // (idempotent), then surface any drift loudly.
       try {
         await backfillPhoneNumbers();
         await detectPhoneNumberDrift();
       } catch (err) {
         logger.error({ err }, "Phone number backfill/drift check failed");
       }
-    }
 
-    if (!missing.includes("automation_rules")) {
-      startTimerEngine();
-    }
-  });
+      if (!missing.includes("automation_rules")) {
+        startTimerEngine();
+      }
+    });
 });

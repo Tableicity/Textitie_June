@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import multer from "multer";
 import twilio from "twilio";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -266,6 +266,70 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
     "Tenant patched",
   );
   res.json(UpdateTenantResponse.parse(row));
+});
+
+// Permanently delete a tenant and all of its scoped data. Conductor-only
+// (inherited from the `/api` mount) and DESTRUCTIVE, so the caller must echo the
+// tenant's slug (`?slug=` or JSON body `{ "slug": ... }`) to prove they mean
+// THIS account — an :id fat-finger can't silently wipe the wrong tenant.
+//
+// Several children of `tenants` are ON DELETE NO ACTION (conversations,
+// departments, contacts, dispositions, reminders, tenant_users) and messages ->
+// conversations is NO ACTION too, so we delete those explicitly in dependency
+// order inside one transaction; the remaining children are ON DELETE CASCADE and
+// go when the tenant row is removed.
+router.delete("/tenants/:id", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid tenant id" });
+    return;
+  }
+
+  const bodySlug =
+    req.body && typeof req.body.slug === "string" ? req.body.slug : null;
+  const confirmSlug =
+    (typeof req.query.slug === "string" ? req.query.slug : null) ?? bodySlug;
+
+  const [tenant] = await db
+    .select({
+      id: tenantsTable.id,
+      slug: tenantsTable.slug,
+      name: tenantsTable.name,
+    })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, id));
+  if (!tenant) {
+    res.status(404).json({ error: "Tenant not found" });
+    return;
+  }
+  if (confirmSlug !== tenant.slug) {
+    res.status(400).json({
+      error: `Confirmation required: pass slug="${tenant.slug}" (this tenant's slug) to confirm deletion.`,
+    });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE tenant_id = ${id})`,
+    );
+    await tx.execute(sql`DELETE FROM reminders WHERE tenant_id = ${id}`);
+    await tx.execute(sql`DELETE FROM conversations WHERE tenant_id = ${id}`);
+    await tx.execute(sql`DELETE FROM contacts WHERE tenant_id = ${id}`);
+    await tx.execute(sql`DELETE FROM dispositions WHERE tenant_id = ${id}`);
+    await tx.execute(sql`DELETE FROM departments WHERE tenant_id = ${id}`);
+    await tx.execute(sql`DELETE FROM tenant_users WHERE tenant_id = ${id}`);
+    await tx.execute(sql`DELETE FROM tenants WHERE id = ${id}`);
+  });
+
+  req.log.warn(
+    { tenantId: id, slug: tenant.slug },
+    "Tenant permanently deleted via Conductor",
+  );
+  res.json({
+    success: true,
+    deleted: { id: tenant.id, slug: tenant.slug, name: tenant.name },
+  });
 });
 
 router.post(

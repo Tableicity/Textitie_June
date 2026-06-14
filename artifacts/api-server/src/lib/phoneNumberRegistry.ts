@@ -4,7 +4,7 @@ import {
   tenantsTable,
   departmentsTable,
 } from "@workspace/db";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 /**
@@ -272,6 +272,41 @@ export async function setDepartmentNumber(
 
     return { phoneNumber: norm };
   });
+}
+
+/**
+ * Idempotent DDL guaranteeing the canonical `phone_numbers` table (and its two
+ * partial unique indexes) exist. Runs at boot BEFORE the backfill.
+ *
+ * Why this exists: the autoscale deploy build has NO migration step, and dev and
+ * prod are SEPARATE databases, so a `drizzle push` from the workspace shell can
+ * never reach prod. Creating the table here means a republish provisions it in
+ * prod automatically; it is a no-op in dev (the table already exists). This is
+ * also safer than running a full `drizzle push --force` against prod, which would
+ * diff the ENTIRE schema. Mirrors lib/db/src/schema/phoneNumbers.ts exactly —
+ * keep the two in lockstep.
+ */
+export async function ensurePhoneNumbersSchema(): Promise<void> {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS phone_numbers (
+      phone_number text PRIMARY KEY,
+      tenant_id integer NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      department_id integer REFERENCES departments(id) ON DELETE CASCADE,
+      twilio_sid text,
+      kind text NOT NULL DEFAULT 'primary',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS phone_numbers_one_primary_per_tenant
+      ON phone_numbers (tenant_id) WHERE kind = 'primary'
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS phone_numbers_one_row_per_department
+      ON phone_numbers (department_id) WHERE department_id IS NOT NULL
+  `);
+  logger.info("phone_numbers canonical table ensured (idempotent)");
 }
 
 /**
