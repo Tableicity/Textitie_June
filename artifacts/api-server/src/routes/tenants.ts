@@ -26,6 +26,11 @@ import {
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
+// Seed/demo tenants that seedDemoData re-creates on every boot. Deleting them is
+// pointless (they come back next boot) and risky, so the destructive delete
+// endpoint refuses them outright.
+const PROTECTED_TENANT_SLUGS = new Set(["acme"]);
+
 router.get("/tenants", async (_req, res): Promise<void> => {
   const rows = await db.select().from(tenantsTable).orderBy(tenantsTable.id);
   res.json(ListTenantsResponse.parse(rows));
@@ -300,6 +305,12 @@ router.delete("/tenants/:id", async (req, res): Promise<void> => {
     .where(eq(tenantsTable.id, id));
   if (!tenant) {
     res.status(404).json({ error: "Tenant not found" });
+    return;
+  }
+  if (PROTECTED_TENANT_SLUGS.has(tenant.slug)) {
+    res.status(403).json({
+      error: `Tenant "${tenant.slug}" is a protected seed tenant and cannot be deleted.`,
+    });
     return;
   }
   if (confirmSlug !== tenant.slug) {

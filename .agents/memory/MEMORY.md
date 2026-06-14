@@ -3,6 +3,7 @@
 - [Deploy secret reload](deploy-secrets-reload.md) — saving a Replit deployment secret does NOT restart prod; must republish. Verify go-live by the actual `from` number, not that the secret exists.
 - [Prod data access](prod-data-access.md) — prod SQL (executeSql environment:"production") is READ-ONLY; prod data writes must go through the running app's Conductor API.
 - [Tenants list strict parse](tenants-list-strict-parse.md) — one enum-invalid row 500s the whole `GET /api/tenants`; `tenants.region` is plain text with no DB CHECK.
+- [Prod schema provisioning & ownership](prod-schema-provisioning.md) — no migration step + agent writes dev only; new prod tables reach prod via idempotent boot DDL on owner publish (fail-fast in prod if load-bearing).
 - [Telephony go-live gotchas](telephony-golive.md) — assigning a number is DB-only; inbound webhook must be set MANUALLY in Twilio; number must live in the platform's Twilio account.
 - [Canonical phone routing](phone-number-canonical-routing.md) — one global `phone_numbers` table (PK = number) is the single routing truth; resolver fails closed; all writes go through phoneNumberRegistry; prod deploy has no migration step.
 - [Status tracking + scaffolding](regeneration-protocol.md) — `replit.md` is the single status source; don't recreate a gate ledger.

@@ -34,27 +34,44 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
   // Self-provision the canonical phone_numbers table FIRST (idempotent). The
-  // autoscale deploy has no migration step and dev/prod are separate databases,
-  // so this is how the table reaches prod — automatically, on republish. No-op
+  // autoscale deploy has no migration step and dev/prod are separate databases
+  // (the owner publishes prod, the agent only touches dev), so this boot DDL is
+  // how the table reaches prod — automatically, when the owner publishes. No-op
   // in dev where the table already exists.
   ensurePhoneNumbersSchema()
-    .catch((err) =>
-      logger.error({ err }, "ensurePhoneNumbersSchema failed (continuing)"),
-    )
+    .catch((err) => logger.error({ err }, "ensurePhoneNumbersSchema failed"))
     .then(() => checkSchema())
     .then(async (missing) => {
+      // phone_numbers is load-bearing: inbound routing reads it and FAILS CLOSED.
+      // If provisioning failed (table still missing), refuse to serve in
+      // production rather than silently stalling every inbound text.
+      if (missing.includes("phone_numbers")) {
+        if (process.env["NODE_ENV"] === "production") {
+          logger.fatal(
+            "phone_numbers table missing after provisioning — refusing to start in production",
+          );
+          process.exit(1);
+        }
+        logger.error(
+          "phone_numbers table missing — inbound routing will fail closed (continuing in non-production)",
+        );
+      }
+
       await seedSuperuser(missing);
       await seedTenantUsers(missing);
       await seedDemoData(missing);
       await bootstrapHipaaState();
 
       // Backfill the canonical table from the legacy denormalized columns
-      // (idempotent), then surface any drift loudly.
-      try {
-        await backfillPhoneNumbers();
-        await detectPhoneNumberDrift();
-      } catch (err) {
-        logger.error({ err }, "Phone number backfill/drift check failed");
+      // (idempotent), then surface any drift loudly. Skipped only if the table
+      // could not be provisioned (non-production, per the guard above).
+      if (!missing.includes("phone_numbers")) {
+        try {
+          await backfillPhoneNumbers();
+          await detectPhoneNumberDrift();
+        } catch (err) {
+          logger.error({ err }, "Phone number backfill/drift check failed");
+        }
       }
 
       if (!missing.includes("automation_rules")) {
