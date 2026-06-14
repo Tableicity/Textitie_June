@@ -11,6 +11,10 @@ import {
 } from "../lib/phoneNumberRegistry";
 import { getPublicWebhookConfig } from "../lib/publicTwilioUrls";
 import { assertCanPurchaseNumber } from "../lib/phoneProvisioningGate";
+import {
+  applyInboundWebhookBySid,
+  buildInboundWebhookParams,
+} from "../lib/twilioNumberWebhook";
 
 const router = Router();
 
@@ -188,10 +192,7 @@ router.post("/phone-numbers/purchase", requireTenantAuth, async (req, res) => {
     purchased = await client.incomingPhoneNumbers.create({
       phoneNumber: normalized,
       friendlyName: `SAMA-${tenantId}`,
-      smsUrl: webhook.smsUrl,
-      smsMethod: webhook.smsMethod,
-      statusCallback: webhook.statusCallbackUrl,
-      statusCallbackMethod: "POST",
+      ...buildInboundWebhookParams(webhook),
     });
   } catch (err: unknown) {
     const twilioErr = err as { code?: number; message?: string };
@@ -323,20 +324,22 @@ router.post("/phone-numbers/assign", requireTenantAuth, async (req, res) => {
     // registry move is what matters; a webhook failure must not fail the assign
     // (use /phone-provisioning/repair-webhooks to fix later).
     if (twilioSid) {
-      const client = getTwilioClient();
-      const webhook = getPublicWebhookConfig();
-      if (client && webhook.available) {
-        try {
-          await client.incomingPhoneNumbers(twilioSid).update({
-            smsUrl: webhook.smsUrl,
-            smsMethod: webhook.smsMethod,
-          });
-        } catch (whErr) {
-          req.log.warn(
-            { err: whErr, twilioSid },
-            "Assigned number but failed to (re)set inbound webhook; run /phone-provisioning/repair-webhooks",
-          );
+      try {
+        const client = getTwilioClient();
+        if (client) {
+          const wh = await applyInboundWebhookBySid(client, twilioSid);
+          if (!wh.ok) {
+            req.log.warn(
+              { twilioSid, reason: wh.reason },
+              "Assigned number but did not set inbound webhook; run /phone-provisioning/repair-webhooks",
+            );
+          }
         }
+      } catch (whErr) {
+        req.log.warn(
+          { err: whErr, twilioSid },
+          "Assigned number but failed to (re)set inbound webhook; run /phone-provisioning/repair-webhooks",
+        );
       }
     }
 

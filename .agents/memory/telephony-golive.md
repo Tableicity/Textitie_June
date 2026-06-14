@@ -14,13 +14,20 @@ conditions must also hold, none enforced end-to-end by the app:
    double-gated (DB ownership in `outboundFrom.ts` + Twilio account ownership → error 21660 if not).
    A "brought" number must live in the platform's account, not the operator's separate account.
 
-2. **Inbound webhook is NOT set by any code.** Grep for `smsUrl`/`messagingServiceSid` = nothing.
-   Neither assign nor purchase configures the number's "A message comes in" webhook. For inbound to
-   route, the number's Twilio webhook (or its Messaging Service) must be pointed MANUALLY at
-   `https://<published-domain>/api/webhooks/twilio` (POST). Must be the published domain, not
-   `.replit.dev` preview. Route is public (conductorAuth exempts `/webhooks/`), protected by Twilio
-   signature instead.
-   **Why:** this absence-of-code is the #1 "number won't receive texts" trap and is invisible from the admin UI, which says "inbound texts now route to X" on save.
+2. **Inbound webhook IS now auto-wired by code (best-effort).** Purchase, tenant department-assign,
+   AND admin primary-assign all point the number's "A message comes in" webhook at
+   `https://<published-domain>/api/webhooks/twilio` (POST) plus a delivery `statusCallback`, through the
+   single helper `lib/twilioNumberWebhook.ts` (`buildInboundWebhookParams` is the one payload
+   definition; URLs come from `lib/publicTwilioUrls.ts`). It is best-effort: the canonical
+   `phone_numbers` registry is the source of truth, so a webhook/Twilio failure is logged (warn) and
+   NEVER fails the assign/create. It is SKIPPED when no public https URL exists (dev/preview with only
+   a `.replit.dev` host and no `PUBLIC_WEBHOOK_BASE_URL`) — purchase refuses outright there, but
+   admin primary-assign still records the number and leaves it deaf until a public URL exists + repair
+   runs. Backstops: `GET /phone-provisioning/reconcile` reports webhook mismatches and
+   `POST /phone-provisioning/repair-webhooks` re-points every registered number (now also restores
+   `statusCallback`, via the same helper). Manual Twilio-console setup is now only a fallback.
+   **Why:** the old "no code sets smsUrl → number silently deaf after assign" trap is closed for the
+   common paths; the remaining trap is a preview / no-public-URL environment, not the code path.
 
 3. **Routing is ONE deterministic lookup against the canonical `phone_numbers` table.**
    `lib/tenantPhoneLookup.ts` normalizes `To` to E.164 and does a single PK lookup on

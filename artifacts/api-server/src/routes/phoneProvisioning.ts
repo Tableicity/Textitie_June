@@ -2,6 +2,7 @@ import { Router } from "express";
 import twilio from "twilio";
 import { db, phoneNumbersTable } from "@workspace/db";
 import { getPublicWebhookConfig } from "../lib/publicTwilioUrls";
+import { applyInboundWebhookBySid } from "../lib/twilioNumberWebhook";
 
 /**
  * Conductor-only phone-number provisioning diagnostics.
@@ -130,10 +131,7 @@ router.post("/phone-provisioning/repair-webhooks", async (req, res) => {
     for (const n of twilioNumbers) {
       if (!registered.has(n.phoneNumber)) continue;
       if (n.smsUrl === webhook.smsUrl) continue;
-      await client.incomingPhoneNumbers(n.sid).update({
-        smsUrl: webhook.smsUrl,
-        smsMethod: webhook.smsMethod,
-      });
+      await applyInboundWebhookBySid(client, n.sid);
       repaired.push({ phoneNumber: n.phoneNumber, sid: n.sid });
     }
 

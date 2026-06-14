@@ -1,9 +1,9 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { eq, sql } from "drizzle-orm";
 import multer from "multer";
 import twilio from "twilio";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { db, tenantsTable, tenantUsersTable } from "@workspace/db";
+import { db, tenantsTable, tenantUsersTable, phoneNumbersTable } from "@workspace/db";
 import {
   ListTenantsResponse,
   CreateTenantBody,
@@ -22,6 +22,7 @@ import {
   setTenantPrimaryNumber,
   PhoneNumberConflictError,
 } from "../lib/phoneNumberRegistry";
+import { applyInboundWebhookByNumber } from "../lib/twilioNumberWebhook";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -41,6 +42,52 @@ function getTwilioClient() {
   const token = process.env["TWILIO_AUTH_TOKEN"];
   if (!sid || !token) return null;
   return twilio(sid, token);
+}
+
+/**
+ * After a tenant's PRIMARY number is set through the registry, point that
+ * number's inbound webhook at us so an admin-injected (already-owned) number is
+ * never left "deaf". Best-effort: the DB registry write is the source of truth;
+ * a webhook miss is logged and repairable via /phone-provisioning/repair-webhooks.
+ * Also records the resolved Twilio SID on the registry row so reconcile/repair
+ * treat an admin-injected number the same as a purchased one.
+ */
+async function wirePrimaryNumberWebhook(
+  req: Request,
+  phoneNumber: string,
+): Promise<void> {
+  try {
+    const client = getTwilioClient();
+    if (!client) return;
+    const result = await applyInboundWebhookByNumber(client, phoneNumber);
+    if (!result.ok) {
+      req.log.warn(
+        { phoneNumber, reason: result.reason },
+        "Assigned tenant primary number but did not set inbound webhook; run /phone-provisioning/repair-webhooks",
+      );
+      return;
+    }
+    req.log.info(
+      { phoneNumber, sid: result.sid },
+      "Set inbound webhook on tenant primary number",
+    );
+    try {
+      await db
+        .update(phoneNumbersTable)
+        .set({ twilioSid: result.sid })
+        .where(eq(phoneNumbersTable.phoneNumber, phoneNumber));
+    } catch (sidErr) {
+      req.log.warn(
+        { err: sidErr, phoneNumber },
+        "Set inbound webhook but failed to persist Twilio SID for primary number",
+      );
+    }
+  } catch (err) {
+    req.log.warn(
+      { err, phoneNumber },
+      "Failed to set inbound webhook on tenant primary number; run /phone-provisioning/repair-webhooks",
+    );
+  }
 }
 
 // Numbers actually owned by the platform Twilio account. The admin assigns a
@@ -121,6 +168,9 @@ router.post("/tenants", async (req, res): Promise<void> => {
         parsed.data.phoneNumber,
       );
       row!.phoneNumber = result.phoneNumber;
+      if (result.phoneNumber) {
+        await wirePrimaryNumberWebhook(req, result.phoneNumber);
+      }
     } catch (err) {
       if (err instanceof PhoneNumberConflictError) {
         res.status(409).json({ error: err.message });
@@ -246,10 +296,13 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
   if (hasPhone) {
     const raw = body.data.phoneNumber;
     try {
-      await setTenantPrimaryNumber(
+      const result = await setTenantPrimaryNumber(
         params.data.id,
         raw === "" || raw == null ? null : raw,
       );
+      if (result.phoneNumber) {
+        await wirePrimaryNumberWebhook(req, result.phoneNumber);
+      }
     } catch (err) {
       if (err instanceof PhoneNumberConflictError) {
         res.status(409).json({ error: err.message });
