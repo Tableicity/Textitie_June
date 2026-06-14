@@ -1,6 +1,7 @@
 import type { Twilio } from "twilio";
 import { logger } from "../logger";
 import { verifyOutboundFromOwnership } from "../outboundFrom";
+import { getPublicWebhookConfig } from "../publicTwilioUrls";
 import type { MessageSender, SendInput, SendResult } from "./types";
 
 /**
@@ -25,15 +26,11 @@ export class TwilioSender implements MessageSender {
   private statusCallbackUrl(): string | undefined {
     const explicit = process.env["TWILIO_STATUS_CALLBACK_URL"];
     if (explicit) return explicit;
-    const domains = process.env["REPLIT_DOMAINS"];
-    if (!domains) return undefined;
-    const first = domains.split(",")[0]?.trim();
-    if (!first) return undefined;
-    // Replit preview domains end with `.replit.dev`; only published
-    // deployments end with `.replit.app` (or a custom domain). Twilio will
-    // reject preview URLs, so skip the callback there.
-    if (first.endsWith(".replit.dev")) return undefined;
-    return `https://${first}/api/webhooks/twilio/status`;
+    // Shared resolver (PUBLIC_WEBHOOK_BASE_URL override, else a non-preview
+    // REPLIT_DOMAINS host). Twilio rejects preview URLs, so this returns
+    // undefined in dev/preview and a real callback in published deployments.
+    const cfg = getPublicWebhookConfig();
+    return cfg.available ? cfg.statusCallbackUrl : undefined;
   }
 
   async send(input: SendInput): Promise<SendResult> {

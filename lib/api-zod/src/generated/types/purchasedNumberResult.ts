@@ -12,4 +12,5 @@ export interface PurchasedNumberResult {
   friendlyName: string;
   /** @nullable */
   departmentId: number | null;
+  webhookConfigured: boolean;
 }

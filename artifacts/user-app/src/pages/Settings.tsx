@@ -443,6 +443,16 @@ function formatStrategy(s: string | undefined | null): string {
   return s.replace(/_/g, " ");
 }
 
+function purchaseErrorMessage(err: unknown): string {
+  const data = (err as { data?: { error?: string } } | null)?.data;
+  if (data?.error) return data.error;
+  const msg = (err as Error | null)?.message;
+  return (
+    msg ||
+    "Could not purchase this number. Self-serve purchasing may be disabled for your workspace — please contact your administrator."
+  );
+}
+
 function PhoneNumbersSection() {
   const queryClient = useQueryClient();
   const { data: phoneNumbers, isLoading: loadingNumbers } = useListPhoneNumbers({
@@ -460,6 +470,17 @@ function PhoneNumbersSection() {
   const [searchResults, setSearchResults] = useState<AvailableNumberItem[]>([]);
   const [reassignDeptId, setReassignDeptId] = useState<string>("");
   const [purchaseDeptId, setPurchaseDeptId] = useState<string>("");
+
+  // Default the purchase target to an existing "Customer Service" department so
+  // the common case is one click. The server also auto-creates it when omitted.
+  useEffect(() => {
+    if (!purchaseDeptId && departments && departments.length > 0) {
+      const cs = departments.find(
+        (d) => d.name.trim().toLowerCase() === "customer service",
+      );
+      if (cs) setPurchaseDeptId(cs.id.toString());
+    }
+  }, [departments, purchaseDeptId]);
 
   const searchNumbers = async () => {
     if (!areaCode.trim()) return;
@@ -656,7 +677,7 @@ function PhoneNumbersSection() {
                         </DialogHeader>
                         
                         <div className="py-4">
-                          <Label className="mb-2 block">Assign to Department (Optional)</Label>
+                          <Label className="mb-2 block">Assign to Department</Label>
                           <Select value={purchaseDeptId} onValueChange={setPurchaseDeptId}>
                             <SelectTrigger>
                               <SelectValue placeholder="Select a department" />
@@ -667,6 +688,16 @@ function PhoneNumbersSection() {
                               ))}
                             </SelectContent>
                           </Select>
+                          <p className="text-xs text-slate-500 mt-2">
+                            Every number is assigned to a department so inbound texts route correctly. If you don't pick one, a "Customer Service" department is created automatically.
+                          </p>
+                          {purchaseMutation.isError && (
+                            <Alert variant="destructive" className="mt-4">
+                              <AlertCircle className="h-4 w-4" />
+                              <AlertTitle>Purchase unavailable</AlertTitle>
+                              <AlertDescription>{purchaseErrorMessage(purchaseMutation.error)}</AlertDescription>
+                            </Alert>
+                          )}
                         </div>
                         
                         <DialogFooter>

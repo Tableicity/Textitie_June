@@ -2896,7 +2896,9 @@ components:
           type: string
         departmentId:
           type: ["integer", "null"]
-      required: [sid, phoneNumber, friendlyName, departmentId]
+        webhookConfigured:
+          type: boolean
+      required: [sid, phoneNumber, friendlyName, departmentId, webhookConfigured]
 
     TenantPhoneNumberItem:
       type: object
