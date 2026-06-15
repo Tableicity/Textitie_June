@@ -4,6 +4,7 @@ import { getTenantToken } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
 import NotFound from "@/pages/not-found";
 import OnboardingShell from "./OnboardingShell";
+import Profile from "./Profile";
 import Organization from "./Organization";
 import Agents from "./Agents";
 import Departments from "./Departments";
@@ -42,6 +43,7 @@ export default function OnboardingRoutes() {
         <Route path="/">
           <Redirect to="/billing" />
         </Route>
+        <Route path="/profile" component={Profile} />
         <Route path="/organization" component={Organization} />
         <Route path="/agents" component={Agents} />
         <Route path="/departments" component={Departments} />

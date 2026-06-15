@@ -244,6 +244,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="mt-auto w-full px-2 flex flex-col gap-2 items-center">
           <Link
+            href="/onboarding"
+            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
+              location.startsWith("/onboarding")
+                ? "bg-blue-600 text-white shadow-md"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+            title="Onboarding"
+            data-testid="link-onboarding"
+          >
+            <User className="w-5 h-5" />
+          </Link>
+          <Link
             href="/profile"
             className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
               location === "/profile"

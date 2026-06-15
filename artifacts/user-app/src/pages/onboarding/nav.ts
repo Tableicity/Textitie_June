@@ -14,6 +14,7 @@ export interface OnboardingNavGroup {
 export const ONBOARDING_NAV: OnboardingNavGroup[] = [
   {
     items: [
+      { label: "Profile", href: "/profile" },
       { label: "Organization", href: "/organization" },
       { label: "Agent Settings", href: "/agents" },
       { label: "Departments", href: "/departments" },
