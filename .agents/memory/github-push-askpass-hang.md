@@ -28,8 +28,10 @@ Always redact the token from output: `sed "s#${GITHUB_TEXTITIE}#***#g"`. Pushes 
 After any push, read the live tip and compare to local:
 `git ls-remote --heads <inline-token-url>` vs `git rev-parse main`.
 
-# Decision (2026-06-15): move the GitHub home to the Tableicity account
-Owner has TWO GitHub accounts: **Tableicity** (info@tableicty.com — the account Replit's connection is bound to) and **TransferAgent** (owns the current repo `TransferAgent/textitie`). Replit-as-Tableicity cannot push to a TransferAgent-owned repo, which is the whole hang/fail story. Chosen fix: create a fresh repo UNDER Tableicity so connection-account == repo-owner, then push there. Owner will do this and run the shell push themselves.
+# Decision (2026-06-15): move the GitHub home to the Tableicity account — DONE
+Owner has TWO GitHub accounts: **Tableicity** (info@tableicty.com — the account Replit's connection is bound to) and **TransferAgent** (owns the old repo `TransferAgent/textitie`). Replit-as-Tableicity cannot push to a TransferAgent-owned repo (clean 403 + hanging askpass) — that was the whole hang/fail story. Fix applied: created a fresh repo UNDER Tableicity so connection-account == repo-owner.
+
+**STATUS: COMPLETE (2026-06-15).** Primary repo is now `https://github.com/Tableicity/Textitie_June.git`, pushed full history via secret `GITHUB_TABLEICITY` (Tableicity PAT); verified live tip matched local. Old `TransferAgent/textitie` kept as backup through tip `b95b9d6`. NOTE: `origin` still pointed at the old TransferAgent repo at completion — the GUI "Push" won't target the new repo until someone runs `git remote set-url origin https://github.com/Tableicity/Textitie_June.git` (git-config write; main agent is blocked from it, user must run).
 
 ## Shell push plan (owner runs in their own shell; main agent can't do git-config writes, the user can)
 Auth note: the existing `GITHUB_TEXTITIE` PAT is **TransferAgent's** and will NOT have write on a Tableicity repo. A **Tableicity** PAT is required for shell pushes — classic PAT, scope `repo`, stored as secret `GITHUB_TABLEICITY`.
