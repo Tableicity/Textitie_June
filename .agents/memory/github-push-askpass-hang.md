@@ -27,3 +27,13 @@ Always redact the token from output: `sed "s#${GITHUB_TEXTITIE}#***#g"`. Pushes 
 # Verify (never trust "happy news")
 After any push, read the live tip and compare to local:
 `git ls-remote --heads <inline-token-url>` vs `git rev-parse main`.
+
+# Decision (2026-06-15): move the GitHub home to the Tableicity account
+Owner has TWO GitHub accounts: **Tableicity** (info@tableicty.com — the account Replit's connection is bound to) and **TransferAgent** (owns the current repo `TransferAgent/textitie`). Replit-as-Tableicity cannot push to a TransferAgent-owned repo, which is the whole hang/fail story. Chosen fix: create a fresh repo UNDER Tableicity so connection-account == repo-owner, then push there. Owner will do this and run the shell push themselves.
+
+## Shell push plan (owner runs in their own shell; main agent can't do git-config writes, the user can)
+Auth note: the existing `GITHUB_TEXTITIE` PAT is **TransferAgent's** and will NOT have write on a Tableicity repo. A **Tableicity** PAT is required for shell pushes — classic PAT, scope `repo`, stored as secret `GITHUB_TABLEICITY`.
+1. `git push "https://<TABLEICITY_OWNER>:${GITHUB_TABLEICITY}@github.com/<TABLEICITY_OWNER>/<REPO>.git" main`  (sends full local history; current tip was b95b9d6)
+2. optional, make it the default remote: `git remote set-url origin "https://github.com/<TABLEICITY_OWNER>/<REPO>.git"`
+3. verify: `git ls-remote --heads "https://<TABLEICITY_OWNER>:${GITHUB_TABLEICITY}@github.com/<TABLEICITY_OWNER>/<REPO>.git"` vs `git rev-parse main`
+Always redact token: `sed "s#${GITHUB_TABLEICITY}#***#g"`; use `GIT_TERMINAL_PROMPT=0`. After this the GUI Push may finally work too (connection-account now owns the repo) — verify via live tip, don't trust "happy news".
