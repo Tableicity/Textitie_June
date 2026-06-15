@@ -2,7 +2,15 @@
 
 **Date:** May 4, 2026
 **Project:** SAMA Control Plane
-**Status:** Planned — not yet implemented
+**Status:** ❌ OBSOLETE — DO NOT FOLLOW (resolved 2026-06-15)
+
+> **This plan is unnecessary and following it would BREAK the app.** This project uses Replit
+> **managed Postgres**: `DATABASE_URL` is a **runtime-managed** secret and dev/prod are already
+> **separate** managed databases. Schema reaches prod automatically via the **Publish-time schema
+> diff** (verified 2026-06-15: dev and prod `public` schemas were identical immediately after a
+> publish — 310 columns each). Do **NOT** delete or re-scope `DATABASE_URL`; it is managed by Replit
+> and deleting it would take down both environments. Kept for historical context only. See
+> `replit.md` → "Database environments & schema migration".
 
 ---
 

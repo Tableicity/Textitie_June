@@ -30,11 +30,12 @@ iterated. (John/architecture.doc.md Part 5.)
 - DB hard guarantees: partial unique indexes enforce one primary per tenant
   (`WHERE kind='primary'`) and one row per department (`WHERE department_id IS NOT NULL`). Don't
   drop them — they make a concurrent steal a loud unique-violation, not silent corruption.
-- The autoscale deploy has NO migration step and dev/prod are SEPARATE databases (a workspace-shell
-  `drizzle push` targets dev and cannot reach prod). So the table SELF-PROVISIONS: at boot the api
-  server runs `ensurePhoneNumbersSchema()` — an idempotent `CREATE TABLE IF NOT EXISTS` plus the two
-  partial unique indexes — before the backfill, so a republish creates it in prod automatically. Keep
-  that DDL in lockstep with lib/db/src/schema/phoneNumbers.ts. Never hand-run a full `push --force`
-  against prod (it diffs the whole schema).
+- Schema reaches prod via Replit's **Publish-time schema diff** (this is **managed Postgres** —
+  `DATABASE_URL` is runtime-managed), NOT a deploy migration step. A workspace-shell `drizzle push`
+  targets dev only; Publish introspects dev+prod and applies the diff to prod. The
+  `ensurePhoneNumbersSchema()` boot DDL (`CREATE TABLE IF NOT EXISTS` + the two partial unique indexes)
+  predates this understanding and is now **redundant belt-and-suspenders** (idempotent, harmless) —
+  keep it in lockstep with lib/db/src/schema/phoneNumbers.ts but don't grow the pattern, and never
+  write new prod migration scripts/deploy hooks. Never hand-run `push --force` against prod.
 - If schema-per-tenant (Stage 4) is ever re-enabled, pin this module to the GLOBAL pool — phone
   routing is platform-global, not per-tenant.

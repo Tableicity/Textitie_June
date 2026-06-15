@@ -10,6 +10,12 @@ This run book is the operational source-of-truth: where every feature stands, wh
 
 ## 0. Phone-number routing — prod provisioning (self-healing on Publish)
 
+> **Correction (2026-06-15):** the premise below that "the deploy has no migration step" is outdated.
+> This project uses Replit **managed Postgres** and the **Publish flow auto-migrates the prod schema**
+> (it diffs dev→prod and applies it on publish). The `ensurePhoneNumbersSchema` boot DDL still runs and
+> is harmless (idempotent), but it is now redundant belt-and-suspenders, not the only path. See
+> `replit.md` → "Database environments & schema migration".
+
 - **The `phone_numbers` canonical table self-provisions on boot.** Inbound routing now reads the
   canonical `phone_numbers` table and FAILS CLOSED (unknown number → unrouted) — see
   `John/architecture.doc.md` Part 5. The autoscale deploy has **no migration step** and dev/prod are
