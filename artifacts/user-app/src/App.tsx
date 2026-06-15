@@ -19,6 +19,7 @@ import Campaigns from "@/pages/Campaigns";
 import Analytics from "@/pages/Analytics";
 import Knowledge from "@/pages/Knowledge";
 import Profile from "@/pages/Profile";
+import OnboardingRoutes from "@/pages/onboarding";
 import AppShell from "@/components/AppShell";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,9 @@ function Router() {
       <Route path="/signup/trial" component={Signup} />
       <Route path="/privacy" component={Privacy} />
       <Route path="/terms" component={Terms} />
+      <Route path="/onboarding" nest>
+        <OnboardingRoutes />
+      </Route>
       <Route>
         <AppShell>
           <Switch>

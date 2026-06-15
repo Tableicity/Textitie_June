@@ -421,6 +421,66 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenant-settings/me:
+    get:
+      operationId: getTenantSettings
+      tags: [tenant-settings]
+      summary: Get the signed-in tenant's organization settings
+      responses:
+        "200":
+          description: Tenant settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSettings"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateTenantSettings
+      tags: [tenant-settings]
+      summary: Update the signed-in tenant's organization settings (admin/owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantSettingsInput"
+      responses:
+        "200":
+          description: Updated tenant settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSettings"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Admin or owner role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /conversations:
     post:
       operationId: createConversation
@@ -2666,6 +2726,73 @@ components:
         message:
           type: string
       required: [message]
+
+    TenantSettings:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        region:
+          type: string
+        phoneNumber:
+          type: ["string", "null"]
+          description: E.164 outbound number this tenant owns
+        tierCode:
+          type: string
+        quietHoursStart:
+          type: ["integer", "null"]
+        quietHoursEnd:
+          type: ["integer", "null"]
+        quietHoursTz:
+          type: string
+        frequencyCapPerDay:
+          type: integer
+        requireDoubleOptIn:
+          type: boolean
+        hipaaEnabled:
+          type: boolean
+        baaAcknowledgedAt:
+          type: ["string", "null"]
+          format: date-time
+        baaAcknowledgedBy:
+          type: ["integer", "null"]
+        hipaaEligible:
+          type: ["boolean", "null"]
+      required:
+        - id
+        - name
+        - slug
+        - region
+        - tierCode
+
+    UpdateTenantSettingsInput:
+      type: object
+      description: Partial tenant settings update — only supplied fields are written. Requires admin or owner role.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        quietHoursStart:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 23
+        quietHoursEnd:
+          type: ["integer", "null"]
+          minimum: 0
+          maximum: 23
+        quietHoursTz:
+          type: string
+        frequencyCapPerDay:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        requireDoubleOptIn:
+          type: boolean
 
     ConversationStatus:
       type: string

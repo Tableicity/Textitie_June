@@ -102,6 +102,7 @@ import type {
   TenantLoginResult,
   TenantMeResult,
   TenantPhoneNumberItem,
+  TenantSettings,
   TenantUsersResponse,
   Tier,
   TopUpInput,
@@ -116,6 +117,7 @@ import type {
   UpdateShortcutInput,
   UpdateTagsInput,
   UpdateTenantInput,
+  UpdateTenantSettingsInput,
   UsageStats,
   WebhookEvent,
   WebhookPayload,
@@ -1513,6 +1515,168 @@ export const useChangeTenantPassword = <
   TContext
 > => {
   return useMutation(getChangeTenantPasswordMutationOptions(options));
+};
+
+/**
+ * @summary Get the signed-in tenant's organization settings
+ */
+export const getGetTenantSettingsUrl = () => {
+  return `/api/tenant-settings/me`;
+};
+
+export const getTenantSettings = async (
+  options?: RequestInit,
+): Promise<TenantSettings> => {
+  return customFetch<TenantSettings>(getGetTenantSettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTenantSettingsQueryKey = () => {
+  return [`/api/tenant-settings/me`] as const;
+};
+
+export const getGetTenantSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTenantSettings>>,
+  TError = ErrorType<ApiError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTenantSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTenantSettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTenantSettings>>
+  > = ({ signal }) => getTenantSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTenantSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTenantSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTenantSettings>>
+>;
+export type GetTenantSettingsQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Get the signed-in tenant's organization settings
+ */
+
+export function useGetTenantSettings<
+  TData = Awaited<ReturnType<typeof getTenantSettings>>,
+  TError = ErrorType<ApiError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTenantSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTenantSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update the signed-in tenant's organization settings (admin/owner only)
+ */
+export const getUpdateTenantSettingsUrl = () => {
+  return `/api/tenant-settings/me`;
+};
+
+export const updateTenantSettings = async (
+  updateTenantSettingsInput: UpdateTenantSettingsInput,
+  options?: RequestInit,
+): Promise<TenantSettings> => {
+  return customFetch<TenantSettings>(getUpdateTenantSettingsUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateTenantSettingsInput),
+  });
+};
+
+export const getUpdateTenantSettingsMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTenantSettings>>,
+    TError,
+    { data: BodyType<UpdateTenantSettingsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTenantSettings>>,
+  TError,
+  { data: BodyType<UpdateTenantSettingsInput> },
+  TContext
+> => {
+  const mutationKey = ["updateTenantSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTenantSettings>>,
+    { data: BodyType<UpdateTenantSettingsInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateTenantSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTenantSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTenantSettings>>
+>;
+export type UpdateTenantSettingsMutationBody =
+  BodyType<UpdateTenantSettingsInput>;
+export type UpdateTenantSettingsMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Update the signed-in tenant's organization settings (admin/owner only)
+ */
+export const useUpdateTenantSettings = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTenantSettings>>,
+    TError,
+    { data: BodyType<UpdateTenantSettingsInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTenantSettings>>,
+  TError,
+  { data: BodyType<UpdateTenantSettingsInput> },
+  TContext
+> => {
+  return useMutation(getUpdateTenantSettingsMutationOptions(options));
 };
 
 /**

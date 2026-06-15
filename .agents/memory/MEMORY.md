@@ -3,6 +3,7 @@
 - [Deploy secret reload](deploy-secrets-reload.md) — saving a Replit deployment secret does NOT restart prod; must republish. Verify go-live by the actual `from` number, not that the secret exists.
 - [Prod data access](prod-data-access.md) — prod SQL (executeSql environment:"production") is READ-ONLY; prod data writes must go through the running app's Conductor API.
 - [Tenants list strict parse](tenants-list-strict-parse.md) — one enum-invalid row 500s the whole `GET /api/tenants`; `tenants.region` is plain text with no DB CHECK.
+- [Tenant vs Conductor API auth](tenant-api-auth-boundary.md) — `/api` is behind conductorAuth; tenant JWTs only pass allow-listed prefixes. Tenant UI must use tenant-scoped routes (`/tenant-settings/me`), never Conductor `/tenants/:id`.
 - [Telephony go-live gates](telephony-golive.md) — number send/receive needs same Twilio acct + auto-wired inbound webhook (best-effort, all assign/purchase paths) + canonical phone_numbers routing; preview has no public URL.
 - [Phone purchase test safety](phone-purchase-test-safety.md) — purchase route makes REAL Twilio buys; dev flags live in the workflow env not bash; verify the gate offline via esbuild bundle.
 - [Prod schema provisioning & ownership](prod-schema-provisioning.md) — no migration step + agent writes dev only; new prod tables reach prod via idempotent boot DDL on owner publish (fail-fast in prod if load-bearing).

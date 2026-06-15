@@ -396,6 +396,90 @@ export const ChangeTenantPasswordResponse = zod.object({
 });
 
 /**
+ * @summary Get the signed-in tenant's organization settings
+ */
+export const GetTenantSettingsResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  slug: zod.string(),
+  region: zod.string(),
+  phoneNumber: zod
+    .string()
+    .nullish()
+    .describe("E.164 outbound number this tenant owns"),
+  tierCode: zod.string(),
+  quietHoursStart: zod.number().nullish(),
+  quietHoursEnd: zod.number().nullish(),
+  quietHoursTz: zod.string().optional(),
+  frequencyCapPerDay: zod.number().optional(),
+  requireDoubleOptIn: zod.boolean().optional(),
+  hipaaEnabled: zod.boolean().optional(),
+  baaAcknowledgedAt: zod.coerce.date().nullish(),
+  baaAcknowledgedBy: zod.number().nullish(),
+  hipaaEligible: zod.boolean().nullish(),
+});
+
+/**
+ * @summary Update the signed-in tenant's organization settings (admin/owner only)
+ */
+export const updateTenantSettingsBodyNameMax = 128;
+
+export const updateTenantSettingsBodyQuietHoursStartMin = 0;
+export const updateTenantSettingsBodyQuietHoursStartMax = 23;
+
+export const updateTenantSettingsBodyQuietHoursEndMin = 0;
+export const updateTenantSettingsBodyQuietHoursEndMax = 23;
+
+export const updateTenantSettingsBodyFrequencyCapPerDayMin = 0;
+export const updateTenantSettingsBodyFrequencyCapPerDayMax = 1000;
+
+export const UpdateTenantSettingsBody = zod
+  .object({
+    name: zod.string().min(1).max(updateTenantSettingsBodyNameMax).optional(),
+    quietHoursStart: zod
+      .number()
+      .min(updateTenantSettingsBodyQuietHoursStartMin)
+      .max(updateTenantSettingsBodyQuietHoursStartMax)
+      .nullish(),
+    quietHoursEnd: zod
+      .number()
+      .min(updateTenantSettingsBodyQuietHoursEndMin)
+      .max(updateTenantSettingsBodyQuietHoursEndMax)
+      .nullish(),
+    quietHoursTz: zod.string().optional(),
+    frequencyCapPerDay: zod
+      .number()
+      .min(updateTenantSettingsBodyFrequencyCapPerDayMin)
+      .max(updateTenantSettingsBodyFrequencyCapPerDayMax)
+      .optional(),
+    requireDoubleOptIn: zod.boolean().optional(),
+  })
+  .describe(
+    "Partial tenant settings update — only supplied fields are written. Requires admin or owner role.",
+  );
+
+export const UpdateTenantSettingsResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  slug: zod.string(),
+  region: zod.string(),
+  phoneNumber: zod
+    .string()
+    .nullish()
+    .describe("E.164 outbound number this tenant owns"),
+  tierCode: zod.string(),
+  quietHoursStart: zod.number().nullish(),
+  quietHoursEnd: zod.number().nullish(),
+  quietHoursTz: zod.string().optional(),
+  frequencyCapPerDay: zod.number().optional(),
+  requireDoubleOptIn: zod.boolean().optional(),
+  hipaaEnabled: zod.boolean().optional(),
+  baaAcknowledgedAt: zod.coerce.date().nullish(),
+  baaAcknowledgedBy: zod.number().nullish(),
+  hipaaEligible: zod.boolean().nullish(),
+});
+
+/**
  * @summary Start a new conversation by phone number (upserts contact, reuses open conversation if one exists)
  */
 

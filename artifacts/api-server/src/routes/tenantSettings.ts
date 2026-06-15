@@ -14,6 +14,8 @@ async function loadTenantSettings(tenantId: number) {
       id: tenantsTable.id,
       name: tenantsTable.name,
       slug: tenantsTable.slug,
+      region: tenantsTable.region,
+      phoneNumber: tenantsTable.phoneNumber,
       tierCode: tenantsTable.tierCode,
       quietHoursStart: tenantsTable.quietHoursStart,
       quietHoursEnd: tenantsTable.quietHoursEnd,
@@ -53,10 +55,17 @@ router.patch("/tenant-settings/me", requireTenantAuth, async (req, res) => {
     res.status(403).json({ error: "Admin or owner role required" });
     return;
   }
-  const { quietHoursStart, quietHoursEnd, quietHoursTz, frequencyCapPerDay, requireDoubleOptIn } =
+  const { name, quietHoursStart, quietHoursEnd, quietHoursTz, frequencyCapPerDay, requireDoubleOptIn } =
     req.body ?? {};
 
   const patch: Record<string, unknown> = {};
+  if (name !== undefined) {
+    if (typeof name !== "string" || name.trim().length === 0 || name.trim().length > 128) {
+      res.status(400).json({ error: "name must be a non-empty string up to 128 characters" });
+      return;
+    }
+    patch.name = name.trim();
+  }
   const validateHour = (v: unknown): number | null | undefined => {
     if (v === null) return null;
     if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 23) return undefined;

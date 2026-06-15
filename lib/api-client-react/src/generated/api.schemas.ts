@@ -249,6 +249,63 @@ export interface TenantChangePasswordResult {
   message: string;
 }
 
+export interface TenantSettings {
+  id: number;
+  name: string;
+  slug: string;
+  region: string;
+  /**
+   * E.164 outbound number this tenant owns
+   * @nullable
+   */
+  phoneNumber?: string | null;
+  tierCode: string;
+  /** @nullable */
+  quietHoursStart?: number | null;
+  /** @nullable */
+  quietHoursEnd?: number | null;
+  quietHoursTz?: string;
+  frequencyCapPerDay?: number;
+  requireDoubleOptIn?: boolean;
+  hipaaEnabled?: boolean;
+  /** @nullable */
+  baaAcknowledgedAt?: string | null;
+  /** @nullable */
+  baaAcknowledgedBy?: number | null;
+  /** @nullable */
+  hipaaEligible?: boolean | null;
+}
+
+/**
+ * Partial tenant settings update — only supplied fields are written. Requires admin or owner role.
+ */
+export interface UpdateTenantSettingsInput {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  name?: string;
+  /**
+   * @minimum 0
+   * @maximum 23
+   * @nullable
+   */
+  quietHoursStart?: number | null;
+  /**
+   * @minimum 0
+   * @maximum 23
+   * @nullable
+   */
+  quietHoursEnd?: number | null;
+  quietHoursTz?: string;
+  /**
+   * @minimum 0
+   * @maximum 1000
+   */
+  frequencyCapPerDay?: number;
+  requireDoubleOptIn?: boolean;
+}
+
 export type ConversationStatus =
   (typeof ConversationStatus)[keyof typeof ConversationStatus];
 
