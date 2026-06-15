@@ -5,33 +5,25 @@ description: Why tenant-facing UI must call tenant-scoped endpoints and never re
 
 # Tenant vs Conductor API auth boundary
 
-The whole `/api` router is mounted behind `conductorAuth` (api-server `app.ts`). `conductorAuth`
-lets a request through in three cases: (1) the path matches an **allow-listed prefix**
-(e.g. `/tenant-auth/`, `/tenant-settings/`, `/billing`, `/conversations`, `/departments`,
-`/agents`, `/campaigns`, `/contacts`, …) where a downstream `requireTenantAuth` does the real
-tenant check; (2) a Conductor Bearer token whose scope is **not** `"tenant"`; (3) Basic auth /
-open mode. A **tenant JWT (scope `"tenant"`) is rejected on any non-allow-listed path.**
+The whole `/api` router sits behind `conductorAuth`, which only lets a request through when
+either the path matches a tenant **allow-listed prefix** (where a downstream `requireTenantAuth`
+does the real check) or the caller presents a non-`tenant`-scope Conductor credential. A tenant
+JWT (scope `tenant`) is **rejected on any non-allow-listed path**.
 
-**The trap:** generated hooks exist for the Conductor admin routes `GET/PATCH /tenants/:id`
-(`useGetTenant` / `useUpdateTenant`). They typecheck fine and even "work" against a misconfigured
-dev/prod where conductor auth is open, but a tenant-facing page using them **401s in any correctly
-secured deployment** because `/tenants/:id` is Conductor-only. The failure is silent at build time.
+**The trap (durable):** Conductor admin routes like `/tenants/:id` have generated client hooks
+that typecheck fine and even appear to work where conductor auth is left open, but a tenant-facing
+page calling them **fails closed (401) in any correctly secured deployment** — silently, with no
+real data. Do **not** "fix" that 401 by allow-listing `/tenants/:id`; that exposes an admin/IDOR
+surface. Instead add or extend a tenant-scoped endpoint guarded by `requireTenantAuth` +
+`tenantUser.tenantId` ownership.
 
-**Rule:** tenant-facing UI (the `/onboarding/*` account-settings island, inbox, etc.) must call
-**tenant-scoped** endpoints guarded by `requireTenantAuth` + `tenantUser.tenantId` ownership —
-never the Conductor `/tenants/:id` admin surface. Do **not** "fix" a 401 by adding `/tenants/:id`
-to the conductorAuth allow-list; that opens an IDOR/admin surface.
+**Guardrails when wiring tenant (non-Conductor) UI to account data:**
+- Use tenant-scoped routes only; never the Conductor `/tenants` surface.
+- Tenant org profile lives at the tenant-scoped settings endpoint (name/slug/region/phone/tier +
+  compliance fields); mutating privileged fields (e.g. name) requires `admin`/`owner` and is
+  audited, so role-gate the edit UI rather than shipping a button that 403s for agents.
+- New tenant endpoints must be added to `openapi.yaml` and regenerated, not hand-wired.
 
-**Org profile for tenants** = `GET/PATCH /api/tenant-settings/me` (returns name, slug, region,
-phoneNumber, tierCode + compliance fields). `PATCH` of `name` (and compliance fields) requires
-role `admin`/`owner` (agents get 403), and is audit-logged. Gate the edit UI by `useTenantMe`
-role so non-admins see read-only instead of a button that 403s.
-
-**Why:** during the onboarding build, `Organization.tsx` first used `useGetTenant`/`useUpdateTenant`
-(`/tenants/:id`) and silently failed closed (401) — it showed no real account data. Fix was to
-extend the existing tenant-scoped `/tenant-settings/me` and repoint the page.
-
-**How to apply:** when wiring any tenant (non-Conductor) page to account/org data, check
-`conductorAuth`'s allow-list first; if the route you want isn't tenant-scoped, add/extend a
-`requireTenantAuth` endpoint (and expose it in `openapi.yaml` + regenerate) rather than reaching
-for the admin `/tenants` hooks.
+**Why it matters:** failures are invisible at build time (types pass) and environment-dependent
+(open dev vs. secured prod), so the wrong endpoint choice ships looking healthy and only breaks
+for real tenant users.
