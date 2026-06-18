@@ -26,6 +26,7 @@ const TIER_PRICING = [
     trialDays: 14,
     maxAgents: 3,
     maxPhoneNumbers: 1,
+    stripePriceId: "price_1TjWT10tnuZQWyqKTmJxYYou",
   },
   {
     code: "growth",
@@ -37,6 +38,7 @@ const TIER_PRICING = [
     trialDays: 14,
     maxAgents: 10,
     maxPhoneNumbers: 5,
+    stripePriceId: "price_1TjWTB0tnuZQWyqKOoXRCb4A",
   },
   {
     code: "enterprise",
@@ -216,6 +218,12 @@ async function seedTiers(): Promise<void> {
           description: tier.description,
           features: tier.features,
           hipaaEligible: tier.hipaaEligible ?? false,
+          // Backfill the real Stripe price ID so production (which only
+          // receives schema, not data, on publish) gets it on next boot.
+          // Enterprise has no price; only set when defined.
+          ...("stripePriceId" in tier && tier.stripePriceId
+            ? { stripePriceId: tier.stripePriceId }
+            : {}),
         })
         .where(eq(tiersTable.code, tier.code));
     }
