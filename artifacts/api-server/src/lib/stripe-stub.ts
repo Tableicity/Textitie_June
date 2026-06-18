@@ -4,7 +4,7 @@ import { eq, and, lte, gte, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 const OVERAGE_RATE_CENTS = 3;
-const PHONE_ADDON_CENTS = 500;
+const PHONE_ADDON_CENTS = 1495;
 
 function generateId(prefix: string): string {
   return `${prefix}_stub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

@@ -22,7 +22,9 @@
     "pdfjs-dist": "4.10.38",
     "pino": "^9",
     "pino-http": "^10",
-    "twilio": "^6.0.0"
+    "twilio": "^6.0.0",
+    "stripe": "^22.2.1",
+    "stripe-replit-sync": "^1.0.0"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
