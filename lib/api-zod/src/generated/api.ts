@@ -2033,3 +2033,247 @@ export const DeleteReminderParams = zod.object({
 export const DeleteReminderResponse = zod.object({
   success: zod.boolean(),
 });
+
+/**
+ * @summary List Library source documents for a tenant (Conductor-only)
+ */
+export const ListLibraryDocumentsParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const ListLibraryDocumentsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  sourceType: zod.enum(["file", "url", "paste", "legacy"]),
+  title: zod.string(),
+  sourceUrl: zod.string().nullable(),
+  fileName: zod.string().nullable(),
+  mimeType: zod.string().nullable(),
+  tokenCount: zod.number(),
+  status: zod.string(),
+  createdAt: zod.coerce.date(),
+});
+export const ListLibraryDocumentsResponse = zod.array(
+  ListLibraryDocumentsResponseItem,
+);
+
+/**
+ * @summary Ingest a website URL into the tenant Library (Conductor-only)
+ */
+export const AddLibraryUrlParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const addLibraryUrlBodyUrlMin = 4;
+
+export const AddLibraryUrlBody = zod.object({
+  url: zod.string().url().min(addLibraryUrlBodyUrlMin),
+  sessionId: zod.number().optional(),
+});
+
+/**
+ * @summary Ingest pasted text into the tenant Library (Conductor-only)
+ */
+export const AddLibraryTextParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const addLibraryTextBodyTitleMax = 300;
+
+export const AddLibraryTextBody = zod.object({
+  title: zod.string().min(1).max(addLibraryTextBodyTitleMax),
+  text: zod.string().min(1),
+  sessionId: zod.number().optional(),
+});
+
+/**
+ * @summary Delete a Library document and its chunks (Conductor-only)
+ */
+export const DeleteLibraryDocumentParams = zod.object({
+  tenantId: zod.coerce.number(),
+  documentId: zod.coerce.number(),
+});
+
+export const DeleteLibraryDocumentResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List Professor curation sessions for a tenant (Conductor-only)
+ */
+export const ListProfessorSessionsParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const ListProfessorSessionsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  title: zod.string(),
+  status: zod.enum(["active", "archived", "pushed"]),
+  model: zod.string(),
+  tokensUsed: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListProfessorSessionsResponse = zod.array(
+  ListProfessorSessionsResponseItem,
+);
+
+/**
+ * @summary Start a new Professor session (max 5 active, Conductor-only)
+ */
+export const CreateProfessorSessionParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const createProfessorSessionBodyTitleMax = 200;
+
+export const CreateProfessorSessionBody = zod.object({
+  title: zod.string().min(1).max(createProfessorSessionBodyTitleMax).optional(),
+});
+
+/**
+ * @summary Archive a Professor session (Conductor-only)
+ */
+export const ArchiveProfessorSessionParams = zod.object({
+  tenantId: zod.coerce.number(),
+  sessionId: zod.coerce.number(),
+});
+
+export const ArchiveProfessorSessionResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  title: zod.string(),
+  status: zod.enum(["active", "archived", "pushed"]),
+  model: zod.string(),
+  tokensUsed: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List messages in a Professor session (Conductor-only)
+ */
+export const ListProfessorMessagesParams = zod.object({
+  tenantId: zod.coerce.number(),
+  sessionId: zod.coerce.number(),
+});
+
+export const ListProfessorMessagesResponseItem = zod.object({
+  id: zod.number(),
+  sessionId: zod.number(),
+  tenantId: zod.number(),
+  role: zod.enum(["user", "assistant", "system"]),
+  content: zod.string(),
+  tokenCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+export const ListProfessorMessagesResponse = zod.array(
+  ListProfessorMessagesResponseItem,
+);
+
+/**
+ * @summary Send a message to the Professor and get a grounded reply (Conductor-only)
+ */
+export const SendProfessorMessageParams = zod.object({
+  tenantId: zod.coerce.number(),
+  sessionId: zod.coerce.number(),
+});
+
+export const SendProfessorMessageBody = zod.object({
+  content: zod.string().min(1),
+});
+
+/**
+ * @summary List absorbed knowledge facts for a session (Conductor-only)
+ */
+export const ListAbsorbedFactsParams = zod.object({
+  tenantId: zod.coerce.number(),
+  sessionId: zod.coerce.number(),
+});
+
+export const ListAbsorbedFactsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  sessionId: zod.number().nullable(),
+  documentId: zod.number().nullable(),
+  sourceLabel: zod.string(),
+  statement: zod.string(),
+  status: zod.enum(["draft", "published", "rejected"]),
+  tokenCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+export const ListAbsorbedFactsResponse = zod.array(
+  ListAbsorbedFactsResponseItem,
+);
+
+/**
+ * @summary Accept or reject an absorbed fact (Conductor-only)
+ */
+export const UpdateAbsorbedFactStatusParams = zod.object({
+  tenantId: zod.coerce.number(),
+  factId: zod.coerce.number(),
+});
+
+export const UpdateAbsorbedFactStatusBody = zod.object({
+  status: zod.enum(["draft", "published", "rejected"]),
+});
+
+export const UpdateAbsorbedFactStatusResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  sessionId: zod.number().nullable(),
+  documentId: zod.number().nullable(),
+  sourceLabel: zod.string(),
+  statement: zod.string(),
+  status: zod.enum(["draft", "published", "rejected"]),
+  tokenCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Get the current published Classroom snapshot (Conductor-only)
+ */
+export const GetCurrentClassroomParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const GetCurrentClassroomResponse = zod.object({
+  version: zod
+    .object({
+      id: zod.number(),
+      tenantId: zod.number(),
+      version: zod.number(),
+      status: zod.enum(["published", "superseded"]),
+      summary: zod.string().nullable(),
+      factCount: zod.number(),
+      tokenCount: zod.number(),
+      publishedAt: zod.coerce.date(),
+    })
+    .optional(),
+  facts: zod.array(
+    zod.object({
+      id: zod.number(),
+      tenantId: zod.number(),
+      versionId: zod.number(),
+      sourceLabel: zod.string(),
+      statement: zod.string(),
+      tokenCount: zod.number(),
+    }),
+  ),
+  factCount: zod.number(),
+});
+
+/**
+ * @summary Publish curated knowledge to a new Classroom version (Conductor-only)
+ */
+export const PushToClassroomParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const pushToClassroomBodySummaryMax = 1000;
+
+export const PushToClassroomBody = zod.object({
+  sessionIds: zod.array(zod.number()).optional(),
+  summary: zod.string().max(pushToClassroomBodySummaryMax).optional(),
+});

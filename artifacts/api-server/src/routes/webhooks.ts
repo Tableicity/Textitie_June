@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { postChatwootMessage } from "../lib/chatwoot";
 import { studentWhisper } from "@workspace/ai-student";
+import { retrieveClassroomFacts } from "../lib/knowledge";
 import { processInboundMessage } from "../lib/automationEngine";
 import { attributeInboundResponse } from "../lib/campaignAttribution";
 import { processDeliveryStatus } from "../lib/deliveryStatus";
@@ -154,10 +155,26 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
           const studentChatwoot = chatwootResult;
           void (async () => {
             try {
+              let classroomContext = "";
+              try {
+                const facts = await retrieveClassroomFacts(
+                  studentTenant.id,
+                  studentBody,
+                );
+                classroomContext = facts
+                  .map((f) => `- ${f.statement} (source: ${f.sourceLabel})`)
+                  .join("\n");
+              } catch (err) {
+                logger.warn(
+                  { err: err instanceof Error ? err.message : String(err) },
+                  "SAMA Student: classroom retrieval failed, falling back to legacy KB",
+                );
+              }
               const draft = await studentWhisper({
                 tenant: studentTenant,
                 fromNumber: studentFrom,
                 inboundBody: studentBody,
+                classroomContext,
               });
               logger.info(
                 {

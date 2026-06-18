@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./absorbedFact";
+export * from "./absorbedFactStatus";
+export * from "./absorbedFactStatusInput";
+export * from "./absorbedFactStatusInputStatus";
 export * from "./addDepartmentMemberInput";
 export * from "./agentBasicItem";
 export * from "./agentDeptRef";
@@ -46,6 +50,11 @@ export * from "./changePlanInput";
 export * from "./checkoutSessionInput";
 export * from "./checkoutSessionResult";
 export * from "./claimResult";
+export * from "./classroomFact";
+export * from "./classroomPushInput";
+export * from "./classroomSnapshot";
+export * from "./classroomVersion";
+export * from "./classroomVersionStatus";
 export * from "./complianceItem";
 export * from "./complianceReport";
 export * from "./contact";
@@ -86,6 +95,11 @@ export * from "./injectionLog";
 export * from "./injectionStatus";
 export * from "./injectMessageInput";
 export * from "./inviteAgentInput";
+export * from "./knowledgeDocument";
+export * from "./knowledgeDocumentSourceType";
+export * from "./libraryIngestResult";
+export * from "./libraryTextInput";
+export * from "./libraryUrlInput";
 export * from "./listContactsParams";
 export * from "./listConversationsParams";
 export * from "./listConversationsStatus";
@@ -98,6 +112,13 @@ export * from "./messageDirection";
 export * from "./optOutItem";
 export * from "./ownedNumberItem";
 export * from "./ownedNumbersResponse";
+export * from "./professorChatResult";
+export * from "./professorMessage";
+export * from "./professorMessageInput";
+export * from "./professorMessageRole";
+export * from "./professorSession";
+export * from "./professorSessionInput";
+export * from "./professorSessionStatus";
 export * from "./purchasedNumberResult";
 export * from "./purchasedNumberResultNumberType";
 export * from "./purchaseNumberInput";

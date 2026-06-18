@@ -197,6 +197,9 @@ importers:
       multer:
         specifier: ^2.1.1
         version: 2.1.1
+      openai:
+        specifier: ^6.35.0
+        version: 6.35.0(ws@8.21.0)(zod@4.3.6)
       pdfjs-dist:
         specifier: 4.10.38
         version: 4.10.38

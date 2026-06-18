@@ -2449,6 +2449,377 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/{tenantId}/library:
+    get:
+      operationId: listLibraryDocuments
+      tags: [knowledge]
+      summary: List Library source documents for a tenant (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Library documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgeDocument"
+
+  /tenants/{tenantId}/library/url:
+    post:
+      operationId: addLibraryUrl
+      tags: [knowledge]
+      summary: Ingest a website URL into the tenant Library (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LibraryUrlInput"
+      responses:
+        "201":
+          description: URL ingested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryIngestResult"
+        "400":
+          description: Invalid input or fetch failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/library/text:
+    post:
+      operationId: addLibraryText
+      tags: [knowledge]
+      summary: Ingest pasted text into the tenant Library (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LibraryTextInput"
+      responses:
+        "201":
+          description: Text ingested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryIngestResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/library/{documentId}:
+    delete:
+      operationId: deleteLibraryDocument
+      tags: [knowledge]
+      summary: Delete a Library document and its chunks (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/professor/sessions:
+    get:
+      operationId: listProfessorSessions
+      tags: [knowledge]
+      summary: List Professor curation sessions for a tenant (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Professor sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProfessorSession"
+    post:
+      operationId: createProfessorSession
+      tags: [knowledge]
+      summary: Start a new Professor session (max 5 active, Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfessorSessionInput"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfessorSession"
+        "409":
+          description: Active session limit reached (push to Classroom first)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/professor/sessions/{sessionId}/archive:
+    post:
+      operationId: archiveProfessorSession
+      tags: [knowledge]
+      summary: Archive a Professor session (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfessorSession"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/professor/sessions/{sessionId}/messages:
+    get:
+      operationId: listProfessorMessages
+      tags: [knowledge]
+      summary: List messages in a Professor session (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProfessorMessage"
+    post:
+      operationId: sendProfessorMessage
+      tags: [knowledge]
+      summary: Send a message to the Professor and get a grounded reply (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfessorMessageInput"
+      responses:
+        "201":
+          description: Professor replied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfessorChatResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/professor/sessions/{sessionId}/absorbed:
+    get:
+      operationId: listAbsorbedFacts
+      tags: [knowledge]
+      summary: List absorbed knowledge facts for a session (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Absorbed facts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AbsorbedFact"
+
+  /tenants/{tenantId}/professor/absorbed/{factId}/status:
+    post:
+      operationId: updateAbsorbedFactStatus
+      tags: [knowledge]
+      summary: Accept or reject an absorbed fact (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: factId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AbsorbedFactStatusInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AbsorbedFact"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/classroom:
+    get:
+      operationId: getCurrentClassroom
+      tags: [knowledge]
+      summary: Get the current published Classroom snapshot (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Current Classroom snapshot (version omitted if never published)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassroomSnapshot"
+
+  /tenants/{tenantId}/classroom/push:
+    post:
+      operationId: pushToClassroom
+      tags: [knowledge]
+      summary: Publish curated knowledge to a new Classroom version (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClassroomPushInput"
+      responses:
+        "201":
+          description: New Classroom version published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassroomSnapshot"
+        "400":
+          description: Nothing to publish
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -4212,3 +4583,223 @@ components:
       properties:
         success: { type: boolean }
       required: [success]
+
+    KnowledgeDocument:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        sourceType:
+          type: string
+          enum: [file, url, paste, legacy]
+        title: { type: string }
+        sourceUrl: { type: ["string", "null"] }
+        fileName: { type: ["string", "null"] }
+        mimeType: { type: ["string", "null"] }
+        tokenCount: { type: integer }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+      required:
+        - id
+        - tenantId
+        - sourceType
+        - title
+        - sourceUrl
+        - fileName
+        - mimeType
+        - tokenCount
+        - status
+        - createdAt
+
+    ProfessorSession:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        title: { type: string }
+        status:
+          type: string
+          enum: [active, archived, pushed]
+        model: { type: string }
+        tokensUsed: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required:
+        - id
+        - tenantId
+        - title
+        - status
+        - model
+        - tokensUsed
+        - createdAt
+        - updatedAt
+
+    ProfessorMessage:
+      type: object
+      properties:
+        id: { type: integer }
+        sessionId: { type: integer }
+        tenantId: { type: integer }
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content: { type: string }
+        tokenCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+      required:
+        - id
+        - sessionId
+        - tenantId
+        - role
+        - content
+        - tokenCount
+        - createdAt
+
+    AbsorbedFact:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        sessionId: { type: ["integer", "null"] }
+        documentId: { type: ["integer", "null"] }
+        sourceLabel: { type: string }
+        statement: { type: string }
+        status:
+          type: string
+          enum: [draft, published, rejected]
+        tokenCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+      required:
+        - id
+        - tenantId
+        - sessionId
+        - documentId
+        - sourceLabel
+        - statement
+        - status
+        - tokenCount
+        - createdAt
+
+    ClassroomVersion:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        version: { type: integer }
+        status:
+          type: string
+          enum: [published, superseded]
+        summary: { type: ["string", "null"] }
+        factCount: { type: integer }
+        tokenCount: { type: integer }
+        publishedAt: { type: string, format: date-time }
+      required:
+        - id
+        - tenantId
+        - version
+        - status
+        - summary
+        - factCount
+        - tokenCount
+        - publishedAt
+
+    ClassroomFact:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        versionId: { type: integer }
+        sourceLabel: { type: string }
+        statement: { type: string }
+        tokenCount: { type: integer }
+      required:
+        - id
+        - tenantId
+        - versionId
+        - sourceLabel
+        - statement
+        - tokenCount
+
+    ClassroomSnapshot:
+      type: object
+      properties:
+        version:
+          $ref: "#/components/schemas/ClassroomVersion"
+        facts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClassroomFact"
+        factCount: { type: integer }
+      required:
+        - facts
+        - factCount
+
+    LibraryIngestResult:
+      type: object
+      properties:
+        document:
+          $ref: "#/components/schemas/KnowledgeDocument"
+        absorbedCount: { type: integer }
+        session:
+          $ref: "#/components/schemas/ProfessorSession"
+      required:
+        - document
+        - absorbedCount
+
+    ProfessorChatResult:
+      type: object
+      properties:
+        userMessage:
+          $ref: "#/components/schemas/ProfessorMessage"
+        assistantMessage:
+          $ref: "#/components/schemas/ProfessorMessage"
+        session:
+          $ref: "#/components/schemas/ProfessorSession"
+        stubbed: { type: boolean }
+      required:
+        - userMessage
+        - assistantMessage
+        - session
+        - stubbed
+
+    LibraryUrlInput:
+      type: object
+      properties:
+        url: { type: string, format: uri, minLength: 4 }
+        sessionId: { type: integer }
+      required: [url]
+
+    LibraryTextInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        text: { type: string, minLength: 1 }
+        sessionId: { type: integer }
+      required: [title, text]
+
+    ProfessorSessionInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+
+    ProfessorMessageInput:
+      type: object
+      properties:
+        content: { type: string, minLength: 1 }
+      required: [content]
+
+    AbsorbedFactStatusInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [draft, published, rejected]
+      required: [status]
+
+    ClassroomPushInput:
+      type: object
+      properties:
+        sessionIds:
+          type: array
+          items: { type: integer }
+        summary: { type: string, maxLength: 1000 }

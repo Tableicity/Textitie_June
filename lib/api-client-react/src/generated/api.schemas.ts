@@ -1260,6 +1260,191 @@ export interface SuccessResponse {
   success: boolean;
 }
 
+export type KnowledgeDocumentSourceType =
+  (typeof KnowledgeDocumentSourceType)[keyof typeof KnowledgeDocumentSourceType];
+
+export const KnowledgeDocumentSourceType = {
+  file: "file",
+  url: "url",
+  paste: "paste",
+  legacy: "legacy",
+} as const;
+
+export interface KnowledgeDocument {
+  id: number;
+  tenantId: number;
+  sourceType: KnowledgeDocumentSourceType;
+  title: string;
+  /** @nullable */
+  sourceUrl: string | null;
+  /** @nullable */
+  fileName: string | null;
+  /** @nullable */
+  mimeType: string | null;
+  tokenCount: number;
+  status: string;
+  createdAt: string;
+}
+
+export type ProfessorSessionStatus =
+  (typeof ProfessorSessionStatus)[keyof typeof ProfessorSessionStatus];
+
+export const ProfessorSessionStatus = {
+  active: "active",
+  archived: "archived",
+  pushed: "pushed",
+} as const;
+
+export interface ProfessorSession {
+  id: number;
+  tenantId: number;
+  title: string;
+  status: ProfessorSessionStatus;
+  model: string;
+  tokensUsed: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ProfessorMessageRole =
+  (typeof ProfessorMessageRole)[keyof typeof ProfessorMessageRole];
+
+export const ProfessorMessageRole = {
+  user: "user",
+  assistant: "assistant",
+  system: "system",
+} as const;
+
+export interface ProfessorMessage {
+  id: number;
+  sessionId: number;
+  tenantId: number;
+  role: ProfessorMessageRole;
+  content: string;
+  tokenCount: number;
+  createdAt: string;
+}
+
+export type AbsorbedFactStatus =
+  (typeof AbsorbedFactStatus)[keyof typeof AbsorbedFactStatus];
+
+export const AbsorbedFactStatus = {
+  draft: "draft",
+  published: "published",
+  rejected: "rejected",
+} as const;
+
+export interface AbsorbedFact {
+  id: number;
+  tenantId: number;
+  /** @nullable */
+  sessionId: number | null;
+  /** @nullable */
+  documentId: number | null;
+  sourceLabel: string;
+  statement: string;
+  status: AbsorbedFactStatus;
+  tokenCount: number;
+  createdAt: string;
+}
+
+export type ClassroomVersionStatus =
+  (typeof ClassroomVersionStatus)[keyof typeof ClassroomVersionStatus];
+
+export const ClassroomVersionStatus = {
+  published: "published",
+  superseded: "superseded",
+} as const;
+
+export interface ClassroomVersion {
+  id: number;
+  tenantId: number;
+  version: number;
+  status: ClassroomVersionStatus;
+  /** @nullable */
+  summary: string | null;
+  factCount: number;
+  tokenCount: number;
+  publishedAt: string;
+}
+
+export interface ClassroomFact {
+  id: number;
+  tenantId: number;
+  versionId: number;
+  sourceLabel: string;
+  statement: string;
+  tokenCount: number;
+}
+
+export interface ClassroomSnapshot {
+  version?: ClassroomVersion;
+  facts: ClassroomFact[];
+  factCount: number;
+}
+
+export interface LibraryIngestResult {
+  document: KnowledgeDocument;
+  absorbedCount: number;
+  session?: ProfessorSession;
+}
+
+export interface ProfessorChatResult {
+  userMessage: ProfessorMessage;
+  assistantMessage: ProfessorMessage;
+  session: ProfessorSession;
+  stubbed: boolean;
+}
+
+export interface LibraryUrlInput {
+  /** @minLength 4 */
+  url: string;
+  sessionId?: number;
+}
+
+export interface LibraryTextInput {
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  title: string;
+  /** @minLength 1 */
+  text: string;
+  sessionId?: number;
+}
+
+export interface ProfessorSessionInput {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  title?: string;
+}
+
+export interface ProfessorMessageInput {
+  /** @minLength 1 */
+  content: string;
+}
+
+export type AbsorbedFactStatusInputStatus =
+  (typeof AbsorbedFactStatusInputStatus)[keyof typeof AbsorbedFactStatusInputStatus];
+
+export const AbsorbedFactStatusInputStatus = {
+  draft: "draft",
+  published: "published",
+  rejected: "rejected",
+} as const;
+
+export interface AbsorbedFactStatusInput {
+  status: AbsorbedFactStatusInputStatus;
+}
+
+export interface ClassroomPushInput {
+  sessionIds?: number[];
+  /** @maxLength 1000 */
+  summary?: string;
+}
+
 export type ListInjectionsParams = {
   /**
    * @minimum 1

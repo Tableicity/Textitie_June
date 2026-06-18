@@ -14,4 +14,5 @@
 - [Two user systems](two-user-systems.md) — `users` (superusers @ /admin/) vs `tenant_users` (per-tenant agents/owner @ agent inbox); don't confuse them; never return passwordHash.
 - [Orval operationId mangling](orval-operationid-mangling.md) — some operationIds codegen into garbage symbol names (filenames stay correct); reorder words verb-first and re-run codegen.
 - [Stripe Checkout wiring](stripe-checkout-wiring.md) — live price IDs, stub customer guard, Stripe v22 type cast, tenant JWT scope gotcha, generated client call convention.
+- [SSRF guard gotchas](ssrf-blocklist-gotchas.md) — never add ::ffff:0:0/96 to net.BlockList (blocks ALL public IPv4); close DNS rebinding via http/https custom `lookup`, not fetch.
 - [Carrier billing reconciliation](carrier-billing-reconciliation.md) — multi-pass Stripe sub-item sync must re-fetch live items each pass; never delete the last item; best-effort sync needs a reconcile recovery path; number_type is derived.

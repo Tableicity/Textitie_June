@@ -17,6 +17,8 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AbsorbedFact,
+  AbsorbedFactStatusInput,
   AddDepartmentMemberInput,
   AgentBasicItem,
   AgentItem,
@@ -45,6 +47,8 @@ import type {
   CheckoutSessionInput,
   CheckoutSessionResult,
   ClaimResult,
+  ClassroomPushInput,
+  ClassroomSnapshot,
   ComplianceReport,
   Contact,
   ContactWithHistory,
@@ -76,6 +80,10 @@ import type {
   InjectMessageInput,
   InjectionLog,
   InviteAgentInput,
+  KnowledgeDocument,
+  LibraryIngestResult,
+  LibraryTextInput,
+  LibraryUrlInput,
   ListContactsParams,
   ListConversationsParams,
   ListInjectionsParams,
@@ -84,6 +92,11 @@ import type {
   Message,
   OptOutItem,
   OwnedNumbersResponse,
+  ProfessorChatResult,
+  ProfessorMessage,
+  ProfessorMessageInput,
+  ProfessorSession,
+  ProfessorSessionInput,
   PurchaseNumberInput,
   PurchasedNumberResult,
   Reminder,
@@ -8772,4 +8785,1244 @@ export const useDeleteReminder = <
   TContext
 > => {
   return useMutation(getDeleteReminderMutationOptions(options));
+};
+
+/**
+ * @summary List Library source documents for a tenant (Conductor-only)
+ */
+export const getListLibraryDocumentsUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/library`;
+};
+
+export const listLibraryDocuments = async (
+  tenantId: number,
+  options?: RequestInit,
+): Promise<KnowledgeDocument[]> => {
+  return customFetch<KnowledgeDocument[]>(
+    getListLibraryDocumentsUrl(tenantId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListLibraryDocumentsQueryKey = (tenantId: number) => {
+  return [`/api/tenants/${tenantId}/library`] as const;
+};
+
+export const getListLibraryDocumentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listLibraryDocuments>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listLibraryDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListLibraryDocumentsQueryKey(tenantId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listLibraryDocuments>>
+  > = ({ signal }) =>
+    listLibraryDocuments(tenantId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!tenantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listLibraryDocuments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListLibraryDocumentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listLibraryDocuments>>
+>;
+export type ListLibraryDocumentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List Library source documents for a tenant (Conductor-only)
+ */
+
+export function useListLibraryDocuments<
+  TData = Awaited<ReturnType<typeof listLibraryDocuments>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listLibraryDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListLibraryDocumentsQueryOptions(tenantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Ingest a website URL into the tenant Library (Conductor-only)
+ */
+export const getAddLibraryUrlUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/library/url`;
+};
+
+export const addLibraryUrl = async (
+  tenantId: number,
+  libraryUrlInput: LibraryUrlInput,
+  options?: RequestInit,
+): Promise<LibraryIngestResult> => {
+  return customFetch<LibraryIngestResult>(getAddLibraryUrlUrl(tenantId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(libraryUrlInput),
+  });
+};
+
+export const getAddLibraryUrlMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addLibraryUrl>>,
+    TError,
+    { tenantId: number; data: BodyType<LibraryUrlInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addLibraryUrl>>,
+  TError,
+  { tenantId: number; data: BodyType<LibraryUrlInput> },
+  TContext
+> => {
+  const mutationKey = ["addLibraryUrl"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addLibraryUrl>>,
+    { tenantId: number; data: BodyType<LibraryUrlInput> }
+  > = (props) => {
+    const { tenantId, data } = props ?? {};
+
+    return addLibraryUrl(tenantId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddLibraryUrlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addLibraryUrl>>
+>;
+export type AddLibraryUrlMutationBody = BodyType<LibraryUrlInput>;
+export type AddLibraryUrlMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Ingest a website URL into the tenant Library (Conductor-only)
+ */
+export const useAddLibraryUrl = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addLibraryUrl>>,
+    TError,
+    { tenantId: number; data: BodyType<LibraryUrlInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addLibraryUrl>>,
+  TError,
+  { tenantId: number; data: BodyType<LibraryUrlInput> },
+  TContext
+> => {
+  return useMutation(getAddLibraryUrlMutationOptions(options));
+};
+
+/**
+ * @summary Ingest pasted text into the tenant Library (Conductor-only)
+ */
+export const getAddLibraryTextUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/library/text`;
+};
+
+export const addLibraryText = async (
+  tenantId: number,
+  libraryTextInput: LibraryTextInput,
+  options?: RequestInit,
+): Promise<LibraryIngestResult> => {
+  return customFetch<LibraryIngestResult>(getAddLibraryTextUrl(tenantId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(libraryTextInput),
+  });
+};
+
+export const getAddLibraryTextMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addLibraryText>>,
+    TError,
+    { tenantId: number; data: BodyType<LibraryTextInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addLibraryText>>,
+  TError,
+  { tenantId: number; data: BodyType<LibraryTextInput> },
+  TContext
+> => {
+  const mutationKey = ["addLibraryText"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addLibraryText>>,
+    { tenantId: number; data: BodyType<LibraryTextInput> }
+  > = (props) => {
+    const { tenantId, data } = props ?? {};
+
+    return addLibraryText(tenantId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddLibraryTextMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addLibraryText>>
+>;
+export type AddLibraryTextMutationBody = BodyType<LibraryTextInput>;
+export type AddLibraryTextMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Ingest pasted text into the tenant Library (Conductor-only)
+ */
+export const useAddLibraryText = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addLibraryText>>,
+    TError,
+    { tenantId: number; data: BodyType<LibraryTextInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addLibraryText>>,
+  TError,
+  { tenantId: number; data: BodyType<LibraryTextInput> },
+  TContext
+> => {
+  return useMutation(getAddLibraryTextMutationOptions(options));
+};
+
+/**
+ * @summary Delete a Library document and its chunks (Conductor-only)
+ */
+export const getDeleteLibraryDocumentUrl = (
+  tenantId: number,
+  documentId: number,
+) => {
+  return `/api/tenants/${tenantId}/library/${documentId}`;
+};
+
+export const deleteLibraryDocument = async (
+  tenantId: number,
+  documentId: number,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
+    getDeleteLibraryDocumentUrl(tenantId, documentId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteLibraryDocumentMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLibraryDocument>>,
+    TError,
+    { tenantId: number; documentId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteLibraryDocument>>,
+  TError,
+  { tenantId: number; documentId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteLibraryDocument"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteLibraryDocument>>,
+    { tenantId: number; documentId: number }
+  > = (props) => {
+    const { tenantId, documentId } = props ?? {};
+
+    return deleteLibraryDocument(tenantId, documentId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteLibraryDocumentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteLibraryDocument>>
+>;
+
+export type DeleteLibraryDocumentMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Delete a Library document and its chunks (Conductor-only)
+ */
+export const useDeleteLibraryDocument = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLibraryDocument>>,
+    TError,
+    { tenantId: number; documentId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteLibraryDocument>>,
+  TError,
+  { tenantId: number; documentId: number },
+  TContext
+> => {
+  return useMutation(getDeleteLibraryDocumentMutationOptions(options));
+};
+
+/**
+ * @summary List Professor curation sessions for a tenant (Conductor-only)
+ */
+export const getListProfessorSessionsUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/professor/sessions`;
+};
+
+export const listProfessorSessions = async (
+  tenantId: number,
+  options?: RequestInit,
+): Promise<ProfessorSession[]> => {
+  return customFetch<ProfessorSession[]>(
+    getListProfessorSessionsUrl(tenantId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListProfessorSessionsQueryKey = (tenantId: number) => {
+  return [`/api/tenants/${tenantId}/professor/sessions`] as const;
+};
+
+export const getListProfessorSessionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProfessorSessions>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listProfessorSessions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListProfessorSessionsQueryKey(tenantId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listProfessorSessions>>
+  > = ({ signal }) =>
+    listProfessorSessions(tenantId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!tenantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listProfessorSessions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListProfessorSessionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProfessorSessions>>
+>;
+export type ListProfessorSessionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List Professor curation sessions for a tenant (Conductor-only)
+ */
+
+export function useListProfessorSessions<
+  TData = Awaited<ReturnType<typeof listProfessorSessions>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listProfessorSessions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListProfessorSessionsQueryOptions(tenantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Start a new Professor session (max 5 active, Conductor-only)
+ */
+export const getCreateProfessorSessionUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/professor/sessions`;
+};
+
+export const createProfessorSession = async (
+  tenantId: number,
+  professorSessionInput?: ProfessorSessionInput,
+  options?: RequestInit,
+): Promise<ProfessorSession> => {
+  return customFetch<ProfessorSession>(getCreateProfessorSessionUrl(tenantId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(professorSessionInput),
+  });
+};
+
+export const getCreateProfessorSessionMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProfessorSession>>,
+    TError,
+    { tenantId: number; data: BodyType<ProfessorSessionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createProfessorSession>>,
+  TError,
+  { tenantId: number; data: BodyType<ProfessorSessionInput> },
+  TContext
+> => {
+  const mutationKey = ["createProfessorSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createProfessorSession>>,
+    { tenantId: number; data: BodyType<ProfessorSessionInput> }
+  > = (props) => {
+    const { tenantId, data } = props ?? {};
+
+    return createProfessorSession(tenantId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateProfessorSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createProfessorSession>>
+>;
+export type CreateProfessorSessionMutationBody =
+  BodyType<ProfessorSessionInput>;
+export type CreateProfessorSessionMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Start a new Professor session (max 5 active, Conductor-only)
+ */
+export const useCreateProfessorSession = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProfessorSession>>,
+    TError,
+    { tenantId: number; data: BodyType<ProfessorSessionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createProfessorSession>>,
+  TError,
+  { tenantId: number; data: BodyType<ProfessorSessionInput> },
+  TContext
+> => {
+  return useMutation(getCreateProfessorSessionMutationOptions(options));
+};
+
+/**
+ * @summary Archive a Professor session (Conductor-only)
+ */
+export const getArchiveProfessorSessionUrl = (
+  tenantId: number,
+  sessionId: number,
+) => {
+  return `/api/tenants/${tenantId}/professor/sessions/${sessionId}/archive`;
+};
+
+export const archiveProfessorSession = async (
+  tenantId: number,
+  sessionId: number,
+  options?: RequestInit,
+): Promise<ProfessorSession> => {
+  return customFetch<ProfessorSession>(
+    getArchiveProfessorSessionUrl(tenantId, sessionId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getArchiveProfessorSessionMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveProfessorSession>>,
+    TError,
+    { tenantId: number; sessionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveProfessorSession>>,
+  TError,
+  { tenantId: number; sessionId: number },
+  TContext
+> => {
+  const mutationKey = ["archiveProfessorSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveProfessorSession>>,
+    { tenantId: number; sessionId: number }
+  > = (props) => {
+    const { tenantId, sessionId } = props ?? {};
+
+    return archiveProfessorSession(tenantId, sessionId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveProfessorSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveProfessorSession>>
+>;
+
+export type ArchiveProfessorSessionMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Archive a Professor session (Conductor-only)
+ */
+export const useArchiveProfessorSession = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveProfessorSession>>,
+    TError,
+    { tenantId: number; sessionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveProfessorSession>>,
+  TError,
+  { tenantId: number; sessionId: number },
+  TContext
+> => {
+  return useMutation(getArchiveProfessorSessionMutationOptions(options));
+};
+
+/**
+ * @summary List messages in a Professor session (Conductor-only)
+ */
+export const getListProfessorMessagesUrl = (
+  tenantId: number,
+  sessionId: number,
+) => {
+  return `/api/tenants/${tenantId}/professor/sessions/${sessionId}/messages`;
+};
+
+export const listProfessorMessages = async (
+  tenantId: number,
+  sessionId: number,
+  options?: RequestInit,
+): Promise<ProfessorMessage[]> => {
+  return customFetch<ProfessorMessage[]>(
+    getListProfessorMessagesUrl(tenantId, sessionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListProfessorMessagesQueryKey = (
+  tenantId: number,
+  sessionId: number,
+) => {
+  return [
+    `/api/tenants/${tenantId}/professor/sessions/${sessionId}/messages`,
+  ] as const;
+};
+
+export const getListProfessorMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProfessorMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  sessionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listProfessorMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListProfessorMessagesQueryKey(tenantId, sessionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listProfessorMessages>>
+  > = ({ signal }) =>
+    listProfessorMessages(tenantId, sessionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(tenantId && sessionId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listProfessorMessages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListProfessorMessagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProfessorMessages>>
+>;
+export type ListProfessorMessagesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List messages in a Professor session (Conductor-only)
+ */
+
+export function useListProfessorMessages<
+  TData = Awaited<ReturnType<typeof listProfessorMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  sessionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listProfessorMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListProfessorMessagesQueryOptions(
+    tenantId,
+    sessionId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Send a message to the Professor and get a grounded reply (Conductor-only)
+ */
+export const getSendProfessorMessageUrl = (
+  tenantId: number,
+  sessionId: number,
+) => {
+  return `/api/tenants/${tenantId}/professor/sessions/${sessionId}/messages`;
+};
+
+export const sendProfessorMessage = async (
+  tenantId: number,
+  sessionId: number,
+  professorMessageInput: ProfessorMessageInput,
+  options?: RequestInit,
+): Promise<ProfessorChatResult> => {
+  return customFetch<ProfessorChatResult>(
+    getSendProfessorMessageUrl(tenantId, sessionId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(professorMessageInput),
+    },
+  );
+};
+
+export const getSendProfessorMessageMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendProfessorMessage>>,
+    TError,
+    {
+      tenantId: number;
+      sessionId: number;
+      data: BodyType<ProfessorMessageInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendProfessorMessage>>,
+  TError,
+  {
+    tenantId: number;
+    sessionId: number;
+    data: BodyType<ProfessorMessageInput>;
+  },
+  TContext
+> => {
+  const mutationKey = ["sendProfessorMessage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendProfessorMessage>>,
+    {
+      tenantId: number;
+      sessionId: number;
+      data: BodyType<ProfessorMessageInput>;
+    }
+  > = (props) => {
+    const { tenantId, sessionId, data } = props ?? {};
+
+    return sendProfessorMessage(tenantId, sessionId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendProfessorMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendProfessorMessage>>
+>;
+export type SendProfessorMessageMutationBody = BodyType<ProfessorMessageInput>;
+export type SendProfessorMessageMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Send a message to the Professor and get a grounded reply (Conductor-only)
+ */
+export const useSendProfessorMessage = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendProfessorMessage>>,
+    TError,
+    {
+      tenantId: number;
+      sessionId: number;
+      data: BodyType<ProfessorMessageInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendProfessorMessage>>,
+  TError,
+  {
+    tenantId: number;
+    sessionId: number;
+    data: BodyType<ProfessorMessageInput>;
+  },
+  TContext
+> => {
+  return useMutation(getSendProfessorMessageMutationOptions(options));
+};
+
+/**
+ * @summary List absorbed knowledge facts for a session (Conductor-only)
+ */
+export const getListAbsorbedFactsUrl = (
+  tenantId: number,
+  sessionId: number,
+) => {
+  return `/api/tenants/${tenantId}/professor/sessions/${sessionId}/absorbed`;
+};
+
+export const listAbsorbedFacts = async (
+  tenantId: number,
+  sessionId: number,
+  options?: RequestInit,
+): Promise<AbsorbedFact[]> => {
+  return customFetch<AbsorbedFact[]>(
+    getListAbsorbedFactsUrl(tenantId, sessionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListAbsorbedFactsQueryKey = (
+  tenantId: number,
+  sessionId: number,
+) => {
+  return [
+    `/api/tenants/${tenantId}/professor/sessions/${sessionId}/absorbed`,
+  ] as const;
+};
+
+export const getListAbsorbedFactsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAbsorbedFacts>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  sessionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAbsorbedFacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAbsorbedFactsQueryKey(tenantId, sessionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAbsorbedFacts>>
+  > = ({ signal }) =>
+    listAbsorbedFacts(tenantId, sessionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(tenantId && sessionId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAbsorbedFacts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAbsorbedFactsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAbsorbedFacts>>
+>;
+export type ListAbsorbedFactsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List absorbed knowledge facts for a session (Conductor-only)
+ */
+
+export function useListAbsorbedFacts<
+  TData = Awaited<ReturnType<typeof listAbsorbedFacts>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  sessionId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAbsorbedFacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAbsorbedFactsQueryOptions(
+    tenantId,
+    sessionId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Accept or reject an absorbed fact (Conductor-only)
+ */
+export const getUpdateAbsorbedFactStatusUrl = (
+  tenantId: number,
+  factId: number,
+) => {
+  return `/api/tenants/${tenantId}/professor/absorbed/${factId}/status`;
+};
+
+export const updateAbsorbedFactStatus = async (
+  tenantId: number,
+  factId: number,
+  absorbedFactStatusInput: AbsorbedFactStatusInput,
+  options?: RequestInit,
+): Promise<AbsorbedFact> => {
+  return customFetch<AbsorbedFact>(
+    getUpdateAbsorbedFactStatusUrl(tenantId, factId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(absorbedFactStatusInput),
+    },
+  );
+};
+
+export const getUpdateAbsorbedFactStatusMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAbsorbedFactStatus>>,
+    TError,
+    {
+      tenantId: number;
+      factId: number;
+      data: BodyType<AbsorbedFactStatusInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAbsorbedFactStatus>>,
+  TError,
+  { tenantId: number; factId: number; data: BodyType<AbsorbedFactStatusInput> },
+  TContext
+> => {
+  const mutationKey = ["updateAbsorbedFactStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAbsorbedFactStatus>>,
+    {
+      tenantId: number;
+      factId: number;
+      data: BodyType<AbsorbedFactStatusInput>;
+    }
+  > = (props) => {
+    const { tenantId, factId, data } = props ?? {};
+
+    return updateAbsorbedFactStatus(tenantId, factId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAbsorbedFactStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAbsorbedFactStatus>>
+>;
+export type UpdateAbsorbedFactStatusMutationBody =
+  BodyType<AbsorbedFactStatusInput>;
+export type UpdateAbsorbedFactStatusMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Accept or reject an absorbed fact (Conductor-only)
+ */
+export const useUpdateAbsorbedFactStatus = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAbsorbedFactStatus>>,
+    TError,
+    {
+      tenantId: number;
+      factId: number;
+      data: BodyType<AbsorbedFactStatusInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAbsorbedFactStatus>>,
+  TError,
+  { tenantId: number; factId: number; data: BodyType<AbsorbedFactStatusInput> },
+  TContext
+> => {
+  return useMutation(getUpdateAbsorbedFactStatusMutationOptions(options));
+};
+
+/**
+ * @summary Get the current published Classroom snapshot (Conductor-only)
+ */
+export const getGetCurrentClassroomUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/classroom`;
+};
+
+export const getCurrentClassroom = async (
+  tenantId: number,
+  options?: RequestInit,
+): Promise<ClassroomSnapshot> => {
+  return customFetch<ClassroomSnapshot>(getGetCurrentClassroomUrl(tenantId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCurrentClassroomQueryKey = (tenantId: number) => {
+  return [`/api/tenants/${tenantId}/classroom`] as const;
+};
+
+export const getGetCurrentClassroomQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCurrentClassroom>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCurrentClassroom>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCurrentClassroomQueryKey(tenantId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCurrentClassroom>>
+  > = ({ signal }) =>
+    getCurrentClassroom(tenantId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!tenantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentClassroom>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCurrentClassroomQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCurrentClassroom>>
+>;
+export type GetCurrentClassroomQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the current published Classroom snapshot (Conductor-only)
+ */
+
+export function useGetCurrentClassroom<
+  TData = Awaited<ReturnType<typeof getCurrentClassroom>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCurrentClassroom>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCurrentClassroomQueryOptions(tenantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Publish curated knowledge to a new Classroom version (Conductor-only)
+ */
+export const getPushToClassroomUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/classroom/push`;
+};
+
+export const pushToClassroom = async (
+  tenantId: number,
+  classroomPushInput?: ClassroomPushInput,
+  options?: RequestInit,
+): Promise<ClassroomSnapshot> => {
+  return customFetch<ClassroomSnapshot>(getPushToClassroomUrl(tenantId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(classroomPushInput),
+  });
+};
+
+export const getPushToClassroomMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushToClassroom>>,
+    TError,
+    { tenantId: number; data: BodyType<ClassroomPushInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pushToClassroom>>,
+  TError,
+  { tenantId: number; data: BodyType<ClassroomPushInput> },
+  TContext
+> => {
+  const mutationKey = ["pushToClassroom"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pushToClassroom>>,
+    { tenantId: number; data: BodyType<ClassroomPushInput> }
+  > = (props) => {
+    const { tenantId, data } = props ?? {};
+
+    return pushToClassroom(tenantId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PushToClassroomMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pushToClassroom>>
+>;
+export type PushToClassroomMutationBody = BodyType<ClassroomPushInput>;
+export type PushToClassroomMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Publish curated knowledge to a new Classroom version (Conductor-only)
+ */
+export const usePushToClassroom = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushToClassroom>>,
+    TError,
+    { tenantId: number; data: BodyType<ClassroomPushInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pushToClassroom>>,
+  TError,
+  { tenantId: number; data: BodyType<ClassroomPushInput> },
+  TContext
+> => {
+  return useMutation(getPushToClassroomMutationOptions(options));
 };

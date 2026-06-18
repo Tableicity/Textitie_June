@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useParams } from "wouter";
+import { useParams, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -30,15 +30,11 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users, Receipt } from "lucide-react";
+import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users, Receipt, GraduationCap } from "lucide-react";
 
 const injectSchema = z.object({
   to: z.string().min(3, "Phone number is required"),
   body: z.string().min(1, "Message body is required"),
-});
-
-const kbSchema = z.object({
-  knowledgeBase: z.string(),
 });
 
 const phoneSchema = z.object({
@@ -63,8 +59,6 @@ export default function TenantDetail() {
   const updateTenant = useUpdateTenant();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
 
   const { data: ownedData } = useGetOwnedNumbers();
   const ownedConfigured = ownedData?.configured ?? false;
@@ -81,28 +75,20 @@ export default function TenantDetail() {
     defaultValues: { to: "", body: "" },
   });
 
-  const kbForm = useForm<z.infer<typeof kbSchema>>({
-    resolver: zodResolver(kbSchema),
-    defaultValues: { knowledgeBase: "" },
-  });
-
   const phoneForm = useForm<z.infer<typeof phoneSchema>>({
     resolver: zodResolver(phoneSchema),
     defaultValues: { phoneNumber: "" },
   });
 
-  const [kbDirty, setKbDirty] = useState(false);
   const [phoneDirty, setPhoneDirty] = useState(false);
   useEffect(() => {
     if (tenant) {
-      kbForm.reset({ knowledgeBase: tenant.knowledgeBase ?? "" });
-      setKbDirty(false);
       phoneForm.reset({ phoneNumber: tenant.phoneNumber ?? "" });
       setPhoneDirty(false);
       setSelectedNumber(tenant.phoneNumber ?? "__none__");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenant?.id, tenant?.knowledgeBase, tenant?.phoneNumber]);
+  }, [tenant?.id, tenant?.phoneNumber]);
 
   const onSavePhone = (values: z.infer<typeof phoneSchema>) => {
     if (!tenant) return;
@@ -196,56 +182,6 @@ export default function TenantDetail() {
         },
       },
     );
-  };
-
-  const onSaveKb = (values: z.infer<typeof kbSchema>) => {
-    if (!tenant) return;
-    updateTenant.mutate(
-      { id: tenant.id, data: { knowledgeBase: values.knowledgeBase || null } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
-          setKbDirty(false);
-          toast({ title: "Knowledge Base Saved", description: `${tenant.name} AI Student updated.` });
-        },
-        onError: (err) => {
-          toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
-        },
-      },
-    );
-  };
-
-  const onFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !tenant) return;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const authHeader = getStoredAuthHeader();
-      const headers: Record<string, string> = {};
-      if (authHeader) headers["Authorization"] = authHeader;
-      const resp = await fetch(`/api/tenants/${tenant.id}/knowledge-upload`, {
-        method: "POST",
-        body: formData,
-        headers,
-      });
-      const data = await resp.json();
-      if (resp.ok) {
-        queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
-        toast({
-          title: "File Uploaded",
-          description: `Extracted ${data.extractedChars.toLocaleString()} chars from ${data.fileName}. Total KB: ${data.totalKbChars.toLocaleString()} chars.`,
-        });
-      } else {
-        toast({ title: "Upload Failed", description: data.error || "Unknown error", variant: "destructive" });
-      }
-    } catch (err) {
-      toast({ title: "Upload Failed", description: err instanceof Error ? err.message : "Network error", variant: "destructive" });
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
   };
 
   if (isLoading) {
@@ -497,80 +433,29 @@ export default function TenantDetail() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-primary/30 bg-primary/[0.03]">
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <CardTitle className="flex items-center gap-2">
-                <BookOpen size={20} /> Knowledge Base
+              <CardTitle className="flex items-center gap-2 text-primary">
+                <GraduationCap size={20} /> Professor &amp; Knowledge
               </CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                The AI Student reads this before drafting a Whisper for every inbound message.
+                Chat with {tenant.name}'s Professor to curate a Library, then push
+                absorbed knowledge to the Classroom that Students use to draft replies.
               </p>
             </div>
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.txt,.md,.csv"
-                onChange={onFileUpload}
-                className="hidden"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-              >
-                <Upload size={14} />
-                {uploading ? "Uploading..." : "Upload File"}
+            <Link href={`/tenants/${tenant.id}/professor`}>
+              <Button className="gap-2 shrink-0">
+                <GraduationCap size={16} /> Open Professor
               </Button>
-            </div>
+            </Link>
           </div>
           <p className="text-xs text-muted-foreground">
-            Supports PDF, TXT, MD, CSV (max 5MB). Content is extracted and appended to the knowledge base.
+            Your existing knowledge base was migrated into the Library as a “legacy”
+            document — nothing was lost.
           </p>
         </CardHeader>
-        <CardContent>
-          <Form {...kbForm}>
-            <form onSubmit={kbForm.handleSubmit(onSaveKb)} className="space-y-4">
-              <FormField
-                control={kbForm.control}
-                name="knowledgeBase"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Q: What are your hours?  A: 9am-6pm CET, Mon-Fri.&#10;Q: Refund policy?  A: 30 days, no questions asked.&#10;ESCALATE if: customer mentions 'lawyer' or 'fraud'."
-                        className="min-h-[260px] font-mono text-xs"
-                        {...field}
-                        onChange={(e) => {
-                          field.onChange(e);
-                          setKbDirty(true);
-                        }}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="flex justify-between items-center pt-2">
-                <span className="text-xs text-muted-foreground">
-                  {kbDirty ? "Unsaved changes" : "Up to date"}
-                  {" · "}
-                  {(kbForm.getValues("knowledgeBase") || "").length.toLocaleString()} chars
-                </span>
-                <Button
-                  type="submit"
-                  disabled={updateTenant.isPending || !kbDirty}
-                >
-                  {updateTenant.isPending ? "Saving..." : "Save Knowledge Base"}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        </CardContent>
       </Card>
 
       <Card className="border-primary/20">
