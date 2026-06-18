@@ -649,6 +649,19 @@ export interface SubscriptionDetail {
   currentPeriodEnd?: string | null;
 }
 
+export interface CheckoutSessionInput {
+  tierCode: TierCode;
+  /** URL to redirect to after successful payment */
+  successUrl?: string;
+  /** URL to redirect to if user cancels checkout */
+  cancelUrl?: string;
+}
+
+export interface CheckoutSessionResult {
+  checkoutUrl: string;
+  sessionId: string;
+}
+
 export interface SubscribeInput {
   tierCode: TierCode;
 }

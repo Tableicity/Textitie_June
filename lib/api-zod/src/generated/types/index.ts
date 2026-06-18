@@ -39,6 +39,8 @@ export * from "./campaignSendResultPreFlightCheck";
 export * from "./campaignStatus";
 export * from "./cancelResult";
 export * from "./changePlanInput";
+export * from "./checkoutSessionInput";
+export * from "./checkoutSessionResult";
 export * from "./claimResult";
 export * from "./complianceItem";
 export * from "./complianceReport";

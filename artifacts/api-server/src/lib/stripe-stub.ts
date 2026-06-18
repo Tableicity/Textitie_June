@@ -231,7 +231,7 @@ export async function cancelSubscription(tenantId: number, tenantSlug: string): 
   logger.info({ tenantId }, "Stub subscription canceled");
 }
 
-async function ensureUsageRecord(tenantId: number, tenantSlug: string, creditsIncluded: number) {
+export async function ensureUsageRecord(tenantId: number, tenantSlug: string, creditsIncluded: number) {
   const existing = await getCurrentUsageRecord(tenantId, tenantSlug);
   if (existing) return existing;
 

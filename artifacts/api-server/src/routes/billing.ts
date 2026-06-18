@@ -12,8 +12,38 @@ import {
   OVERAGE_RATE_CENTS,
   PHONE_ADDON_CENTS,
 } from "../lib/stripe-stub";
+import { createCheckoutSession } from "../lib/stripeCheckout";
 
 const router = Router();
+
+router.post("/billing/checkout", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const tenantSlug = req.tenantUser!.tenantSlug;
+  const { tierCode, successUrl, cancelUrl } = req.body ?? {};
+
+  if (!tierCode || typeof tierCode !== "string") {
+    res.status(400).json({ error: "tierCode is required" });
+    return;
+  }
+
+  const baseUrl = `https://${(process.env["REPLIT_DOMAINS"] ?? "").split(",")[0]}`;
+  const resolvedSuccess = (typeof successUrl === "string" && successUrl) ? successUrl : `${baseUrl}/billing?checkout=success&tier=${tierCode}`;
+  const resolvedCancel = (typeof cancelUrl === "string" && cancelUrl) ? cancelUrl : `${baseUrl}/billing?checkout=canceled`;
+
+  try {
+    const result = await createCheckoutSession(
+      tenantId,
+      tenantSlug,
+      tierCode,
+      resolvedSuccess,
+      resolvedCancel,
+    );
+    res.json(result);
+  } catch (err: any) {
+    logger.error({ err }, "Create checkout session error");
+    res.status(400).json({ error: err.message ?? "Failed to create checkout session" });
+  }
+});
 
 router.get("/billing/plans", requireTenantAuth, async (_req, res) => {
   try {

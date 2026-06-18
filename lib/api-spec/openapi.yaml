@@ -1204,6 +1204,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/SubscriptionDetail"
 
+  /billing/checkout:
+    post:
+      operationId: createCheckoutSession
+      tags: [billing]
+      summary: Create a Stripe Checkout session for a plan (new sub or upgrade)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutSessionInput"
+      responses:
+        "200":
+          description: Checkout session URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutSessionResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /billing/subscribe:
     post:
       operationId: subscribe
@@ -3338,6 +3363,28 @@ components:
         - status
         - monthlyPriceCents
         - includedCredits
+
+    CheckoutSessionInput:
+      type: object
+      properties:
+        tierCode:
+          $ref: "#/components/schemas/TierCode"
+        successUrl:
+          type: string
+          description: URL to redirect to after successful payment
+        cancelUrl:
+          type: string
+          description: URL to redirect to if user cancels checkout
+      required: [tierCode]
+
+    CheckoutSessionResult:
+      type: object
+      properties:
+        checkoutUrl:
+          type: string
+        sessionId:
+          type: string
+      required: [checkoutUrl, sessionId]
 
     SubscribeInput:
       type: object

@@ -1,13 +1,12 @@
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   useListBillingPlans,
   useGetSubscription,
   useGetBillingUsage,
   useGetBillingHistory,
-  useSubscribe,
-  useChangePlan,
   useCancelSubscription,
+  createCheckoutSession,
   getGetSubscriptionQueryKey,
   getGetBillingUsageQueryKey,
   getGetBillingHistoryQueryKey,
@@ -26,6 +25,7 @@ import {
   Loader2,
   BarChart3,
   Infinity,
+  ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -85,15 +85,31 @@ export default function Billing() {
   const { toast } = useToast();
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
-    type: "subscribe" | "change" | "cancel";
+    type: "checkout" | "cancel";
     tierCode?: string;
     tierName?: string;
-  }>({ open: false, type: "subscribe" });
+  }>({ open: false, type: "checkout" });
 
   const { data: plans, isLoading: plansLoading } = useListBillingPlans();
   const { data: subscription, isLoading: subLoading } = useGetSubscription();
   const { data: usage, isLoading: usageLoading } = useGetBillingUsage();
   const { data: history, isLoading: historyLoading } = useGetBillingHistory();
+
+  // Show success / canceled toast when Stripe redirects back
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get("checkout");
+    if (checkout === "success") {
+      toast({ title: "Payment successful!", description: "Your subscription is now active. It may take a moment to reflect." });
+      queryClient.invalidateQueries({ queryKey: getGetSubscriptionQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetBillingUsageQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetBillingHistoryQueryKey() });
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (checkout === "canceled") {
+      toast({ title: "Checkout canceled", description: "No charge was made.", variant: "default" });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: getGetSubscriptionQueryKey() });
@@ -101,18 +117,19 @@ export default function Billing() {
     queryClient.invalidateQueries({ queryKey: getGetBillingHistoryQueryKey() });
   };
 
-  const subscribeMutation = useSubscribe({
-    mutation: {
-      onSuccess: () => { invalidateAll(); setConfirmDialog({ open: false, type: "subscribe" }); toast({ title: "Subscription started", description: "Your free trial has begun." }); },
-      onError: (err: any) => { toast({ title: "Subscription failed", description: err?.response?.data?.error ?? "Please try again.", variant: "destructive" }); },
+  const checkoutMutation = useMutation({
+    mutationFn: async (tierCode: string) => {
+      const result = await createCheckoutSession({ tierCode: tierCode as any });
+      return result;
+    },
+    onSuccess: (result) => {
+      window.location.href = result.checkoutUrl;
+    },
+    onError: (err: any) => {
+      toast({ title: "Checkout failed", description: err?.response?.data?.error ?? "Please try again.", variant: "destructive" });
     },
   });
-  const changePlanMutation = useChangePlan({
-    mutation: {
-      onSuccess: () => { invalidateAll(); setConfirmDialog({ open: false, type: "change" }); toast({ title: "Plan changed", description: "Your subscription has been updated." }); },
-      onError: (err: any) => { toast({ title: "Plan change failed", description: err?.response?.data?.error ?? "Please try again.", variant: "destructive" }); },
-    },
-  });
+
   const cancelMutation = useCancelSubscription({
     mutation: {
       onSuccess: () => { invalidateAll(); setConfirmDialog({ open: false, type: "cancel" }); toast({ title: "Subscription canceled", description: "Your plan has been canceled." }); },
@@ -124,24 +141,22 @@ export default function Billing() {
   const currentTier = subscription?.planTierCode;
 
   const handlePlanAction = (tierCode: string, tierName: string) => {
-    if (!isSubscribed) {
-      setConfirmDialog({ open: true, type: "subscribe", tierCode, tierName });
-    } else if (currentTier !== tierCode) {
-      setConfirmDialog({ open: true, type: "change", tierCode, tierName });
+    if (tierCode === "enterprise") {
+      window.open("mailto:sales@textitie.com?subject=Enterprise Plan Inquiry", "_blank");
+      return;
     }
+    setConfirmDialog({ open: true, type: "checkout", tierCode, tierName });
   };
 
   const handleConfirm = () => {
-    if (confirmDialog.type === "subscribe" && confirmDialog.tierCode) {
-      subscribeMutation.mutate({ data: { tierCode: confirmDialog.tierCode as any } });
-    } else if (confirmDialog.type === "change" && confirmDialog.tierCode) {
-      changePlanMutation.mutate({ data: { tierCode: confirmDialog.tierCode as any } });
+    if (confirmDialog.type === "checkout" && confirmDialog.tierCode) {
+      checkoutMutation.mutate(confirmDialog.tierCode);
     } else if (confirmDialog.type === "cancel") {
       cancelMutation.mutate();
     }
   };
 
-  const isMutating = subscribeMutation.isPending || changePlanMutation.isPending || cancelMutation.isPending;
+  const isMutating = checkoutMutation.isPending || cancelMutation.isPending;
 
   const trialDaysLeft = subscription?.trialEndsAt
     ? Math.max(0, Math.ceil((new Date(subscription.trialEndsAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -195,7 +210,7 @@ export default function Billing() {
                 <div className="text-center py-6">
                   <CreditCard className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                   <p className="text-slate-600 font-medium">No active subscription</p>
-                  <p className="text-slate-400 text-sm mt-1">Choose a plan below to get started with a free trial.</p>
+                  <p className="text-slate-400 text-sm mt-1">Choose a plan below to get started.</p>
                 </div>
               ) : (
                 <div className="flex items-start justify-between">
@@ -326,6 +341,9 @@ export default function Billing() {
                   const isCurrent = currentTier === plan.tierCode;
                   const tierColor = TIER_COLORS[plan.tierCode] ?? "border-slate-200";
                   const iconColor = TIER_ICON_COLORS[plan.tierCode] ?? "text-slate-600 bg-slate-100";
+                  const isEnterprise = plan.tierCode === "enterprise";
+                  const isUpgrade = isSubscribed && currentTier && plans &&
+                    plans.findIndex((p) => p.tierCode === plan.tierCode) > plans.findIndex((p) => p.tierCode === currentTier);
 
                   return (
                     <Card
@@ -351,10 +369,10 @@ export default function Billing() {
                       <CardContent className="space-y-4">
                         <div>
                           <p className="text-3xl font-bold text-slate-900">
-                            {plan.monthlyPriceFormatted}
-                            <span className="text-sm font-normal text-slate-500">/mo</span>
+                            {isEnterprise ? "Custom" : plan.monthlyPriceFormatted}
+                            {!isEnterprise && <span className="text-sm font-normal text-slate-500">/mo</span>}
                           </p>
-                          {plan.trialDays > 0 && !isSubscribed && (
+                          {plan.trialDays > 0 && !isSubscribed && !isEnterprise && (
                             <p className="text-xs text-green-600 font-medium mt-1">
                               {plan.trialDays}-day free trial included
                             </p>
@@ -390,17 +408,21 @@ export default function Billing() {
 
                         <Button
                           className="w-full"
-                          variant={isCurrent ? "outline" : "default"}
-                          disabled={isCurrent || isMutating}
+                          variant={isCurrent ? "outline" : isEnterprise ? "secondary" : "default"}
+                          disabled={isCurrent || (isMutating && confirmDialog.tierCode === plan.tierCode)}
                           onClick={() => handlePlanAction(plan.tierCode, plan.name)}
                         >
-                          {isCurrent
-                            ? "Current Plan"
-                            : isSubscribed
-                              ? currentTier && plans && (plans.findIndex((p) => p.tierCode === plan.tierCode) > plans.findIndex((p) => p.tierCode === currentTier))
-                                ? "Upgrade"
-                                : "Downgrade"
-                              : "Start Free Trial"}
+                          {(isMutating && confirmDialog.tierCode === plan.tierCode) ? (
+                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Redirecting…</>
+                          ) : isCurrent ? (
+                            "Current Plan"
+                          ) : isEnterprise ? (
+                            <><ExternalLink className="w-4 h-4 mr-2" /> Contact Sales</>
+                          ) : isSubscribed ? (
+                            isUpgrade ? "Upgrade →" : "Downgrade"
+                          ) : (
+                            "Start Free Trial"
+                          )}
                         </Button>
                       </CardContent>
                     </Card>
@@ -478,35 +500,34 @@ export default function Billing() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {confirmDialog.type === "subscribe"
-                ? `Start ${confirmDialog.tierName} Plan`
-                : confirmDialog.type === "change"
-                  ? `Switch to ${confirmDialog.tierName}`
-                  : "Cancel Subscription"}
+              {confirmDialog.type === "checkout"
+                ? `Subscribe to ${confirmDialog.tierName}`
+                : "Cancel Subscription"}
             </DialogTitle>
             <DialogDescription>
-              {confirmDialog.type === "subscribe"
-                ? "You'll start with a 14-day free trial. No charges until the trial ends."
-                : confirmDialog.type === "change"
-                  ? "Your plan will change immediately. Credits will be adjusted for the new plan."
-                  : "Your subscription will be canceled immediately. You'll lose access to plan features."}
+              {confirmDialog.type === "checkout"
+                ? "You'll be securely redirected to Stripe to complete payment. Your card won't be charged until after any free trial."
+                : "Your subscription will be canceled at the end of the current billing period."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog({ ...confirmDialog, open: false })} disabled={isMutating}>
-              Go Back
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDialog({ ...confirmDialog, open: false })}
+              disabled={isMutating}
+            >
+              Back
             </Button>
             <Button
               variant={confirmDialog.type === "cancel" ? "destructive" : "default"}
               onClick={handleConfirm}
               disabled={isMutating}
             >
-              {isMutating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {confirmDialog.type === "subscribe"
-                ? "Start Free Trial"
-                : confirmDialog.type === "change"
-                  ? "Confirm Change"
-                  : "Cancel Subscription"}
+              {isMutating
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {confirmDialog.type === "checkout" ? "Redirecting…" : "Canceling…"}</>
+                : confirmDialog.type === "checkout"
+                  ? <><ExternalLink className="w-4 h-4 mr-2" /> Go to Checkout</>
+                  : "Confirm Cancel"}
             </Button>
           </DialogFooter>
         </DialogContent>

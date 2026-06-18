@@ -1041,6 +1041,26 @@ export const GetSubscriptionResponse = zod.object({
 });
 
 /**
+ * @summary Create a Stripe Checkout session for a plan (new sub or upgrade)
+ */
+export const CreateCheckoutSessionBody = zod.object({
+  tierCode: zod.enum(["starter", "growth", "enterprise"]),
+  successUrl: zod
+    .string()
+    .optional()
+    .describe("URL to redirect to after successful payment"),
+  cancelUrl: zod
+    .string()
+    .optional()
+    .describe("URL to redirect to if user cancels checkout"),
+});
+
+export const CreateCheckoutSessionResponse = zod.object({
+  checkoutUrl: zod.string(),
+  sessionId: zod.string(),
+});
+
+/**
  * @summary Start a new subscription (with trial if eligible)
  */
 export const SubscribeBody = zod.object({

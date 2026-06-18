@@ -12,6 +12,7 @@ export const tiersTable = pgTable("tiers", {
   maxAgents: integer("max_agents").notNull().default(1),
   maxPhoneNumbers: integer("max_phone_numbers").notNull().default(1),
   hipaaEligible: boolean("hipaa_eligible").notNull().default(false),
+  stripePriceId: text("stripe_price_id"),
 });
 
 export type Tier = typeof tiersTable.$inferSelect;

@@ -40,6 +40,8 @@ import type {
   CampaignSendResult,
   CancelResult,
   ChangePlanInput,
+  CheckoutSessionInput,
+  CheckoutSessionResult,
   ClaimResult,
   ComplianceReport,
   Contact,
@@ -4237,6 +4239,92 @@ export function useGetSubscription<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Create a Stripe Checkout session for a plan (new sub or upgrade)
+ */
+export const getCreateCheckoutSessionUrl = () => {
+  return `/api/billing/checkout`;
+};
+
+export const createCheckoutSession = async (
+  checkoutSessionInput: CheckoutSessionInput,
+  options?: RequestInit,
+): Promise<CheckoutSessionResult> => {
+  return customFetch<CheckoutSessionResult>(getCreateCheckoutSessionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(checkoutSessionInput),
+  });
+};
+
+export const getCreateCheckoutSessionMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCheckoutSession>>,
+    TError,
+    { data: BodyType<CheckoutSessionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCheckoutSession>>,
+  TError,
+  { data: BodyType<CheckoutSessionInput> },
+  TContext
+> => {
+  const mutationKey = ["createCheckoutSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCheckoutSession>>,
+    { data: BodyType<CheckoutSessionInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCheckoutSession(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCheckoutSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCheckoutSession>>
+>;
+export type CreateCheckoutSessionMutationBody = BodyType<CheckoutSessionInput>;
+export type CreateCheckoutSessionMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Create a Stripe Checkout session for a plan (new sub or upgrade)
+ */
+export const useCreateCheckoutSession = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCheckoutSession>>,
+    TError,
+    { data: BodyType<CheckoutSessionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCheckoutSession>>,
+  TError,
+  { data: BodyType<CheckoutSessionInput> },
+  TContext
+> => {
+  return useMutation(getCreateCheckoutSessionMutationOptions(options));
+};
 
 /**
  * @summary Start a new subscription (with trial if eligible)

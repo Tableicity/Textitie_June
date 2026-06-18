@@ -35,11 +35,16 @@ async function initStripe() {
     return;
   }
   try {
+    // runMigrations creates the stripe schema + all tables via pg-node-migrations.
+    // It is idempotent: a populated _migrations table is a no-op; an absent schema
+    // runs all 52 migrations. Must run BEFORE StripeSync touches any table.
     await runMigrations({ databaseUrl });
+    logger.info("Stripe schema migrations complete");
     const stripeSync = await getStripeSync();
+    await stripeSync.syncBackfill();
+    logger.info("Stripe schema & data synced");
     const webhookBase = `https://${(process.env["REPLIT_DOMAINS"] ?? "").split(",")[0]}`;
     await stripeSync.findOrCreateManagedWebhook(`${webhookBase}/api/stripe/webhook`);
-    stripeSync.syncBackfill().catch((err) => logger.error({ err }, "Stripe backfill error"));
     logger.info("Stripe initialized");
   } catch (err) {
     logger.error({ err }, "Stripe init failed — continuing without Stripe");
