@@ -13,6 +13,7 @@ import {
 import { getPublicWebhookConfig } from "../lib/publicTwilioUrls";
 import { assertCanPurchaseNumber } from "../lib/phoneProvisioningGate";
 import { syncCarrierBillingToStripe } from "../lib/carrierBilling";
+import { getNeighborAreaCodes } from "../lib/areaCodeNeighbors";
 import {
   applyInboundWebhookBySid,
   buildInboundWebhookParams,
@@ -120,6 +121,67 @@ router.get("/phone-numbers/available", requireTenantAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to search numbers" });
   }
 });
+
+// When the carrier is sold out of an area code (common for older NPAs like 909),
+// suggest geographically nearby area codes that DO currently have stock so the
+// customer can pick a working alternative instead of hitting a dead end.
+router.get(
+  "/phone-numbers/area-code-suggestions",
+  requireTenantAuth,
+  async (req, res) => {
+    const client = getTwilioClient();
+    if (!client) {
+      res.status(503).json({ error: "Twilio not configured" });
+      return;
+    }
+    const areaCode = (req.query.areaCode as string | undefined)?.trim();
+    const country = (req.query.country as string) || "US";
+    if (!areaCode || !/^\d{3}$/.test(areaCode)) {
+      res.status(400).json({ error: "A 3-digit areaCode is required" });
+      return;
+    }
+
+    const neighbors = getNeighborAreaCodes(areaCode).slice(0, 8);
+    if (neighbors.length === 0) {
+      res.json({ areaCode, suggestions: [] });
+      return;
+    }
+
+    // Re-verify each candidate against LIVE carrier stock (in parallel) so we
+    // never suggest an area code that is itself sold out.
+    type Suggestion = {
+      areaCode: string;
+      locality: string | null;
+      region: string | null;
+    };
+    const lookup = client.availablePhoneNumbers(country);
+    const checks = await Promise.allSettled(
+      neighbors.map(async (nb): Promise<Suggestion | null> => {
+        const numbers = await lookup.local.list({
+          areaCode: Number(nb),
+          limit: 1,
+        });
+        if (numbers.length === 0) return null;
+        const first = numbers[0];
+        return {
+          areaCode: nb,
+          locality: first?.locality ?? null,
+          region: first?.region ?? null,
+        };
+      }),
+    );
+
+    const suggestions: Suggestion[] = [];
+    for (const r of checks) {
+      if (r.status === "fulfilled" && r.value) {
+        suggestions.push(r.value);
+        if (suggestions.length >= 5) break;
+      }
+    }
+
+    res.json({ areaCode, suggestions });
+  },
+);
 
 router.post("/phone-numbers/purchase", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;

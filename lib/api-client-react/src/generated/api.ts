@@ -26,6 +26,7 @@ import type {
   AnalyticsOverview,
   AnalyticsVolumePoint,
   ApiError,
+  AreaCodeSuggestionsResult,
   AssignNumberInput,
   AudiencePreviewInput,
   AudiencePreviewResult,
@@ -97,6 +98,7 @@ import type {
   SubscriptionResult,
   SuccessResponse,
   SuccessResult,
+  SuggestAreaCodesParams,
   TagsResult,
   Tenant,
   TenantChangePasswordInput,
@@ -3836,6 +3838,111 @@ export function useSearchAvailableNumbers<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getSearchAvailableNumbersQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Given an area code the carrier has sold out of, returns geographically nearby area codes that currently have available local numbers, so the customer can pick a working alternative instead of hitting a dead end.
+
+ * @summary Suggest nearby area codes that currently have local numbers in stock
+ */
+export const getSuggestAreaCodesUrl = (params: SuggestAreaCodesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/phone-numbers/area-code-suggestions?${stringifiedParams}`
+    : `/api/phone-numbers/area-code-suggestions`;
+};
+
+export const suggestAreaCodes = async (
+  params: SuggestAreaCodesParams,
+  options?: RequestInit,
+): Promise<AreaCodeSuggestionsResult> => {
+  return customFetch<AreaCodeSuggestionsResult>(
+    getSuggestAreaCodesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getSuggestAreaCodesQueryKey = (
+  params?: SuggestAreaCodesParams,
+) => {
+  return [
+    `/api/phone-numbers/area-code-suggestions`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getSuggestAreaCodesQueryOptions = <
+  TData = Awaited<ReturnType<typeof suggestAreaCodes>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SuggestAreaCodesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof suggestAreaCodes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getSuggestAreaCodesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof suggestAreaCodes>>
+  > = ({ signal }) => suggestAreaCodes(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof suggestAreaCodes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type SuggestAreaCodesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof suggestAreaCodes>>
+>;
+export type SuggestAreaCodesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Suggest nearby area codes that currently have local numbers in stock
+ */
+
+export function useSuggestAreaCodes<
+  TData = Awaited<ReturnType<typeof suggestAreaCodes>>,
+  TError = ErrorType<unknown>,
+>(
+  params: SuggestAreaCodesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof suggestAreaCodes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getSuggestAreaCodesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

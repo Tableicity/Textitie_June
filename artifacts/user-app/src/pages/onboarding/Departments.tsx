@@ -7,6 +7,7 @@ import {
   getListPhoneNumbersQueryKey,
   getListDepartmentsQueryKey,
   type AvailableNumberItem,
+  type AreaCodeSuggestionItem,
 } from "@workspace/api-client-react";
 import { getTenantToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -179,6 +180,7 @@ function GetNumberDialog({
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [results, setResults] = useState<AvailableNumberItem[]>([]);
+  const [suggestions, setSuggestions] = useState<AreaCodeSuggestionItem[]>([]);
   const [purchaseDeptId, setPurchaseDeptId] = useState<string>("");
   const [purchasing, setPurchasing] = useState<string | null>(null);
 
@@ -189,6 +191,7 @@ function GetNumberDialog({
       setContains("");
       setSearchError(null);
       setResults([]);
+      setSuggestions([]);
       setPurchasing(null);
     }
   }, [open, numberType]);
@@ -223,15 +226,37 @@ function GetNumberDialog({
 
   const canSearch = isTollFree ? true : areaCode.trim().length > 0;
 
-  const runSearch = async () => {
-    if (!canSearch) return;
+  // Fetch geographically nearby area codes that currently have stock, so a
+  // sold-out search (e.g. 909) can offer working alternatives instead of a dead
+  // end. Best-effort: any failure simply yields no suggestions.
+  const fetchSuggestions = async (forAreaCode: string) => {
+    try {
+      const token = getTenantToken();
+      const res = await fetch(
+        `/api/phone-numbers/area-code-suggestions?areaCode=${encodeURIComponent(forAreaCode)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        suggestions: AreaCodeSuggestionItem[];
+      };
+      setSuggestions(data.suggestions ?? []);
+    } catch {
+      // Suggestions are a non-critical enhancement; ignore errors.
+    }
+  };
+
+  const runSearch = async (overrideAreaCode?: string) => {
+    const effectiveAreaCode = (overrideAreaCode ?? areaCode).trim();
+    if (isTollFree ? false : effectiveAreaCode.length === 0) return;
     setIsSearching(true);
     setSearchError(null);
     setResults([]);
+    setSuggestions([]);
     try {
       const token = getTenantToken();
       const qs = new URLSearchParams({ country: "US", type: numberType, limit: "12" });
-      if (!isTollFree && areaCode.trim()) qs.set("areaCode", areaCode.trim());
+      if (!isTollFree && effectiveAreaCode) qs.set("areaCode", effectiveAreaCode);
       if (isTollFree && contains.trim()) qs.set("contains", contains.trim());
       const res = await fetch(`/api/phone-numbers/available?${qs.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -246,7 +271,16 @@ function GetNumberDialog({
         const data = (await res.json()) as AvailableNumberItem[];
         setResults(data);
         if (data.length === 0) {
-          setSearchError("No numbers matched your search. Try a different area code.");
+          if (isTollFree) {
+            setSearchError(
+              "No toll-free numbers matched your search. Try removing the digits filter.",
+            );
+          } else {
+            setSearchError(
+              `No numbers are currently available in area code ${effectiveAreaCode}. This area code is often sold out at the carrier — try one of the nearby ones below, or a different area code.`,
+            );
+            void fetchSuggestions(effectiveAreaCode);
+          }
         }
       }
     } catch {
@@ -254,6 +288,11 @@ function GetNumberDialog({
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const pickSuggestedAreaCode = (code: string) => {
+    setAreaCode(code);
+    void runSearch(code);
   };
 
   const buy = (num: AvailableNumberItem) => {
@@ -322,7 +361,7 @@ function GetNumberDialog({
             </div>
           )}
           <Button
-            onClick={runSearch}
+            onClick={() => runSearch()}
             disabled={isSearching || !canSearch}
             className="bg-blue-600 hover:bg-blue-700"
             data-testid="button-search-numbers"
@@ -342,6 +381,34 @@ function GetNumberDialog({
             <AlertTitle>No results</AlertTitle>
             <AlertDescription>{searchError}</AlertDescription>
           </Alert>
+        )}
+
+        {suggestions.length > 0 && (
+          <div className="space-y-2" data-testid="area-code-suggestions">
+            <Label className="text-xs uppercase tracking-wide text-slate-500">
+              Nearby area codes with numbers available
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.map((s) => (
+                <Button
+                  key={s.areaCode}
+                  size="sm"
+                  variant="outline"
+                  className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                  onClick={() => pickSuggestedAreaCode(s.areaCode)}
+                  disabled={isSearching}
+                  data-testid={`button-suggested-areacode-${s.areaCode}`}
+                >
+                  {s.areaCode}
+                  {s.locality ? (
+                    <span className="ml-1.5 text-slate-400 font-normal">
+                      {s.locality}
+                    </span>
+                  ) : null}
+                </Button>
+              ))}
+            </div>
+          </div>
         )}
 
         {purchaseMutation.isError && (

@@ -1130,6 +1130,34 @@ paths:
                 items:
                   $ref: "#/components/schemas/AvailableNumberItem"
 
+  /phone-numbers/area-code-suggestions:
+    get:
+      operationId: suggestAreaCodes
+      tags: [phone-numbers]
+      summary: Suggest nearby area codes that currently have local numbers in stock
+      description: >
+        Given an area code the carrier has sold out of, returns geographically
+        nearby area codes that currently have available local numbers, so the
+        customer can pick a working alternative instead of hitting a dead end.
+      parameters:
+        - name: areaCode
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: country
+          in: query
+          schema:
+            type: string
+            default: US
+      responses:
+        "200":
+          description: Nearby area code suggestions that currently have stock
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AreaCodeSuggestionsResult"
+
   /phone-numbers/purchase:
     post:
       operationId: purchasePhoneNumber
@@ -3061,6 +3089,28 @@ components:
           type: string
           enum: [local, toll_free]
       required: [phoneNumber, friendlyName, isoCountry, numberType]
+
+    AreaCodeSuggestionItem:
+      type: object
+      properties:
+        areaCode:
+          type: string
+        locality:
+          type: ["string", "null"]
+        region:
+          type: ["string", "null"]
+      required: [areaCode]
+
+    AreaCodeSuggestionsResult:
+      type: object
+      properties:
+        areaCode:
+          type: string
+        suggestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AreaCodeSuggestionItem"
+      required: [areaCode, suggestions]
 
     PurchaseNumberInput:
       type: object

@@ -993,6 +993,29 @@ export const SearchAvailableNumbersResponse = zod.array(
 );
 
 /**
+ * Given an area code the carrier has sold out of, returns geographically nearby area codes that currently have available local numbers, so the customer can pick a working alternative instead of hitting a dead end.
+
+ * @summary Suggest nearby area codes that currently have local numbers in stock
+ */
+export const suggestAreaCodesQueryCountryDefault = `US`;
+
+export const SuggestAreaCodesQueryParams = zod.object({
+  areaCode: zod.coerce.string(),
+  country: zod.coerce.string().default(suggestAreaCodesQueryCountryDefault),
+});
+
+export const SuggestAreaCodesResponse = zod.object({
+  areaCode: zod.string(),
+  suggestions: zod.array(
+    zod.object({
+      areaCode: zod.string(),
+      locality: zod.string().nullish(),
+      region: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
  * @summary Purchase a phone number from Twilio
  */
 export const PurchasePhoneNumberBody = zod.object({

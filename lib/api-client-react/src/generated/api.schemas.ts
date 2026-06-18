@@ -470,6 +470,19 @@ export interface AvailableNumberItem {
   numberType: AvailableNumberItemNumberType;
 }
 
+export interface AreaCodeSuggestionItem {
+  areaCode: string;
+  /** @nullable */
+  locality?: string | null;
+  /** @nullable */
+  region?: string | null;
+}
+
+export interface AreaCodeSuggestionsResult {
+  areaCode: string;
+  suggestions: AreaCodeSuggestionItem[];
+}
+
 export interface PurchaseNumberInput {
   phoneNumber: string;
   departmentId?: number;
@@ -1307,6 +1320,11 @@ export const SearchAvailableNumbersType = {
   local: "local",
   toll_free: "toll_free",
 } as const;
+
+export type SuggestAreaCodesParams = {
+  areaCode: string;
+  country?: string;
+};
 
 export type GetAnalyticsOverviewParams = {
   from?: string;
