@@ -53,6 +53,11 @@ export const ListTenantsResponseItem = zod.object({
     .describe(
       "Free-text knowledge base used by the AI Student to draft Whispers",
     ),
+  unregisteredSurchargeEnabled: zod
+    .boolean()
+    .describe(
+      "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListTenantsResponse = zod.array(ListTenantsResponseItem);
@@ -144,6 +149,11 @@ export const GetTenantResponse = zod.object({
     .describe(
       "Free-text knowledge base used by the AI Student to draft Whispers",
     ),
+  unregisteredSurchargeEnabled: zod
+    .boolean()
+    .describe(
+      "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -167,6 +177,12 @@ export const UpdateTenantBody = zod
     chatwootAccountId: zod.number().nullish(),
     chatwootInboxId: zod.number().nullish(),
     knowledgeBase: zod.string().nullish(),
+    unregisteredSurchargeEnabled: zod
+      .boolean()
+      .optional()
+      .describe(
+        "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
+      ),
   })
   .describe("Partial tenant update — only supplied fields are written.");
 
@@ -192,6 +208,11 @@ export const UpdateTenantResponse = zod.object({
     .nullable()
     .describe(
       "Free-text knowledge base used by the AI Student to draft Whispers",
+    ),
+  unregisteredSurchargeEnabled: zod
+    .boolean()
+    .describe(
+      "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
     ),
   createdAt: zod.coerce.date(),
 });
@@ -943,6 +964,7 @@ export const RemoveDepartmentMemberResponse = zod.object({
  * @summary Search available phone numbers from Twilio
  */
 export const searchAvailableNumbersQueryCountryDefault = `US`;
+export const searchAvailableNumbersQueryTypeDefault = `local`;
 export const searchAvailableNumbersQueryLimitDefault = 20;
 
 export const SearchAvailableNumbersQueryParams = zod.object({
@@ -951,15 +973,20 @@ export const SearchAvailableNumbersQueryParams = zod.object({
     .default(searchAvailableNumbersQueryCountryDefault),
   areaCode: zod.coerce.string().optional(),
   contains: zod.coerce.string().optional(),
+  type: zod
+    .enum(["local", "toll_free"])
+    .default(searchAvailableNumbersQueryTypeDefault)
+    .describe("local (geographic) or toll_free numbers"),
   limit: zod.coerce.number().default(searchAvailableNumbersQueryLimitDefault),
 });
 
 export const SearchAvailableNumbersResponseItem = zod.object({
   phoneNumber: zod.string(),
   friendlyName: zod.string(),
-  locality: zod.string(),
-  region: zod.string(),
+  locality: zod.string().nullish(),
+  region: zod.string().nullish(),
   isoCountry: zod.string(),
+  numberType: zod.enum(["local", "toll_free"]),
 });
 export const SearchAvailableNumbersResponse = zod.array(
   SearchAvailableNumbersResponseItem,
@@ -1120,6 +1147,21 @@ export const GetBillingHistoryResponseItem = zod.object({
 export const GetBillingHistoryResponse = zod.array(
   GetBillingHistoryResponseItem,
 );
+
+/**
+ * @summary Per-number recurring carrier billing for the current tenant
+ */
+export const GetCarrierBillingSummaryResponse = zod.object({
+  localCount: zod.number(),
+  tollFreeCount: zod.number(),
+  unregisteredLocalCount: zod.number(),
+  surchargeEnabled: zod.boolean(),
+  carrierFeeCents: zod.number(),
+  surchargeCents: zod.number(),
+  carrierLineCents: zod.number(),
+  surchargeLineCents: zod.number(),
+  totalRecurringCents: zod.number(),
+});
 
 /**
  * @summary List automation rules for the tenant

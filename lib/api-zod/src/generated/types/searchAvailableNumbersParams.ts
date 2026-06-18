@@ -5,10 +5,15 @@
  * SAMA Control Plane API
  * OpenAPI spec version: 0.1.0
  */
+import type { SearchAvailableNumbersType } from "./searchAvailableNumbersType";
 
 export type SearchAvailableNumbersParams = {
   country?: string;
   areaCode?: string;
   contains?: string;
+  /**
+   * local (geographic) or toll_free numbers
+   */
+  type?: SearchAvailableNumbersType;
   limit?: number;
 };

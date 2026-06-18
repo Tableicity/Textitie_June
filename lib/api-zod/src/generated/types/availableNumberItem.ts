@@ -5,11 +5,15 @@
  * SAMA Control Plane API
  * OpenAPI spec version: 0.1.0
  */
+import type { AvailableNumberItemNumberType } from "./availableNumberItemNumberType";
 
 export interface AvailableNumberItem {
   phoneNumber: string;
   friendlyName: string;
-  locality: string;
-  region: string;
+  /** @nullable */
+  locality?: string | null;
+  /** @nullable */
+  region?: string | null;
   isoCountry: string;
+  numberType: AvailableNumberItemNumberType;
 }

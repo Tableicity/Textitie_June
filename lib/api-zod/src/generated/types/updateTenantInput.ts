@@ -24,4 +24,6 @@ export interface UpdateTenantInput {
   chatwootInboxId?: number | null;
   /** @nullable */
   knowledgeBase?: string | null;
+  /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
+  unregisteredSurchargeEnabled?: boolean;
 }

@@ -7,6 +7,7 @@ import {
   OVERAGE_RATE_CENTS,
   PHONE_ADDON_CENTS,
 } from "./stripe-stub";
+import { syncCarrierBillingToStripe } from "./carrierBilling";
 
 export { OVERAGE_RATE_CENTS, PHONE_ADDON_CENTS };
 
@@ -210,6 +211,20 @@ export async function activateSubscription(
     { tenantId, tierCode, subscriptionId, status: sub.status },
     "Subscription activated from Stripe",
   );
+
+  // A tenant can buy numbers BEFORE subscribing (purchases are unbarred). While
+  // they were on a stub/no subscription, carrier add-ons were computed_only and
+  // never pushed to Stripe. Now that a real billable sub exists, reconcile the
+  // carrier add-on items so we stop underbilling. Best-effort: never fail
+  // activation on a sync error — the next purchase/toggle/reconcile will retry.
+  try {
+    await syncCarrierBillingToStripe(tenantId, "subscription_activated");
+  } catch (err) {
+    logger.error(
+      { err, tenantId },
+      "CRITICAL: carrier billing sync failed after subscription activation",
+    );
+  }
 }
 
 export async function handleSubscriptionUpdated(
@@ -249,6 +264,18 @@ export async function handleSubscriptionUpdated(
     { tenantId, tierCode, status: dbStatus },
     "Subscription updated from webhook",
   );
+
+  // Status transitions (e.g. trialing/incomplete -> active, or a sub becoming
+  // billable) can change whether carrier add-ons should be pushed to Stripe.
+  // Reconcile best-effort so we don't leave the add-on items stale.
+  try {
+    await syncCarrierBillingToStripe(tenantId, "subscription_updated");
+  } catch (err) {
+    logger.error(
+      { err, tenantId },
+      "CRITICAL: carrier billing sync failed after subscription update",
+    );
+  }
 }
 
 export async function handleSubscriptionDeleted(

@@ -63,6 +63,8 @@ export interface Tenant {
    * @nullable
    */
   knowledgeBase: string | null;
+  /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
+  unregisteredSurchargeEnabled: boolean;
   createdAt: string;
 }
 
@@ -106,6 +108,8 @@ export interface UpdateTenantInput {
   chatwootInboxId?: number | null;
   /** @nullable */
   knowledgeBase?: string | null;
+  /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
+  unregisteredSurchargeEnabled?: boolean;
 }
 
 export interface InjectMessageInput {
@@ -447,12 +451,23 @@ export interface SuccessResult {
   success: boolean;
 }
 
+export type AvailableNumberItemNumberType =
+  (typeof AvailableNumberItemNumberType)[keyof typeof AvailableNumberItemNumberType];
+
+export const AvailableNumberItemNumberType = {
+  local: "local",
+  toll_free: "toll_free",
+} as const;
+
 export interface AvailableNumberItem {
   phoneNumber: string;
   friendlyName: string;
-  locality: string;
-  region: string;
+  /** @nullable */
+  locality?: string | null;
+  /** @nullable */
+  region?: string | null;
   isoCountry: string;
+  numberType: AvailableNumberItemNumberType;
 }
 
 export interface PurchaseNumberInput {
@@ -460,12 +475,21 @@ export interface PurchaseNumberInput {
   departmentId?: number;
 }
 
+export type PurchasedNumberResultNumberType =
+  (typeof PurchasedNumberResultNumberType)[keyof typeof PurchasedNumberResultNumberType];
+
+export const PurchasedNumberResultNumberType = {
+  local: "local",
+  toll_free: "toll_free",
+} as const;
+
 export interface PurchasedNumberResult {
   sid: string;
   phoneNumber: string;
   friendlyName: string;
   /** @nullable */
   departmentId: number | null;
+  numberType: PurchasedNumberResultNumberType;
   webhookConfigured: boolean;
 }
 
@@ -695,6 +719,18 @@ export interface UsageStats {
   periodStart?: string | null;
   /** @nullable */
   periodEnd?: string | null;
+}
+
+export interface CarrierBillingSummary {
+  localCount: number;
+  tollFreeCount: number;
+  unregisteredLocalCount: number;
+  surchargeEnabled: boolean;
+  carrierFeeCents: number;
+  surchargeCents: number;
+  carrierLineCents: number;
+  surchargeLineCents: number;
+  totalRecurringCents: number;
 }
 
 export interface BillingEventItem {
@@ -1257,8 +1293,20 @@ export type SearchAvailableNumbersParams = {
   country?: string;
   areaCode?: string;
   contains?: string;
+  /**
+   * local (geographic) or toll_free numbers
+   */
+  type?: SearchAvailableNumbersType;
   limit?: number;
 };
+
+export type SearchAvailableNumbersType =
+  (typeof SearchAvailableNumbersType)[keyof typeof SearchAvailableNumbersType];
+
+export const SearchAvailableNumbersType = {
+  local: "local",
+  toll_free: "toll_free",
+} as const;
 
 export type GetAnalyticsOverviewParams = {
   from?: string;

@@ -39,6 +39,7 @@ import type {
   CampaignMessageItem,
   CampaignSendResult,
   CancelResult,
+  CarrierBillingSummary,
   ChangePlanInput,
   CheckoutSessionInput,
   CheckoutSessionResult,
@@ -4721,6 +4722,82 @@ export function useGetBillingHistory<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetBillingHistoryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Per-number recurring carrier billing for the current tenant
+ */
+export const getGetCarrierBillingSummaryUrl = () => {
+  return `/api/billing/carrier-summary`;
+};
+
+export const getCarrierBillingSummary = async (
+  options?: RequestInit,
+): Promise<CarrierBillingSummary> => {
+  return customFetch<CarrierBillingSummary>(getGetCarrierBillingSummaryUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCarrierBillingSummaryQueryKey = () => {
+  return [`/api/billing/carrier-summary`] as const;
+};
+
+export const getGetCarrierBillingSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCarrierBillingSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCarrierBillingSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCarrierBillingSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCarrierBillingSummary>>
+  > = ({ signal }) => getCarrierBillingSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCarrierBillingSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCarrierBillingSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCarrierBillingSummary>>
+>;
+export type GetCarrierBillingSummaryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-number recurring carrier billing for the current tenant
+ */
+
+export function useGetCarrierBillingSummary<
+  TData = Awaited<ReturnType<typeof getCarrierBillingSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCarrierBillingSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCarrierBillingSummaryQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

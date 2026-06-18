@@ -37,6 +37,13 @@ export const phoneNumbersTable = pgTable("phone_numbers", {
   twilioSid: text("twilio_sid"),
   // 'primary' (tenant's own number, department_id null) | 'department'
   kind: text("kind").notNull().default("primary"),
+  // 'local' | 'toll_free' — drives carrier billing. Local numbers incur the
+  // $15 carrier fee + $10 unregistered surcharge; toll-free numbers are exempt.
+  numberType: text("number_type").notNull().default("local"),
+  // 'registered' | 'unregistered' — local numbers only. Defaults to
+  // 'unregistered' (the registration form is stubbed for now). An unregistered
+  // local number carries the $10 surcharge unless the tenant's surcharge is off.
+  registrationStatus: text("registration_status").notNull().default("unregistered"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

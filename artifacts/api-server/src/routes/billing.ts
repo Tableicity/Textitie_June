@@ -13,6 +13,7 @@ import {
   PHONE_ADDON_CENTS,
 } from "../lib/stripe-stub";
 import { createCheckoutSession } from "../lib/stripeCheckout";
+import { computeCarrierBillingSnapshot } from "../lib/carrierBilling";
 
 const router = Router();
 
@@ -241,6 +242,28 @@ router.get("/billing/history", requireTenantAuth, async (req, res) => {
     res.json(events);
   } catch (err) {
     logger.error({ err }, "Get billing history error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/billing/carrier-summary", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+
+  try {
+    const snapshot = await computeCarrierBillingSnapshot(tenantId);
+    res.json({
+      localCount: snapshot.localCount,
+      tollFreeCount: snapshot.tollFreeCount,
+      unregisteredLocalCount: snapshot.unregisteredLocalCount,
+      surchargeEnabled: snapshot.surchargeEnabled,
+      carrierFeeCents: snapshot.carrierFeeCents,
+      surchargeCents: snapshot.surchargeCents,
+      carrierLineCents: snapshot.carrierLineCents,
+      surchargeLineCents: snapshot.surchargeLineCents,
+      totalRecurringCents: snapshot.totalRecurringCents,
+    });
+  } catch (err) {
+    logger.error({ err }, "Get carrier summary error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

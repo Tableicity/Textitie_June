@@ -1108,6 +1108,13 @@ paths:
           in: query
           schema:
             type: string
+        - name: type
+          in: query
+          description: local (geographic) or toll_free numbers
+          schema:
+            type: string
+            enum: [local, toll_free]
+            default: local
         - name: limit
           in: query
           schema:
@@ -1325,6 +1332,19 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/BillingEventItem"
+
+  /billing/carrier-summary:
+    get:
+      operationId: getCarrierBillingSummary
+      tags: [billing]
+      summary: Per-number recurring carrier billing for the current tenant
+      responses:
+        "200":
+          description: Carrier billing snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CarrierBillingSummary"
 
   /automations:
     get:
@@ -2470,6 +2490,11 @@ components:
         knowledgeBase:
           type: ["string", "null"]
           description: Free-text knowledge base used by the AI Student to draft Whispers
+        unregisteredSurchargeEnabled:
+          type: boolean
+          description: >-
+            When false, the per-number unregistered carrier surcharge is waived
+            for this tenant (carrier fee still applies).
         createdAt:
           type: string
           format: date-time
@@ -2484,6 +2509,7 @@ components:
         - chatwootAccountId
         - chatwootInboxId
         - knowledgeBase
+        - unregisteredSurchargeEnabled
         - createdAt
 
     CreateTenantInput:
@@ -2534,6 +2560,11 @@ components:
           type: ["integer", "null"]
         knowledgeBase:
           type: ["string", "null"]
+        unregisteredSurchargeEnabled:
+          type: boolean
+          description: >-
+            When false, the per-number unregistered carrier surcharge is waived
+            for this tenant (carrier fee still applies).
 
     InjectMessageInput:
       type: object
@@ -3021,12 +3052,15 @@ components:
         friendlyName:
           type: string
         locality:
-          type: string
+          type: ["string", "null"]
         region:
-          type: string
+          type: ["string", "null"]
         isoCountry:
           type: string
-      required: [phoneNumber, friendlyName, locality, region, isoCountry]
+        numberType:
+          type: string
+          enum: [local, toll_free]
+      required: [phoneNumber, friendlyName, isoCountry, numberType]
 
     PurchaseNumberInput:
       type: object
@@ -3048,9 +3082,12 @@ components:
           type: string
         departmentId:
           type: ["integer", "null"]
+        numberType:
+          type: string
+          enum: [local, toll_free]
         webhookConfigured:
           type: boolean
-      required: [sid, phoneNumber, friendlyName, departmentId, webhookConfigured]
+      required: [sid, phoneNumber, friendlyName, departmentId, numberType, webhookConfigured]
 
     TenantPhoneNumberItem:
       type: object
@@ -3456,6 +3493,38 @@ components:
         - overageAmountCents
         - overageRateCents
         - isUnlimited
+
+    CarrierBillingSummary:
+      type: object
+      properties:
+        localCount:
+          type: integer
+        tollFreeCount:
+          type: integer
+        unregisteredLocalCount:
+          type: integer
+        surchargeEnabled:
+          type: boolean
+        carrierFeeCents:
+          type: integer
+        surchargeCents:
+          type: integer
+        carrierLineCents:
+          type: integer
+        surchargeLineCents:
+          type: integer
+        totalRecurringCents:
+          type: integer
+      required:
+        - localCount
+        - tollFreeCount
+        - unregisteredLocalCount
+        - surchargeEnabled
+        - carrierFeeCents
+        - surchargeCents
+        - carrierLineCents
+        - surchargeLineCents
+        - totalRecurringCents
 
     BillingEventItem:
       type: object

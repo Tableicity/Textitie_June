@@ -23,6 +23,7 @@ import {
   PhoneNumberConflictError,
 } from "../lib/phoneNumberRegistry";
 import { applyInboundWebhookByNumber } from "../lib/twilioNumberWebhook";
+import { syncCarrierBillingToStripe } from "../lib/carrierBilling";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -267,9 +268,11 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
     "chatwootAccountId",
     "chatwootInboxId",
     "knowledgeBase",
+    "unregisteredSurchargeEnabled",
   ] as const) {
     if (k in body.data) patch[k] = body.data[k];
   }
+  const surchargeChanged = "unregisteredSurchargeEnabled" in body.data;
   if (!hasPhone && Object.keys(patch).length === 0) {
     res.status(400).json({ error: "No fields to update" });
     return;
@@ -312,6 +315,27 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
     }
   }
 
+  // Both waiving/re-enabling the surcharge AND assigning/unassigning the primary
+  // number change the tenant's recurring add-on quantities (local-number count
+  // and surcharge count), so reconcile Stripe whenever either changes.
+  // Best-effort: the change is already persisted and underbilling is recoverable
+  // via reconciliation — never fail the request on a sync error.
+  if (surchargeChanged || hasPhone) {
+    const reason = surchargeChanged
+      ? hasPhone
+        ? "conductor_surcharge_and_phone_change"
+        : "surcharge_toggle"
+      : "conductor_phone_change";
+    try {
+      await syncCarrierBillingToStripe(params.data.id, reason);
+    } catch (syncErr) {
+      req.log.error(
+        { err: syncErr, tenantId: params.data.id, reason },
+        "CRITICAL: carrier billing sync failed after tenant change — tenant billing may be stale until reconciled",
+      );
+    }
+  }
+
   const [row] = await db
     .select()
     .from(tenantsTable)
@@ -325,6 +349,49 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
   );
   res.json(UpdateTenantResponse.parse(row));
 });
+
+// Conductor-triggered manual reconciliation of a tenant's carrier add-on items
+// against the DB-derived snapshot (the source of truth). This is the recovery
+// path for the best-effort post-commit syncs (purchase / assign / surcharge
+// toggle / subscription activation): if any of those swallowed a Stripe error,
+// an operator — or a scheduled job hitting this endpoint — can force the
+// subscription back in line, so "underbilling until reconciled" can't become
+// "underbilling forever". Conductor-scoped via the `/api` mount.
+router.post(
+  "/tenants/:id/reconcile-carrier-billing",
+  async (req, res): Promise<void> => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid tenant id" });
+      return;
+    }
+    const [tenant] = await db
+      .select({ id: tenantsTable.id })
+      .from(tenantsTable)
+      .where(eq(tenantsTable.id, id));
+    if (!tenant) {
+      res.status(404).json({ error: "Tenant not found" });
+      return;
+    }
+    try {
+      const result = await syncCarrierBillingToStripe(
+        id,
+        "conductor_manual_reconcile",
+      );
+      req.log.info(
+        { tenantId: id, mode: result.mode },
+        "Carrier billing reconciled via Conductor",
+      );
+      res.json({ tenantId: id, mode: result.mode, snapshot: result.snapshot });
+    } catch (err) {
+      req.log.error(
+        { err, tenantId: id },
+        "Carrier billing manual reconcile failed",
+      );
+      res.status(502).json({ error: "Carrier billing reconciliation failed" });
+    }
+  },
+);
 
 // Permanently delete a tenant and all of its scoped data. Conductor-only
 // (inherited from the `/api` mount) and DESTRUCTIVE, so the caller must echo the

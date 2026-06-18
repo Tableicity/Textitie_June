@@ -5,6 +5,7 @@
  * SAMA Control Plane API
  * OpenAPI spec version: 0.1.0
  */
+import type { PurchasedNumberResultNumberType } from "./purchasedNumberResultNumberType";
 
 export interface PurchasedNumberResult {
   sid: string;
@@ -12,5 +13,6 @@ export interface PurchasedNumberResult {
   friendlyName: string;
   /** @nullable */
   departmentId: number | null;
+  numberType: PurchasedNumberResultNumberType;
   webhookConfigured: boolean;
 }

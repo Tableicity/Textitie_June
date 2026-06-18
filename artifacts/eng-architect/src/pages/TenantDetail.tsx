@@ -28,8 +28,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users } from "lucide-react";
+import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users, Receipt } from "lucide-react";
 
 const injectSchema = z.object({
   to: z.string().min(3, "Phone number is required"),
@@ -147,6 +148,27 @@ export default function TenantDetail() {
         },
         onError: (err) => {
           toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const onToggleSurcharge = (enabled: boolean) => {
+    if (!tenant) return;
+    updateTenant.mutate(
+      { id: tenant.id, data: { unregisteredSurchargeEnabled: enabled } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
+          toast({
+            title: enabled ? "Surcharge Enabled" : "Surcharge Waived",
+            description: enabled
+              ? `${tenant.name} will be charged the $10/mo unregistered surcharge on each unregistered local number.`
+              : `The unregistered surcharge is waived for ${tenant.name}. The $15/mo carrier fee per local number still applies.`,
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Update Failed", description: err.message || "An error occurred", variant: "destructive" });
         },
       },
     );
@@ -394,6 +416,37 @@ export default function TenantDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Receipt size={16} /> Carrier Billing
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Per-number recurring fees billed on top of the plan. Each local number incurs a
+            $15.00/mo carrier fee. Unregistered local numbers also incur a $10.00/mo surcharge —
+            you can waive that surcharge for this tenant below. Toll-free numbers are exempt from both.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Unregistered carrier surcharge</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {tenant.unregisteredSurchargeEnabled
+                  ? "Applied ($10.00/mo per unregistered local number)."
+                  : "Waived for this tenant — the $15.00/mo carrier fee still applies."}
+              </p>
+            </div>
+            <Switch
+              checked={tenant.unregisteredSurchargeEnabled}
+              disabled={updateTenant.isPending}
+              onCheckedChange={onToggleSurcharge}
+              aria-label="Toggle unregistered carrier surcharge"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">

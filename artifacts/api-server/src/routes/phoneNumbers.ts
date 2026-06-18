@@ -7,10 +7,12 @@ import { logger } from "../lib/logger";
 import {
   setDepartmentNumber,
   normalizePhoneE164,
+  classifyNumberType,
   PhoneNumberConflictError,
 } from "../lib/phoneNumberRegistry";
 import { getPublicWebhookConfig } from "../lib/publicTwilioUrls";
 import { assertCanPurchaseNumber } from "../lib/phoneProvisioningGate";
+import { syncCarrierBillingToStripe } from "../lib/carrierBilling";
 import {
   applyInboundWebhookBySid,
   buildInboundWebhookParams,
@@ -88,6 +90,8 @@ router.get("/phone-numbers/available", requireTenantAuth, async (req, res) => {
   const country = (req.query.country as string) || "US";
   const areaCode = req.query.areaCode as string | undefined;
   const contains = req.query.contains as string | undefined;
+  const numberType: "local" | "toll_free" =
+    (req.query.type as string) === "toll_free" ? "toll_free" : "local";
   const limit = Math.min(Number(req.query.limit) || 20, 50);
 
   try {
@@ -95,9 +99,11 @@ router.get("/phone-numbers/available", requireTenantAuth, async (req, res) => {
     if (areaCode) params.areaCode = Number(areaCode);
     if (contains) params.contains = contains;
 
-    const numbers = await client
-      .availablePhoneNumbers(country)
-      .local.list(params);
+    const lookup = client.availablePhoneNumbers(country);
+    const numbers =
+      numberType === "toll_free"
+        ? await lookup.tollFree.list(params)
+        : await lookup.local.list(params);
 
     const results = numbers.map((n) => ({
       phoneNumber: n.phoneNumber,
@@ -106,10 +112,11 @@ router.get("/phone-numbers/available", requireTenantAuth, async (req, res) => {
       region: n.region,
       isoCountry: n.isoCountry,
       capabilities: n.capabilities,
+      numberType,
     }));
     res.json(results);
   } catch (err) {
-    req.log.error({ err }, "Failed to search available numbers");
+    req.log.error({ err, numberType }, "Failed to search available numbers");
     res.status(500).json({ error: "Failed to search numbers" });
   }
 });
@@ -255,11 +262,25 @@ router.post("/phone-numbers/purchase", requireTenantAuth, async (req, res) => {
     return;
   }
 
+  // 8. Reconcile carrier billing add-ons (best-effort). The number is bought
+  //    and recorded; a Stripe sync failure must NOT fail the request or orphan
+  //    the number — underbilling is recoverable via reconciliation, a failed
+  //    purchase rollback is not. Log loudly so it can be caught.
+  try {
+    await syncCarrierBillingToStripe(tenantId, "number_purchase");
+  } catch (err) {
+    logger.error(
+      { err, tenantId, phoneNumber: purchased.phoneNumber },
+      "CRITICAL: carrier billing sync failed after purchase — tenant may be underbilled until reconciled",
+    );
+  }
+
   res.status(201).json({
     sid: purchased.sid,
     phoneNumber: purchased.phoneNumber,
     friendlyName: purchased.friendlyName,
     departmentId: resolvedDeptId,
+    numberType: classifyNumberType(purchased.phoneNumber),
     webhookConfigured: true,
   });
 });
@@ -341,6 +362,18 @@ router.post("/phone-numbers/assign", requireTenantAuth, async (req, res) => {
           "Assigned number but failed to (re)set inbound webhook; run /phone-provisioning/repair-webhooks",
         );
       }
+    }
+
+    // Reconcile carrier billing — assigning can bring a new number into the
+    // registry (changing local/toll-free counts). Best-effort; never fail the
+    // assign on a Stripe sync error.
+    try {
+      await syncCarrierBillingToStripe(tenantId, "number_assign");
+    } catch (syncErr) {
+      logger.error(
+        { err: syncErr, tenantId, phoneNumber },
+        "CRITICAL: carrier billing sync failed after assign — tenant may be underbilled until reconciled",
+      );
     }
 
     const [updated] = await db

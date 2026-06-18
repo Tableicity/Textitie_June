@@ -31,5 +31,7 @@ export interface Tenant {
    * @nullable
    */
   knowledgeBase: string | null;
+  /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
+  unregisteredSurchargeEnabled: boolean;
   createdAt: Date;
 }

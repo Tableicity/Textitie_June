@@ -5,6 +5,7 @@ import {
   useGetCampaignCredits,
   useListDepartments,
   useListAgents,
+  useGetCarrierBillingSummary,
 } from "@workspace/api-client-react";
 import { CreditCard } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,12 +31,15 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
 export default function BillingOverview() {
   const { data: subscription, isLoading: subLoading } = useGetSubscription();
   const { data: usage } = useGetBillingUsage();
   const { data: credits } = useGetCampaignCredits();
   const { data: departments } = useListDepartments();
   const { data: agents } = useListAgents();
+  const { data: carrier } = useGetCarrierBillingSummary();
 
   const isSubscribed = subscription?.status === "active" || subscription?.status === "trialing";
   const basePrice = subscription?.monthlyPriceCents
@@ -103,6 +107,81 @@ export default function BillingOverview() {
           )}
         </CardContent>
       </Card>
+
+      {carrier && (carrier.localCount > 0 || carrier.tollFreeCount > 0) && (
+        <Card className="mt-6">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-base font-semibold text-slate-900">Phone Number Charges</h2>
+              <Badge variant="outline">Recurring monthly</Badge>
+            </div>
+            <p className="text-sm text-slate-500 mb-5">
+              Per-number carrier fees billed in addition to your base plan. Toll-free numbers have no recurring carrier fee.
+            </p>
+
+            <div className="divide-y divide-slate-100 border-t border-slate-100">
+              <LineItem
+                label="Local number carrier fee"
+                detail={`${carrier.localCount} local ${carrier.localCount === 1 ? "number" : "numbers"} × ${money(carrier.carrierFeeCents)}/mo`}
+                amount={money(carrier.carrierLineCents)}
+              />
+              {carrier.surchargeEnabled ? (
+                <LineItem
+                  label="Unregistered number surcharge"
+                  detail={
+                    carrier.unregisteredLocalCount > 0
+                      ? `${carrier.unregisteredLocalCount} unregistered × ${money(carrier.surchargeCents)}/mo`
+                      : "No unregistered numbers"
+                  }
+                  amount={money(carrier.surchargeLineCents)}
+                />
+              ) : (
+                <LineItem
+                  label="Unregistered number surcharge"
+                  detail="Waived for your account"
+                  amount="$0.00"
+                  muted
+                />
+              )}
+              {carrier.tollFreeCount > 0 && (
+                <LineItem
+                  label="Toll-free numbers"
+                  detail={`${carrier.tollFreeCount} toll-free ${carrier.tollFreeCount === 1 ? "number" : "numbers"} · no carrier fee`}
+                  amount="$0.00"
+                  muted
+                />
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-4 mt-1">
+              <span className="text-sm font-semibold text-slate-900">Total recurring carrier charges</span>
+              <span className="text-lg font-semibold text-slate-900">{money(carrier.totalRecurringCents)}/mo</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function LineItem({
+  label,
+  detail,
+  amount,
+  muted,
+}: {
+  label: string;
+  detail: string;
+  amount: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between py-3">
+      <div>
+        <p className="text-sm font-medium text-slate-900">{label}</p>
+        <p className="text-xs text-slate-400 mt-0.5">{detail}</p>
+      </div>
+      <span className={`text-sm font-semibold ${muted ? "text-slate-400" : "text-slate-900"}`}>{amount}</span>
     </div>
   );
 }

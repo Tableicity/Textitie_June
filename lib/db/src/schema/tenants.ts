@@ -29,6 +29,12 @@ export const tenantsTable = pgTable("tenants", {
   hipaaEnabled: boolean("hipaa_enabled").notNull().default(false),
   baaAcknowledgedAt: timestamp("baa_acknowledged_at", { withTimezone: true }),
   baaAcknowledgedBy: integer("baa_acknowledged_by"),
+  // When true (default), unregistered local numbers for this tenant are billed
+  // the $10 Unregistered Carrier Surcharge. An admin can flip this off per
+  // tenant from the Conductor /admin/tenants page to waive the surcharge.
+  unregisteredSurchargeEnabled: boolean("unregistered_surcharge_enabled")
+    .notNull()
+    .default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

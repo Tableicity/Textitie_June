@@ -66,6 +66,26 @@ export function normalizePhoneE164(raw: string | null | undefined): string | nul
   return cleaned;
 }
 
+// NANP toll-free Service Access Codes (active + reserved-for-toll-free range).
+// A number is the source of truth for its own type, so carrier billing can't be
+// bypassed by a mislabeled client request.
+const TOLL_FREE_NPA = new Set([
+  "800", "822", "833", "844", "855", "866", "877",
+  "880", "881", "882", "883", "884", "885", "886", "887", "888",
+]);
+
+/**
+ * Classify a canonical E.164 number as 'toll_free' or 'local' from its prefix.
+ * Only NANP (+1) numbers can be toll-free; everything else is treated as local
+ * (the platform is US/CA-focused). This is the authoritative source for carrier
+ * billing — local numbers incur the carrier fee + surcharge, toll-free do not.
+ */
+export function classifyNumberType(e164: string): "local" | "toll_free" {
+  const m = /^\+1(\d{3})\d{7}$/.exec(e164);
+  if (m && TOLL_FREE_NPA.has(m[1]!)) return "toll_free";
+  return "local";
+}
+
 type CanonicalRow = typeof phoneNumbersTable.$inferSelect;
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -147,10 +167,16 @@ export async function setTenantPrimaryNumber(
         tenantId,
         departmentId: null,
         kind: "primary",
+        numberType: classifyNumberType(norm),
       })
       .onConflictDoUpdate({
         target: phoneNumbersTable.phoneNumber,
-        set: { tenantId, departmentId: null, kind: "primary" },
+        set: {
+          tenantId,
+          departmentId: null,
+          kind: "primary",
+          numberType: classifyNumberType(norm),
+        },
         // Race guard: only adopt an existing row if it is ALREADY this tenant's
         // own primary. If a concurrent writer claimed this number first, the
         // WHERE is false, no row is updated/returned, and we fail closed instead
@@ -245,10 +271,17 @@ export async function setDepartmentNumber(
         departmentId,
         kind: "department",
         twilioSid,
+        numberType: classifyNumberType(norm),
       })
       .onConflictDoUpdate({
         target: phoneNumbersTable.phoneNumber,
-        set: { tenantId, departmentId, kind: "department", twilioSid },
+        set: {
+          tenantId,
+          departmentId,
+          kind: "department",
+          twilioSid,
+          numberType: classifyNumberType(norm),
+        },
         // Race guard: only adopt an existing row if it is ALREADY this exact
         // department's row. Otherwise fail closed instead of stealing a number a
         // concurrent writer claimed between the pre-check and this insert.
@@ -319,6 +352,7 @@ export async function backfillPhoneNumbers(): Promise<{
   inserted: number;
   alreadyPresent: number;
   conflicts: number;
+  reclassified: number;
 }> {
   type Candidate = {
     phoneNumber: string;
@@ -426,15 +460,46 @@ export async function backfillPhoneNumbers(): Promise<{
       departmentId: c.departmentId,
       twilioSid: c.twilioSid,
       kind: c.kind,
+      numberType: classifyNumberType(c.phoneNumber),
     });
     inserted += 1;
   }
 
+  // Self-heal number_type for EVERY canonical row from the number itself. The
+  // column defaults to 'local', so any row that pre-dates classification — or a
+  // toll-free number inserted before this code shipped — would be mis-billed as
+  // local (carrier fee + surcharge instead of $0). The E.164 number is the
+  // source of truth, so recompute and correct drift on every boot. Idempotent:
+  // no writes once all rows are correct.
+  const reclassifyRows = await db
+    .select({
+      phoneNumber: phoneNumbersTable.phoneNumber,
+      numberType: phoneNumbersTable.numberType,
+    })
+    .from(phoneNumbersTable);
+  let reclassified = 0;
+  for (const row of reclassifyRows) {
+    const correct = classifyNumberType(row.phoneNumber);
+    if (row.numberType !== correct) {
+      await db
+        .update(phoneNumbersTable)
+        .set({ numberType: correct })
+        .where(eq(phoneNumbersTable.phoneNumber, row.phoneNumber));
+      reclassified += 1;
+    }
+  }
+  if (reclassified > 0) {
+    logger.warn(
+      { reclassified },
+      "phone backfill: corrected number_type drift from canonical numbers",
+    );
+  }
+
   logger.info(
-    { inserted, alreadyPresent, conflicts },
+    { inserted, alreadyPresent, conflicts, reclassified },
     "phone backfill complete",
   );
-  return { inserted, alreadyPresent, conflicts };
+  return { inserted, alreadyPresent, conflicts, reclassified };
 }
 
 /**
