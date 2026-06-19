@@ -8,6 +8,7 @@ import {
   conversationsTable,
   messagesTable,
   auditLogsTable,
+  phoneNumbersTable,
 } from "@workspace/db";
 
 // Disable the Twilio signature gate for these tests: with TWILIO_AUTH_TOKEN
@@ -91,6 +92,18 @@ beforeAll(async () => {
     })
     .returning({ id: tenantsTable.id });
   tenantId = tenant.id;
+
+  // Seed the canonical routing row so resolveTenantByPhoneNumber() maps the
+  // inbound `To` (TENANT_PHONE) to this tenant. The resolver reads ONLY the
+  // phone_numbers table and fails CLOSED — it never falls back to
+  // tenants.phone_number — so without this row every simulated inbound would be
+  // recorded as unrouted and the block-enforcement branch would never run.
+  // Cascades away when the tenant is deleted in afterAll (onDelete: 'cascade').
+  await db.insert(phoneNumbersTable).values({
+    phoneNumber: TENANT_PHONE,
+    tenantId,
+    kind: "primary",
+  });
 
   // A blocked contact for BLOCKED_FROM; ALLOWED_FROM has no contact row yet
   // (the webhook auto-saves it on the happy path).
