@@ -18,6 +18,7 @@ import {
   getGetCurrentClassroomQueryKey,
   usePushToClassroom,
   useAbsorbProfessorAnswer,
+  type AbsorbedFactCategoryInputCategory,
   useAddLibraryUrl,
   useAddLibraryText,
 } from "@workspace/api-client-react";
@@ -380,7 +381,10 @@ export default function Professor() {
     );
   }
 
-  function setFactCategory(factId: number, category: string) {
+  function setFactCategory(
+    factId: number,
+    category: AbsorbedFactCategoryInputCategory,
+  ) {
     if (!selectedId) return;
     updateFactCategory.mutate(
       { tenantId, factId, data: { category } },
@@ -689,7 +693,11 @@ export default function Professor() {
                               <select
                                 value={f.category ?? "general"}
                                 onChange={(e) =>
-                                  setFactCategory(f.id, e.target.value)
+                                  setFactCategory(
+                                    f.id,
+                                    e.target
+                                      .value as AbsorbedFactCategoryInputCategory,
+                                  )
                                 }
                                 title="Routing category"
                                 className={cn(
