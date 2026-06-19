@@ -2770,6 +2770,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/{tenantId}/professor/absorbed/{factId}/category:
+    post:
+      operationId: updateAbsorbedFactCategory
+      tags: [knowledge]
+      summary: Correct an absorbed fact's routing category (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: factId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AbsorbedFactCategoryInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AbsorbedFact"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /tenants/{tenantId}/professor/sessions/{sessionId}/messages/{messageId}/absorb:
     post:
       operationId: absorbProfessorAnswer
@@ -4709,6 +4745,7 @@ components:
         status:
           type: string
           enum: [draft, published, rejected]
+        category: { type: string }
         tokenCount: { type: integer }
         createdAt: { type: string, format: date-time }
       required:
@@ -4720,6 +4757,7 @@ components:
         - sourceLabel
         - statement
         - status
+        - category
         - tokenCount
         - createdAt
 
@@ -4754,6 +4792,7 @@ components:
         versionId: { type: integer }
         sourceLabel: { type: string }
         statement: { type: string }
+        category: { type: string }
         tokenCount: { type: integer }
       required:
         - id
@@ -4761,6 +4800,7 @@ components:
         - versionId
         - sourceLabel
         - statement
+        - category
         - tokenCount
 
     ClassroomSnapshot:
@@ -4855,6 +4895,14 @@ components:
           type: string
           enum: [draft, published, rejected]
       required: [status]
+
+    AbsorbedFactCategoryInput:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: [pricing, compliance, features, technical_setup, general]
+      required: [category]
 
     ClassroomPushInput:
       type: object

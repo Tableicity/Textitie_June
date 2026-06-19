@@ -22,6 +22,7 @@ import {
   CreateProfessorSessionBody,
   SendProfessorMessageBody,
   UpdateAbsorbedFactStatusBody,
+  UpdateAbsorbedFactCategoryBody,
   PushToClassroomBody,
 } from "@workspace/api-zod";
 import {
@@ -32,6 +33,9 @@ import {
   retrieveLibraryContext,
   getCurrentClassroomVersion,
   estimateTokens,
+  normalizeCategory,
+  FACT_CATEGORIES,
+  type ExtractedFact,
 } from "../lib/knowledge";
 import { grokClient, PROFESSOR_MODEL } from "../lib/grokClient";
 
@@ -242,14 +246,15 @@ async function ingestAndRespond(
         );
         if (facts.length > 0) {
           await db.insert(absorbedFactsTable).values(
-            facts.map((statement) => ({
+            facts.map((f) => ({
               tenantId: opts.tenantId,
               sessionId: session!.id,
               documentId: doc.id,
               sourceLabel: doc.title,
-              statement,
+              statement: f.statement,
+              category: f.category,
               status: "draft",
-              tokenCount: estimateTokens(statement),
+              tokenCount: estimateTokens(f.statement),
             })),
           );
           absorbedCount = facts.length;
@@ -867,6 +872,47 @@ router.post(
   },
 );
 
+// Let the Conductor correct a mis-classified fact's routing category before it
+// is pushed to the Classroom. Validated app-side (normalizeCategory) so a bad
+// value can never persist or 500 a later list query.
+router.post(
+  "/tenants/:tenantId/professor/absorbed/:factId/category",
+  async (req: Request, res: Response): Promise<void> => {
+    const tenantId = parseId(req.params.tenantId);
+    const factId = parseId(req.params.factId);
+    if (tenantId == null || factId == null) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+    const parsed = UpdateAbsorbedFactCategoryBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: `category must be one of: ${FACT_CATEGORIES.join(", ")}`,
+      });
+      return;
+    }
+    const [fact] = await db
+      .select()
+      .from(absorbedFactsTable)
+      .where(
+        and(
+          eq(absorbedFactsTable.id, factId),
+          eq(absorbedFactsTable.tenantId, tenantId),
+        ),
+      );
+    if (!fact) {
+      res.status(404).json({ error: "Fact not found" });
+      return;
+    }
+    const [row] = await db
+      .update(absorbedFactsTable)
+      .set({ category: normalizeCategory(parsed.data.category) })
+      .where(eq(absorbedFactsTable.id, factId))
+      .returning();
+    res.json(row ?? fact);
+  },
+);
+
 // Turn a Professor chat ANSWER into draft absorbed facts. This is the bridge
 // that lets the external knowledge the Professor brings in conversation flow to
 // the Classroom — not just facts extracted from attached sources. Idempotent
@@ -932,7 +978,7 @@ router.post(
     }
 
     const online = grokClient() != null;
-    let facts: string[];
+    let facts: ExtractedFact[];
     let tokensUsed: number;
     try {
       const out = await extractFacts(message.content, "Professor answer");
@@ -974,15 +1020,16 @@ router.post(
           inserted = await tx
             .insert(absorbedFactsTable)
             .values(
-              facts.map((statement) => ({
+              facts.map((f) => ({
                 tenantId,
                 sessionId,
                 messageId,
                 documentId: null,
                 sourceLabel: "Professor answer",
-                statement,
+                statement: f.statement,
+                category: f.category,
                 status: "draft",
-                tokenCount: estimateTokens(statement),
+                tokenCount: estimateTokens(f.statement),
               })),
             )
             .returning();
@@ -1119,6 +1166,7 @@ router.post(
             versionId: version.id,
             sourceLabel: f.sourceLabel,
             statement: f.statement,
+            category: f.category,
             tokenCount: f.tokenCount,
           })),
         )

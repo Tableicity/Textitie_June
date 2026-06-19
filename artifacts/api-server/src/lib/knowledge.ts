@@ -32,6 +32,33 @@ export function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
 
+// Fact routing categories — the "fast switch" the Student uses to scope
+// retrieval. Stored as plain text (no DB enum/check) and validated here so a
+// bad value can never 500 a list query; unknown inputs fall back to "general".
+export const FACT_CATEGORIES = [
+  "pricing",
+  "compliance",
+  "features",
+  "technical_setup",
+  "general",
+] as const;
+export type FactCategory = (typeof FACT_CATEGORIES)[number];
+
+export function normalizeCategory(raw: unknown): FactCategory {
+  const v = String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return (FACT_CATEGORIES as readonly string[]).includes(v)
+    ? (v as FactCategory)
+    : "general";
+}
+
+export interface ExtractedFact {
+  statement: string;
+  category: FactCategory;
+}
+
 // Split text into retrievable chunks on paragraph boundaries.
 export function chunkText(text: string, maxChars = 1800): string[] {
   const clean = text.replace(/\r\n/g, "\n").trim();
@@ -449,7 +476,10 @@ export async function retrieveClassroomFacts(
     .limit(limit);
 }
 
-function parseFactArray(text: string): string[] {
+// Parse the model's JSON output. Accepts either an array of
+// {statement, category} objects (current prompt) or a bare array of strings
+// (older/looser output), all of which fall back to the "general" category.
+function parseFacts(text: string): ExtractedFact[] {
   let t = text.trim();
   t = t.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   const start = t.indexOf("[");
@@ -459,8 +489,17 @@ function parseFactArray(text: string): string[] {
     const arr: unknown = JSON.parse(t);
     if (Array.isArray(arr)) {
       return arr
-        .map((x) => String(x).trim())
-        .filter((s) => s.length > 0)
+        .map((x): ExtractedFact => {
+          if (x && typeof x === "object" && "statement" in x) {
+            const obj = x as { statement?: unknown; category?: unknown };
+            return {
+              statement: String(obj.statement ?? "").trim(),
+              category: normalizeCategory(obj.category),
+            };
+          }
+          return { statement: String(x).trim(), category: "general" };
+        })
+        .filter((f) => f.statement.length > 0)
         .slice(0, 25);
     }
   } catch {
@@ -473,25 +512,29 @@ function parseFactArray(text: string): string[] {
 export async function extractFacts(
   sourceText: string,
   sourceLabel: string,
-): Promise<{ facts: string[]; tokensUsed: number }> {
+): Promise<{ facts: ExtractedFact[]; tokensUsed: number }> {
   const oai = grokClient();
   if (!oai) return { facts: [], tokensUsed: 0 };
   const trimmed = sourceText.slice(0, 12000);
   const resp = await oai.chat.completions.create({
     model: PROFESSOR_MODEL,
     temperature: 0.1,
-    max_tokens: 1400,
+    max_tokens: 1600,
     messages: [
       {
         role: "system",
-        content:
-          "You extract atomic, standalone facts from a source document for a customer-support knowledge base. Return ONLY a JSON array of concise fact strings — each a single self-contained sentence, no numbering, no markdown. Maximum 15 facts. Omit fluff, marketing, and navigation text.",
+        content: `You extract atomic, standalone facts from a source document for a customer-support knowledge base, and classify each into one routing category.
+
+Return ONLY a JSON array of objects, each shaped {"statement": string, "category": one of [${FACT_CATEGORIES.join(", ")}]}.
+- statement: a single self-contained sentence — no numbering, no markdown.
+- category: pick the single best fit. Use "pricing" for costs, fees, plans, billing, discounts; "compliance" for legal/regulatory/consent/opt-out/10DLC/privacy rules; "features" for product capabilities and what it can do; "technical_setup" for configuration, integration, and onboarding steps; "general" for anything else.
+Maximum 15 facts. Omit fluff, marketing, and navigation text.`,
       },
       { role: "user", content: `SOURCE: ${sourceLabel}\n\n${trimmed}` },
     ],
   });
   const text = resp.choices[0]?.message?.content?.trim() ?? "";
-  return { facts: parseFactArray(text), tokensUsed: resp.usage?.total_tokens ?? 0 };
+  return { facts: parseFacts(text), tokensUsed: resp.usage?.total_tokens ?? 0 };
 }
 
 // One Professor chat turn, grounded in retrieved Library context.

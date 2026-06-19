@@ -8,6 +8,8 @@
 
 export * from "./absorbAnswerResult";
 export * from "./absorbedFact";
+export * from "./absorbedFactCategoryInput";
+export * from "./absorbedFactCategoryInputCategory";
 export * from "./absorbedFactStatus";
 export * from "./absorbedFactStatusInput";
 export * from "./absorbedFactStatusInputStatus";

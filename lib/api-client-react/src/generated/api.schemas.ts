@@ -1346,6 +1346,7 @@ export interface AbsorbedFact {
   sourceLabel: string;
   statement: string;
   status: AbsorbedFactStatus;
+  category: string;
   tokenCount: number;
   createdAt: string;
 }
@@ -1376,6 +1377,7 @@ export interface ClassroomFact {
   versionId: number;
   sourceLabel: string;
   statement: string;
+  category: string;
   tokenCount: number;
 }
 
@@ -1446,6 +1448,21 @@ export const AbsorbedFactStatusInputStatus = {
 
 export interface AbsorbedFactStatusInput {
   status: AbsorbedFactStatusInputStatus;
+}
+
+export type AbsorbedFactCategoryInputCategory =
+  (typeof AbsorbedFactCategoryInputCategory)[keyof typeof AbsorbedFactCategoryInputCategory];
+
+export const AbsorbedFactCategoryInputCategory = {
+  pricing: "pricing",
+  compliance: "compliance",
+  features: "features",
+  technical_setup: "technical_setup",
+  general: "general",
+} as const;
+
+export interface AbsorbedFactCategoryInput {
+  category: AbsorbedFactCategoryInputCategory;
 }
 
 export interface ClassroomPushInput {

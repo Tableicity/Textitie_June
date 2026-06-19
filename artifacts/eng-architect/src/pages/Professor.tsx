@@ -13,6 +13,7 @@ import {
   useListAbsorbedFacts,
   getListAbsorbedFactsQueryKey,
   useUpdateAbsorbedFactStatus,
+  useUpdateAbsorbedFactCategory,
   useGetCurrentClassroom,
   getGetCurrentClassroomQueryKey,
   usePushToClassroom,
@@ -58,6 +59,30 @@ import {
 
 const MEMORY_BUDGET = 10_000_000;
 const MAX_ACTIVE_SESSIONS = 5;
+
+// Routing categories the Student uses as a "fast switch". Kept in sync with the
+// server taxonomy in artifacts/api-server/src/lib/knowledge.ts.
+const FACT_CATEGORIES = [
+  "pricing",
+  "compliance",
+  "features",
+  "technical_setup",
+  "general",
+] as const;
+const CATEGORY_LABELS: Record<string, string> = {
+  pricing: "Pricing",
+  compliance: "Compliance",
+  features: "Features",
+  technical_setup: "Setup",
+  general: "General",
+};
+const CATEGORY_CLASSES: Record<string, string> = {
+  pricing: "bg-amber-500/15 text-amber-600 border-amber-500/30",
+  compliance: "bg-rose-500/15 text-rose-600 border-rose-500/30",
+  features: "bg-sky-500/15 text-sky-600 border-sky-500/30",
+  technical_setup: "bg-violet-500/15 text-violet-600 border-violet-500/30",
+  general: "bg-muted text-muted-foreground border-border",
+};
 
 type ChatMessage = {
   id: number;
@@ -152,6 +177,7 @@ export default function Professor() {
   const createSession = useCreateProfessorSession();
   const archiveSession = useArchiveProfessorSession();
   const updateFact = useUpdateAbsorbedFactStatus();
+  const updateFactCategory = useUpdateAbsorbedFactCategory();
   const pushToClassroom = usePushToClassroom();
   const absorbAnswer = useAbsorbProfessorAnswer();
 
@@ -345,6 +371,19 @@ export default function Professor() {
     if (!selectedId) return;
     updateFact.mutate(
       { tenantId, factId, data: { status } },
+      {
+        onSuccess: () =>
+          queryClient.invalidateQueries({
+            queryKey: getListAbsorbedFactsQueryKey(tenantId, selectedId),
+          }),
+      },
+    );
+  }
+
+  function setFactCategory(factId: number, category: string) {
+    if (!selectedId) return;
+    updateFactCategory.mutate(
+      { tenantId, factId, data: { category } },
       {
         onSuccess: () =>
           queryClient.invalidateQueries({
@@ -637,15 +676,35 @@ export default function Professor() {
                             key={f.id}
                             className="flex items-start gap-2 text-xs border-b pb-2 last:border-0"
                           >
-                            <span
-                              className={cn(
-                                "flex-1",
-                                f.status === "rejected" &&
-                                  "line-through text-muted-foreground",
-                              )}
-                            >
-                              {f.statement}
-                            </span>
+                            <div className="flex-1 space-y-1">
+                              <span
+                                className={cn(
+                                  "block",
+                                  f.status === "rejected" &&
+                                    "line-through text-muted-foreground",
+                                )}
+                              >
+                                {f.statement}
+                              </span>
+                              <select
+                                value={f.category ?? "general"}
+                                onChange={(e) =>
+                                  setFactCategory(f.id, e.target.value)
+                                }
+                                title="Routing category"
+                                className={cn(
+                                  "rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide cursor-pointer",
+                                  CATEGORY_CLASSES[f.category ?? "general"] ??
+                                    CATEGORY_CLASSES.general,
+                                )}
+                              >
+                                {FACT_CATEGORIES.map((c) => (
+                                  <option key={c} value={c}>
+                                    {CATEGORY_LABELS[c]}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                             <div className="flex items-center gap-1 shrink-0">
                               <button
                                 title="Accept"

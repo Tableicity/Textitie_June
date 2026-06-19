@@ -181,6 +181,10 @@ export const absorbedFactsTable = pgTable(
     statement: text("statement").notNull(),
     // "draft" | "published" | "rejected"
     status: text("status").notNull().default("draft"),
+    // Routing category — "pricing" | "compliance" | "features" |
+    // "technical_setup" | "general". Plain text (no DB enum/check) + app-level
+    // validation so a bad value can never 500 a list query; default "general".
+    category: text("category").notNull().default("general"),
     tokenCount: integer("token_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -243,11 +247,18 @@ export const classroomFactsTable = pgTable(
       .references(() => classroomVersionsTable.id, { onDelete: "cascade" }),
     sourceLabel: text("source_label").notNull(),
     statement: text("statement").notNull(),
+    // Routing category carried over from the absorbed fact at push time.
+    category: text("category").notNull().default("general"),
     tokenCount: integer("token_count").notNull().default(0),
   },
   (t) => ({
     versionIdx: index("classroom_facts_version_idx").on(t.versionId),
     tenantIdx: index("classroom_facts_tenant_idx").on(t.tenantId),
+    // The "fast switch": B-tree for instant category scoping during retrieval.
+    tenantCategoryIdx: index("classroom_facts_tenant_category_idx").on(
+      t.tenantId,
+      t.category,
+    ),
     ftsIdx: index("classroom_facts_fts_idx").using(
       "gin",
       sql`to_tsvector('english', ${t.statement})`,

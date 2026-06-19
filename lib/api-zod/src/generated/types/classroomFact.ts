@@ -12,5 +12,6 @@ export interface ClassroomFact {
   versionId: number;
   sourceLabel: string;
   statement: string;
+  category: string;
   tokenCount: number;
 }

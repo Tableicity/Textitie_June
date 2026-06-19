@@ -19,6 +19,7 @@ import type {
 import type {
   AbsorbAnswerResult,
   AbsorbedFact,
+  AbsorbedFactCategoryInput,
   AbsorbedFactStatusInput,
   AddDepartmentMemberInput,
   AgentBasicItem,
@@ -9850,6 +9851,121 @@ export const useUpdateAbsorbedFactStatus = <
   TContext
 > => {
   return useMutation(getUpdateAbsorbedFactStatusMutationOptions(options));
+};
+
+/**
+ * @summary Correct an absorbed fact's routing category (Conductor-only)
+ */
+export const getUpdateAbsorbedFactCategoryUrl = (
+  tenantId: number,
+  factId: number,
+) => {
+  return `/api/tenants/${tenantId}/professor/absorbed/${factId}/category`;
+};
+
+export const updateAbsorbedFactCategory = async (
+  tenantId: number,
+  factId: number,
+  absorbedFactCategoryInput: AbsorbedFactCategoryInput,
+  options?: RequestInit,
+): Promise<AbsorbedFact> => {
+  return customFetch<AbsorbedFact>(
+    getUpdateAbsorbedFactCategoryUrl(tenantId, factId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(absorbedFactCategoryInput),
+    },
+  );
+};
+
+export const getUpdateAbsorbedFactCategoryMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAbsorbedFactCategory>>,
+    TError,
+    {
+      tenantId: number;
+      factId: number;
+      data: BodyType<AbsorbedFactCategoryInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAbsorbedFactCategory>>,
+  TError,
+  {
+    tenantId: number;
+    factId: number;
+    data: BodyType<AbsorbedFactCategoryInput>;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateAbsorbedFactCategory"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAbsorbedFactCategory>>,
+    {
+      tenantId: number;
+      factId: number;
+      data: BodyType<AbsorbedFactCategoryInput>;
+    }
+  > = (props) => {
+    const { tenantId, factId, data } = props ?? {};
+
+    return updateAbsorbedFactCategory(tenantId, factId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAbsorbedFactCategoryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAbsorbedFactCategory>>
+>;
+export type UpdateAbsorbedFactCategoryMutationBody =
+  BodyType<AbsorbedFactCategoryInput>;
+export type UpdateAbsorbedFactCategoryMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Correct an absorbed fact's routing category (Conductor-only)
+ */
+export const useUpdateAbsorbedFactCategory = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAbsorbedFactCategory>>,
+    TError,
+    {
+      tenantId: number;
+      factId: number;
+      data: BodyType<AbsorbedFactCategoryInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAbsorbedFactCategory>>,
+  TError,
+  {
+    tenantId: number;
+    factId: number;
+    data: BodyType<AbsorbedFactCategoryInput>;
+  },
+  TContext
+> => {
+  return useMutation(getUpdateAbsorbedFactCategoryMutationOptions(options));
 };
 
 /**

@@ -19,6 +19,7 @@ export interface AbsorbedFact {
   sourceLabel: string;
   statement: string;
   status: AbsorbedFactStatus;
+  category: string;
   tokenCount: number;
   createdAt: Date;
 }

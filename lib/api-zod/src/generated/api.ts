@@ -2201,6 +2201,7 @@ export const ListAbsorbedFactsResponseItem = zod.object({
   sourceLabel: zod.string(),
   statement: zod.string(),
   status: zod.enum(["draft", "published", "rejected"]),
+  category: zod.string(),
   tokenCount: zod.number(),
   createdAt: zod.coerce.date(),
 });
@@ -2229,6 +2230,39 @@ export const UpdateAbsorbedFactStatusResponse = zod.object({
   sourceLabel: zod.string(),
   statement: zod.string(),
   status: zod.enum(["draft", "published", "rejected"]),
+  category: zod.string(),
+  tokenCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Correct an absorbed fact's routing category (Conductor-only)
+ */
+export const UpdateAbsorbedFactCategoryParams = zod.object({
+  tenantId: zod.coerce.number(),
+  factId: zod.coerce.number(),
+});
+
+export const UpdateAbsorbedFactCategoryBody = zod.object({
+  category: zod.enum([
+    "pricing",
+    "compliance",
+    "features",
+    "technical_setup",
+    "general",
+  ]),
+});
+
+export const UpdateAbsorbedFactCategoryResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  sessionId: zod.number().nullable(),
+  documentId: zod.number().nullable(),
+  messageId: zod.number().nullable(),
+  sourceLabel: zod.string(),
+  statement: zod.string(),
+  status: zod.enum(["draft", "published", "rejected"]),
+  category: zod.string(),
   tokenCount: zod.number(),
   createdAt: zod.coerce.date(),
 });
@@ -2254,6 +2288,7 @@ export const AbsorbProfessorAnswerResponse = zod.object({
       sourceLabel: zod.string(),
       statement: zod.string(),
       status: zod.enum(["draft", "published", "rejected"]),
+      category: zod.string(),
       tokenCount: zod.number(),
       createdAt: zod.coerce.date(),
     }),
@@ -2298,6 +2333,7 @@ export const GetCurrentClassroomResponse = zod.object({
       versionId: zod.number(),
       sourceLabel: zod.string(),
       statement: zod.string(),
+      category: zod.string(),
       tokenCount: zod.number(),
     }),
   ),
