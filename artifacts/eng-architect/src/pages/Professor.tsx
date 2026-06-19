@@ -57,6 +57,8 @@ import {
   Loader2,
   Link2,
   ClipboardPaste,
+  Archive,
+  Lock,
 } from "lucide-react";
 
 const MEMORY_BUDGET = 10_000_000;
@@ -125,31 +127,38 @@ export default function Professor() {
     },
   });
 
+  const allSessions = useMemo(() => sessions ?? [], [sessions]);
   const activeSessions = useMemo(
-    () => (sessions ?? []).filter((s) => s.status === "active"),
-    [sessions],
+    () => allSessions.filter((s) => s.status === "active"),
+    [allSessions],
+  );
+  // Everything not active (archived, or a future "pushed" status) is a prior
+  // session the Conductor can reopen read-only.
+  const priorSessions = useMemo(
+    () => allSessions.filter((s) => s.status !== "active"),
+    [allSessions],
   );
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
+  // Default to the first active session, but never clobber a manual selection
+  // of a prior (archived) session the user has opened to review.
   useEffect(() => {
-    if (selectedId == null && activeSessions.length > 0) {
-      setSelectedId(activeSessions[0].id);
+    if (selectedId != null && allSessions.some((s) => s.id === selectedId)) {
+      return;
     }
-    if (
-      selectedId != null &&
-      activeSessions.length > 0 &&
-      !activeSessions.some((s) => s.id === selectedId)
-    ) {
+    if (activeSessions.length > 0) {
       setSelectedId(activeSessions[0].id);
-    }
-    if (activeSessions.length === 0) {
+    } else if (allSessions.length > 0) {
+      setSelectedId(allSessions[0].id);
+    } else {
       setSelectedId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSessions]);
+  }, [allSessions]);
 
-  const selectedSession = activeSessions.find((s) => s.id === selectedId);
+  const selectedSession = allSessions.find((s) => s.id === selectedId) ?? null;
+  const isReadOnly = !!selectedSession && selectedSession.status !== "active";
 
   const { data: serverMessages } = useListProfessorMessages(
     tenantId,
@@ -326,10 +335,11 @@ export default function Professor() {
     );
   }
 
-  function handleArchive() {
-    if (!selectedId) return;
+  function handleArchive(sessionId?: number) {
+    const target = sessionId ?? selectedId;
+    if (!target) return;
     archiveSession.mutate(
-      { tenantId, sessionId: selectedId },
+      { tenantId, sessionId: target },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({
@@ -337,6 +347,12 @@ export default function Professor() {
           });
           toast({ title: "Session archived", description: "Memory slot freed." });
         },
+        onError: (e: any) =>
+          toast({
+            title: "Could not archive session",
+            description: e?.message ?? "Unknown error",
+            variant: "destructive",
+          }),
       },
     );
   }
@@ -380,7 +396,7 @@ export default function Professor() {
   }
 
   function setFactStatus(factId: number, status: "published" | "rejected") {
-    if (!selectedId) return;
+    if (!selectedId || isReadOnly) return;
     updateFact.mutate(
       { tenantId, factId, data: { status } },
       {
@@ -396,7 +412,7 @@ export default function Professor() {
     factId: number,
     category: AbsorbedFactCategoryInputCategory,
   ) {
-    if (!selectedId) return;
+    if (!selectedId || isReadOnly) return;
     updateFactCategory.mutate(
       { tenantId, factId, data: { category } },
       {
@@ -414,7 +430,7 @@ export default function Professor() {
       : null;
 
   function handleAbsorbAnswer(messageId: number) {
-    if (!selectedId) return;
+    if (!selectedId || isReadOnly) return;
     absorbAnswer.mutate(
       { tenantId, sessionId: selectedId, messageId },
       {
@@ -543,6 +559,14 @@ export default function Professor() {
           <span className="text-sm text-muted-foreground truncate">
             {selectedSession ? selectedSession.title : "No active session"}
           </span>
+          {isReadOnly && (
+            <Badge
+              variant="outline"
+              className="gap-1 text-[10px] uppercase tracking-wide text-muted-foreground shrink-0"
+            >
+              <Lock size={10} /> {selectedSession?.status}
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-2 rounded-md border px-3 py-1.5">
@@ -561,8 +585,12 @@ export default function Professor() {
             variant="outline"
             size="sm"
             className="gap-2"
-            onClick={handleArchive}
-            disabled={!selectedSession || archiveSession.isPending}
+            onClick={() => handleArchive()}
+            disabled={
+              !selectedSession ||
+              selectedSession.status !== "active" ||
+              archiveSession.isPending
+            }
           >
             <Save size={14} /> Archive &amp; Save
           </Button>
@@ -613,42 +641,64 @@ export default function Professor() {
               )}
             </Tooltip>
           </div>
-          <div className="px-3 py-2 text-[11px] uppercase tracking-widest text-muted-foreground">
-            Active ({activeSessions.length})
-          </div>
           <ScrollArea className="flex-1">
-            <div className="px-2 pb-2 space-y-1">
-              {activeSessions.length === 0 && (
-                <p className="px-2 py-6 text-xs text-muted-foreground text-center">
-                  No active sessions. Start one to begin curating.
-                </p>
-              )}
-              {activeSessions.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => setSelectedId(s.id)}
-                  className={cn(
-                    "w-full text-left rounded-md px-3 py-2 transition-colors border",
-                    s.id === selectedId
-                      ? "bg-primary/10 border-primary/40"
-                      : "border-transparent hover:bg-muted",
-                  )}
-                >
-                  <div className="text-sm font-medium truncate">{s.title}</div>
-                  <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-                    <span>{formatDate(s.createdAt)}</span>
-                    <span className="font-mono">
-                      {s.tokensUsed.toLocaleString()}
-                    </span>
+            <div className="pb-2">
+              <div className="px-3 py-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+                Active ({activeSessions.length})
+              </div>
+              <div className="px-2 space-y-1">
+                {activeSessions.length === 0 && (
+                  <p className="px-2 py-6 text-xs text-muted-foreground text-center">
+                    No active sessions. Start one to begin curating.
+                  </p>
+                )}
+                {activeSessions.map((s) => (
+                  <SessionRow
+                    key={s.id}
+                    session={s}
+                    selected={s.id === selectedId}
+                    onSelect={setSelectedId}
+                    onArchive={handleArchive}
+                    archiving={
+                      archiveSession.isPending &&
+                      archiveSession.variables?.sessionId === s.id
+                    }
+                  />
+                ))}
+              </div>
+
+              {priorSessions.length > 0 && (
+                <>
+                  <div className="px-3 pt-4 pb-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+                    Archived ({priorSessions.length})
                   </div>
-                </button>
-              ))}
+                  <div className="px-2 space-y-1">
+                    {priorSessions.map((s) => (
+                      <SessionRow
+                        key={s.id}
+                        session={s}
+                        selected={s.id === selectedId}
+                        onSelect={setSelectedId}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </ScrollArea>
         </div>
 
         {/* Chat pane */}
         <div className="flex-1 flex flex-col rounded-lg border bg-card min-w-0">
+          {isReadOnly && (
+            <div className="m-3 mb-0 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-700 dark:text-amber-500">
+              <Lock size={13} className="shrink-0" />
+              <span>
+                This session is archived — read-only. Start a new session to
+                curate new knowledge.
+              </span>
+            </div>
+          )}
           {/* Absorbed knowledge */}
           {selectedSession && factGroups.length > 0 && (
             <div className="m-3 rounded-lg border border-primary/30 bg-primary/[0.04] p-3">
@@ -732,8 +782,9 @@ export default function Professor() {
                                   )
                                 }
                                 title="Routing category"
+                                disabled={isReadOnly}
                                 className={cn(
-                                  "rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide cursor-pointer",
+                                  "rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide cursor-pointer disabled:cursor-not-allowed disabled:opacity-60",
                                   CATEGORY_CLASSES[f.category ?? "general"] ??
                                     CATEGORY_CLASSES.general,
                                 )}
@@ -748,9 +799,10 @@ export default function Professor() {
                             <div className="flex items-center gap-1 shrink-0">
                               <button
                                 title="Accept"
+                                disabled={isReadOnly}
                                 onClick={() => setFactStatus(f.id, "published")}
                                 className={cn(
-                                  "rounded p-1 hover:bg-emerald-500/15",
+                                  "rounded p-1 hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-40",
                                   f.status === "published"
                                     ? "text-emerald-500"
                                     : "text-muted-foreground",
@@ -760,9 +812,10 @@ export default function Professor() {
                               </button>
                               <button
                                 title="Reject"
+                                disabled={isReadOnly}
                                 onClick={() => setFactStatus(f.id, "rejected")}
                                 className={cn(
-                                  "rounded p-1 hover:bg-destructive/15",
+                                  "rounded p-1 hover:bg-destructive/15 disabled:cursor-not-allowed disabled:opacity-40",
                                   f.status === "rejected"
                                     ? "text-destructive"
                                     : "text-muted-foreground",
@@ -809,7 +862,7 @@ export default function Professor() {
                 role={m.role}
                 content={m.content}
                 professorName={professorName}
-                canAbsorb={m.role === "assistant"}
+                canAbsorb={m.role === "assistant" && !isReadOnly}
                 absorbed={absorbedMsgIds.has(m.id)}
                 absorbing={absorbingId === m.id}
                 onAbsorb={() => handleAbsorbAnswer(m.id)}
@@ -845,7 +898,7 @@ export default function Professor() {
                     variant="ghost"
                     size="icon"
                     className="shrink-0"
-                    disabled={!selectedSession || uploading}
+                    disabled={!selectedSession || isReadOnly || uploading}
                     onClick={() => fileRef.current?.click()}
                   >
                     {uploading ? (
@@ -861,7 +914,7 @@ export default function Professor() {
               <LibraryAddPopover
                 tenantId={tenantId}
                 sessionId={selectedId}
-                disabled={!selectedSession}
+                disabled={!selectedSession || isReadOnly}
                 onAbsorbed={(sid) => {
                   if (sid) {
                     setSelectedId(sid);
@@ -885,17 +938,19 @@ export default function Professor() {
                   }
                 }}
                 placeholder={
-                  selectedSession
-                    ? `Ask ${professorName} a question...`
-                    : "Start a session to begin"
+                  !selectedSession
+                    ? "Start a session to begin"
+                    : isReadOnly
+                      ? "This session is archived (read-only)"
+                      : `Ask ${professorName} a question...`
                 }
-                disabled={!selectedSession || isStreaming}
+                disabled={!selectedSession || isReadOnly || isStreaming}
                 className="min-h-[44px] max-h-32 resize-none"
               />
               <Button
                 className="shrink-0 gap-2"
                 onClick={handleSend}
-                disabled={!selectedSession || isStreaming || !input.trim()}
+                disabled={!selectedSession || isReadOnly || isStreaming || !input.trim()}
               >
                 {isStreaming ? (
                   <Loader2 size={16} className="animate-spin" />
@@ -996,6 +1051,85 @@ function MessageBubble({
         <div className="h-8 w-8 shrink-0 rounded-full bg-muted flex items-center justify-center">
           <User size={16} />
         </div>
+      )}
+    </div>
+  );
+}
+
+function SessionRow({
+  session,
+  selected,
+  onSelect,
+  onArchive,
+  archiving,
+}: {
+  session: {
+    id: number;
+    title: string;
+    createdAt: string;
+    tokensUsed: number;
+    status: string;
+  };
+  selected: boolean;
+  onSelect: (id: number) => void;
+  onArchive?: (id: number) => void;
+  archiving?: boolean;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(session.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(session.id);
+        }
+      }}
+      className={cn(
+        "group flex items-start gap-2 w-full text-left rounded-md px-3 py-2 transition-colors border cursor-pointer",
+        selected
+          ? "bg-primary/10 border-primary/40"
+          : "border-transparent hover:bg-muted",
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium truncate">{session.title}</div>
+        <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+          <span>{formatDate(session.createdAt)}</span>
+          <span className="font-mono">
+            {session.tokensUsed.toLocaleString()}
+          </span>
+        </div>
+      </div>
+      {onArchive ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              title="Archive session"
+              disabled={archiving}
+              onClick={(e) => {
+                e.stopPropagation();
+                onArchive(session.id);
+              }}
+              className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted-foreground/10 hover:text-foreground focus:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {archiving ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Archive size={13} />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Archive — frees a memory slot</TooltipContent>
+        </Tooltip>
+      ) : (
+        <Lock
+          size={12}
+          className="shrink-0 mt-0.5 text-muted-foreground/50"
+          aria-hidden
+        />
       )}
     </div>
   );
