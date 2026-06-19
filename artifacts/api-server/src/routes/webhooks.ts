@@ -540,16 +540,23 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                           "SAMA Student: AUTO-SENT reply",
                         );
                       } else {
-                        // Claimed but the send did not complete; leave
-                        // outboundMessageId null so a retry isn't treated as
-                        // already-sent, and fall through to the whisper.
+                        // Claimed but the send did not complete (Twilio reject,
+                        // stub, transient error). The customer received nothing,
+                        // so RELEASE the claim — deleting it lets a webhook retry
+                        // re-attempt instead of being permanently suppressed. A
+                        // completed send (outboundMessageId set) is the ONLY
+                        // terminal state. We still fall through to the whisper so
+                        // an agent has a draft in the meantime.
+                        await db
+                          .delete(aiAutoRepliesTable)
+                          .where(eq(aiAutoRepliesTable.id, claimed[0].id));
                         logger.error(
                           {
                             tenantSlug,
                             conversationId,
                             reason: sent.ok ? sent.status : sent.reason,
                           },
-                          "SAMA Student: auto-send claimed but send failed; posting whisper instead",
+                          "SAMA Student: auto-send claimed but send failed; released claim, posting whisper instead",
                         );
                       }
                     } else {

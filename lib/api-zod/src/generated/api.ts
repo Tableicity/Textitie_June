@@ -479,6 +479,12 @@ export const UpdateTenantSettingsBody = zod
       .max(updateTenantSettingsBodyFrequencyCapPerDayMax)
       .optional(),
     requireDoubleOptIn: zod.boolean().optional(),
+    engagementMode: zod
+      .enum(["assisted", "gated_auto"])
+      .optional()
+      .describe(
+        'AI Student engagement mode — \"assisted\" (whisper draft only) or \"gated_auto\" (may auto-send safe answers).',
+      ),
   })
   .describe(
     "Partial tenant settings update — only supplied fields are written. Requires admin or owner role.",

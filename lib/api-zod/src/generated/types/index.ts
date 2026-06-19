@@ -174,6 +174,7 @@ export * from "./updateShortcutInput";
 export * from "./updateTagsInput";
 export * from "./updateTenantInput";
 export * from "./updateTenantSettingsInput";
+export * from "./updateTenantSettingsInputEngagementMode";
 export * from "./usageStats";
 export * from "./webhookEvent";
 export * from "./webhookEventPayload";

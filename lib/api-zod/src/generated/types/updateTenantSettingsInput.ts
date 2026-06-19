@@ -5,6 +5,7 @@
  * SAMA Control Plane API
  * OpenAPI spec version: 0.1.0
  */
+import type { UpdateTenantSettingsInputEngagementMode } from "./updateTenantSettingsInputEngagementMode";
 
 /**
  * Partial tenant settings update — only supplied fields are written. Requires admin or owner role.
@@ -34,4 +35,6 @@ export interface UpdateTenantSettingsInput {
    */
   frequencyCapPerDay?: number;
   requireDoubleOptIn?: boolean;
+  /** AI Student engagement mode — "assisted" (whisper draft only) or "gated_auto" (may auto-send safe answers). */
+  engagementMode?: UpdateTenantSettingsInputEngagementMode;
 }

@@ -294,6 +294,17 @@ export interface TenantSettings {
 }
 
 /**
+ * AI Student engagement mode — "assisted" (whisper draft only) or "gated_auto" (may auto-send safe answers).
+ */
+export type UpdateTenantSettingsInputEngagementMode =
+  (typeof UpdateTenantSettingsInputEngagementMode)[keyof typeof UpdateTenantSettingsInputEngagementMode];
+
+export const UpdateTenantSettingsInputEngagementMode = {
+  assisted: "assisted",
+  gated_auto: "gated_auto",
+} as const;
+
+/**
  * Partial tenant settings update — only supplied fields are written. Requires admin or owner role.
  */
 export interface UpdateTenantSettingsInput {
@@ -321,6 +332,8 @@ export interface UpdateTenantSettingsInput {
    */
   frequencyCapPerDay?: number;
   requireDoubleOptIn?: boolean;
+  /** AI Student engagement mode — "assisted" (whisper draft only) or "gated_auto" (may auto-send safe answers). */
+  engagementMode?: UpdateTenantSettingsInputEngagementMode;
 }
 
 export type ConversationStatus =

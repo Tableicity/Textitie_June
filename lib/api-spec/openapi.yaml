@@ -3334,6 +3334,10 @@ components:
           maximum: 1000
         requireDoubleOptIn:
           type: boolean
+        engagementMode:
+          type: string
+          enum: [assisted, gated_auto]
+          description: AI Student engagement mode — "assisted" (whisper draft only) or "gated_auto" (may auto-send safe answers).
 
     ConversationStatus:
       type: string
