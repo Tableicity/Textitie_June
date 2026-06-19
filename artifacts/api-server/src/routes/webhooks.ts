@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { desc, eq, and, sql } from "drizzle-orm";
-import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable, contactsTable, auditLogsTable } from "@workspace/db";
+import { db, webhookEventsTable, tenantsTable, conversationsTable, messagesTable, contactsTable, auditLogsTable, aiAutoRepliesTable, type ClassroomFact } from "@workspace/db";
 import {
   ReceiveWebhookParams,
   ListWebhookEventsQueryParams,
@@ -12,7 +12,12 @@ import { studentWhisper } from "@workspace/ai-student";
 import {
   retrieveClassroomFacts,
   classifyQueryCategory,
+  normalizeCategory,
+  hasUnresolvedConflicts,
+  type FactCategory,
 } from "../lib/knowledge";
+import { normalizeEngagementMode, evaluateAutoSend } from "../lib/engagementPolicy";
+import { sendConversationReply } from "../lib/outboundReply";
 import { processInboundMessage } from "../lib/automationEngine";
 import { attributeInboundResponse } from "../lib/campaignAttribution";
 import { processDeliveryStatus } from "../lib/deliveryStatus";
@@ -21,7 +26,8 @@ import { eventBus } from "../lib/eventBus";
 import { logger } from "../lib/logger";
 import { checkTwilioSignature, requireTwilioSignature } from "../lib/twilioSignature";
 import { enqueueSync } from "../lib/integrations/syncWorker";
-import { isBlocked } from "../lib/compliance";
+import { isBlocked, checkOutboundCompliance } from "../lib/compliance";
+import { recordMessageUsage } from "../lib/stripe-stub";
 
 const router: IRouter = Router();
 
@@ -76,6 +82,16 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
       "contactName",
       "Author",
       "author",
+    ]);
+    // Carrier MessageSid of THIS inbound text — the idempotency key for the B4
+    // auto-reply claim. Twilio uses MessageSid (and the legacy SmsSid/
+    // SmsMessageSid aliases). Absent for non-Twilio bridges → no auto-send.
+    const inboundSid = pickString(rawBody, [
+      "MessageSid",
+      "messageSid",
+      "SmsMessageSid",
+      "SmsSid",
+      "sid",
     ]);
 
     if (toNumber) {
@@ -150,79 +166,6 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
             },
             "SAMA Inbound Router: forwarded to Chatwoot",
           );
-
-          // ---- AI Student Whisper (fire-and-forget) ----
-          const studentTenant = tenant;
-          const studentFrom = fromNumber;
-          const studentBody = messageBody;
-          const studentChatwoot = chatwootResult;
-          void (async () => {
-            try {
-              let classroomContext = "";
-              try {
-                // Cheap synchronous intent classification (no LLM, no added
-                // latency) BOOSTS same-category facts during retrieval.
-                const queryCategory = classifyQueryCategory(studentBody);
-                const facts = await retrieveClassroomFacts(
-                  studentTenant.id,
-                  studentBody,
-                  { category: queryCategory },
-                );
-                classroomContext = facts
-                  .map((f) => `- ${f.statement} (source: ${f.sourceLabel})`)
-                  .join("\n");
-              } catch (err) {
-                logger.warn(
-                  { err: err instanceof Error ? err.message : String(err) },
-                  "SAMA Student: classroom retrieval failed, falling back to legacy KB",
-                );
-              }
-              const draft = await studentWhisper({
-                tenant: studentTenant,
-                fromNumber: studentFrom,
-                inboundBody: studentBody,
-                classroomContext,
-              });
-              logger.info(
-                {
-                  tenantSlug: studentTenant.slug,
-                  status: draft.status,
-                  latencyMs: draft.latencyMs,
-                  detail: draft.detail,
-                  whisperPreview: draft.whisperBody.slice(0, 500),
-                },
-                "SAMA Student: draft ready",
-              );
-              if (
-                studentChatwoot.status === "sent" &&
-                studentChatwoot.conversationId &&
-                studentTenant.chatwootAccountId &&
-                studentTenant.chatwootInboxId
-              ) {
-                const post = await postChatwootMessage({
-                  accountId: studentTenant.chatwootAccountId,
-                  inboxId: studentTenant.chatwootInboxId,
-                  contactPhone: studentFrom,
-                  body: draft.whisperBody,
-                  messageType: "outgoing",
-                  private: true,
-                });
-                logger.info(
-                  {
-                    tenantSlug: studentTenant.slug,
-                    whisperPost: post.status,
-                    detail: post.detail,
-                  },
-                  "SAMA Student: posted Whisper to Chatwoot",
-                );
-              }
-            } catch (err) {
-              logger.warn(
-                { err: err instanceof Error ? err.message : String(err) },
-                "SAMA Student: whisper pipeline failed",
-              );
-            }
-          })();
         } else {
           req.log.info(
             {
@@ -422,6 +365,255 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
 
               if (result.action !== "tcpa_opt_out" && result.action !== "opted_out_ignored") {
                 await attributeInboundResponse(tenant.id, tenantSlug, fromNumber);
+              }
+
+              // ---- AI Student: draft a whisper, and in gated_auto mode,
+              // optionally auto-send a compliant high-confidence reply. Runs
+              // here (in the ordered durable pipeline, AFTER the automation
+              // engine) so we never reply on top of an automation/opt-out, the
+              // conversation+inbound row already exist, and auto-send latency is
+              // off the inbound 200 path. Self-contained try/catch so a Student
+              // failure never disturbs the durable writes above.
+              try {
+                const engagementMode = normalizeEngagementMode(tenant.engagementMode);
+                const queryCategory = classifyQueryCategory(messageBody);
+                let facts: ClassroomFact[] = [];
+                try {
+                  facts = await retrieveClassroomFacts(tenant.id, messageBody, {
+                    category: queryCategory,
+                  });
+                } catch (err) {
+                  logger.warn(
+                    { err: err instanceof Error ? err.message : String(err) },
+                    "SAMA Student: classroom retrieval failed, falling back to legacy KB",
+                  );
+                }
+                const classroomContext = facts
+                  .map((f) => `- ${f.statement} (source: ${f.sourceLabel})`)
+                  .join("\n");
+
+                const draft = await studentWhisper({
+                  tenant,
+                  fromNumber,
+                  inboundBody: messageBody,
+                  classroomContext,
+                });
+                logger.info(
+                  {
+                    tenantSlug,
+                    status: draft.status,
+                    latencyMs: draft.latencyMs,
+                    detail: draft.detail,
+                    whisperPreview: draft.whisperBody.slice(0, 500),
+                  },
+                  "SAMA Student: draft ready",
+                );
+
+                // Decide whether to auto-send. Suppressed entirely when the
+                // automation engine already handled this inbound (keyword reply,
+                // opt-out, etc.) so a customer never gets two replies.
+                let autoSent = false;
+                if (engagementMode === "gated_auto" && !result.handled) {
+                  const groundingCategories = facts.map((f) =>
+                    normalizeCategory(f.category),
+                  );
+                  // Check conflicts in the grounding categories PLUS the always-
+                  // sensitive pricing/compliance ones, and the query intent.
+                  const conflictCats = Array.from(
+                    new Set<FactCategory>([
+                      ...groundingCategories,
+                      "pricing",
+                      "compliance",
+                      ...(queryCategory ? [queryCategory] : []),
+                    ]),
+                  );
+                  let hasConflict = true; // fail closed if the check throws
+                  try {
+                    hasConflict = await hasUnresolvedConflicts(tenant.id, conflictCats);
+                  } catch (err) {
+                    logger.warn(
+                      { err: err instanceof Error ? err.message : String(err) },
+                      "SAMA Student: conflict check failed; blocking auto-send",
+                    );
+                  }
+                  // Compliance is also re-checked at send time inside the helper
+                  // (TOCTOU-safe); this pre-check fails fast before the gate.
+                  let complianceOk = false;
+                  try {
+                    const c = await checkOutboundCompliance(
+                      tenant.id,
+                      tenantSlug,
+                      fromNumber,
+                    );
+                    complianceOk = c.ok;
+                  } catch (err) {
+                    logger.warn(
+                      { err: err instanceof Error ? err.message : String(err) },
+                      "SAMA Student: compliance precheck failed; blocking auto-send",
+                    );
+                  }
+
+                  const decision = evaluateAutoSend({
+                    engagementMode,
+                    draftStatus: draft.status,
+                    confidence: draft.confidence,
+                    kbMatched: draft.kbMatched,
+                    groundedInClassroom: draft.groundedInClassroom,
+                    queryCategory,
+                    groundingCategories,
+                    hasConflict,
+                    complianceOk,
+                  });
+
+                  const replyText = draft.draftReply.trim();
+                  if (decision.autoSend && inboundSid && replyText) {
+                    // Idempotency: claim the inbound SID before sending. The
+                    // unique (tenant_id, inbound_sid) index lets exactly one
+                    // caller win, so a webhook retry can never double-send.
+                    const claimed = await db
+                      .insert(aiAutoRepliesTable)
+                      .values({ tenantId: tenant.id, inboundSid })
+                      .onConflictDoNothing({
+                        target: [
+                          aiAutoRepliesTable.tenantId,
+                          aiAutoRepliesTable.inboundSid,
+                        ],
+                      })
+                      .returning({ id: aiAutoRepliesTable.id });
+
+                    if (claimed.length > 0) {
+                      const sent = await sendConversationReply({
+                        tenantId: tenant.id,
+                        tenantSlug,
+                        conversationId,
+                        contactPhone: fromNumber,
+                        departmentId: null,
+                        body: replyText,
+                        senderName: "Textitie AI",
+                        conductorAuthorized: true,
+                      });
+                      if (sent.ok && sent.status === "sent") {
+                        autoSent = true;
+                        await db
+                          .update(aiAutoRepliesTable)
+                          .set({ outboundMessageId: sent.messageRow.id })
+                          .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+                        await tdb
+                          .update(conversationsTable)
+                          .set({ lastMessageAt: new Date() })
+                          .where(eq(conversationsTable.id, conversationId));
+                        recordMessageUsage(tenant.id, tenantSlug).catch((e) =>
+                          logger.warn(
+                            { err: e, tenantId: tenant.id },
+                            "Usage tracking failed (non-blocking)",
+                          ),
+                        );
+                        eventBus.publish(tenant.id, {
+                          type: "message:new",
+                          conversationId,
+                          direction: "outbound",
+                        });
+                        try {
+                          await tdb.insert(auditLogsTable).values({
+                            tenantId: tenant.id,
+                            actorUserId: null,
+                            actorEmail: "system:ai-student",
+                            action: "ai.auto_replied",
+                            entityType: "conversation",
+                            entityId: String(conversationId),
+                            afterJson: {
+                              inboundSid,
+                              messageId: sent.messageRow.id,
+                              confidence: draft.confidence,
+                              queryCategory,
+                              groundingCategories,
+                            },
+                          });
+                        } catch (e) {
+                          logger.warn(
+                            { err: e instanceof Error ? e.message : String(e) },
+                            "AI auto-reply audit write failed (non-blocking)",
+                          );
+                        }
+                        logger.info(
+                          { tenantSlug, conversationId, messageId: sent.messageRow.id },
+                          "SAMA Student: AUTO-SENT reply",
+                        );
+                      } else {
+                        // Claimed but the send did not complete; leave
+                        // outboundMessageId null so a retry isn't treated as
+                        // already-sent, and fall through to the whisper.
+                        logger.error(
+                          {
+                            tenantSlug,
+                            conversationId,
+                            reason: sent.ok ? sent.status : sent.reason,
+                          },
+                          "SAMA Student: auto-send claimed but send failed; posting whisper instead",
+                        );
+                      }
+                    } else {
+                      // Another invocation already owns this SID. Treat as
+                      // auto-sent only if that one actually completed the send.
+                      const existing = await db
+                        .select({
+                          outboundMessageId: aiAutoRepliesTable.outboundMessageId,
+                        })
+                        .from(aiAutoRepliesTable)
+                        .where(
+                          and(
+                            eq(aiAutoRepliesTable.tenantId, tenant.id),
+                            eq(aiAutoRepliesTable.inboundSid, inboundSid),
+                          ),
+                        )
+                        .limit(1);
+                      if (existing[0]?.outboundMessageId != null) {
+                        autoSent = true;
+                        logger.info(
+                          { tenantSlug, conversationId },
+                          "SAMA Student: auto-send already completed (idempotent skip)",
+                        );
+                      }
+                    }
+                  } else if (!decision.autoSend) {
+                    logger.info(
+                      { tenantSlug, conversationId, reasons: decision.reasons },
+                      "SAMA Student: auto-send gated off; whisper only",
+                    );
+                  }
+                }
+
+                // Post to Chatwoot when configured: a PRIVATE whisper draft when
+                // we did NOT auto-send (assisted, gated-off, or failed send), or
+                // a PUBLIC mirror of the sent reply when we DID, so Chatwoot-side
+                // agents always see an accurate thread.
+                if (
+                  chatwootResult &&
+                  chatwootResult.status === "sent" &&
+                  chatwootResult.conversationId &&
+                  tenant.chatwootAccountId &&
+                  tenant.chatwootInboxId
+                ) {
+                  const post = await postChatwootMessage({
+                    accountId: tenant.chatwootAccountId,
+                    inboxId: tenant.chatwootInboxId,
+                    contactPhone: fromNumber,
+                    body: autoSent ? draft.draftReply.trim() : draft.whisperBody,
+                    messageType: "outgoing",
+                    private: !autoSent,
+                  });
+                  logger.info(
+                    { tenantSlug, whisperPost: post.status, autoSent, detail: post.detail },
+                    autoSent
+                      ? "SAMA Student: mirrored auto-reply to Chatwoot"
+                      : "SAMA Student: posted Whisper to Chatwoot",
+                  );
+                }
+              } catch (err) {
+                logger.warn(
+                  { err: err instanceof Error ? err.message : String(err) },
+                  "SAMA Student: whisper/auto-send pipeline failed",
+                );
               }
             } catch (err) {
               logger.warn(

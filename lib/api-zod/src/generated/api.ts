@@ -438,6 +438,11 @@ export const GetTenantSettingsResponse = zod.object({
   baaAcknowledgedAt: zod.coerce.date().nullish(),
   baaAcknowledgedBy: zod.number().nullish(),
   hipaaEligible: zod.boolean().nullish(),
+  engagementMode: zod
+    .enum(["assisted", "gated_auto"])
+    .describe(
+      'How the AI Student engages on inbound texts. \"assisted\" drafts a private whisper for the agent; \"gated_auto\" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance.',
+    ),
 });
 
 /**
@@ -498,6 +503,11 @@ export const UpdateTenantSettingsResponse = zod.object({
   baaAcknowledgedAt: zod.coerce.date().nullish(),
   baaAcknowledgedBy: zod.number().nullish(),
   hipaaEligible: zod.boolean().nullish(),
+  engagementMode: zod
+    .enum(["assisted", "gated_auto"])
+    .describe(
+      'How the AI Student engages on inbound texts. \"assisted\" drafts a private whisper for the agent; \"gated_auto\" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance.',
+    ),
 });
 
 /**

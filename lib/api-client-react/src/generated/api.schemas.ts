@@ -253,6 +253,17 @@ export interface TenantChangePasswordResult {
   message: string;
 }
 
+/**
+ * How the AI Student engages on inbound texts. "assisted" drafts a private whisper for the agent; "gated_auto" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance.
+ */
+export type TenantSettingsEngagementMode =
+  (typeof TenantSettingsEngagementMode)[keyof typeof TenantSettingsEngagementMode];
+
+export const TenantSettingsEngagementMode = {
+  assisted: "assisted",
+  gated_auto: "gated_auto",
+} as const;
+
 export interface TenantSettings {
   id: number;
   name: string;
@@ -278,6 +289,8 @@ export interface TenantSettings {
   baaAcknowledgedBy?: number | null;
   /** @nullable */
   hipaaEligible?: boolean | null;
+  /** How the AI Student engages on inbound texts. "assisted" drafts a private whisper for the agent; "gated_auto" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance. */
+  engagementMode: TenantSettingsEngagementMode;
 }
 
 /**

@@ -3294,12 +3294,21 @@ components:
           type: ["integer", "null"]
         hipaaEligible:
           type: ["boolean", "null"]
+        engagementMode:
+          type: string
+          enum: [assisted, gated_auto]
+          description: >-
+            How the AI Student engages on inbound texts. "assisted" drafts a
+            private whisper for the agent; "gated_auto" may auto-send the reply
+            when it is high-confidence, classroom-grounded, conflict-free, in a
+            safe category, and passes outbound compliance.
       required:
         - id
         - name
         - slug
         - region
         - tierCode
+        - engagementMode
 
     UpdateTenantSettingsInput:
       type: object

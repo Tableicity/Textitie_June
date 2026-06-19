@@ -32,6 +32,7 @@ interface TenantSettings {
   hipaaEnabled: boolean;
   baaAcknowledgedAt: string | null;
   hipaaEligible: boolean | null;
+  engagementMode: "assisted" | "gated_auto";
 }
 
 interface OptInItem {
@@ -95,6 +96,15 @@ export default function ComplianceSection() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tenant-settings/me"] });
     },
+  });
+
+  const saveEngagementMode = useMutation({
+    mutationFn: (mode: "assisted" | "gated_auto") =>
+      apiFetch<TenantSettings>("/tenant-settings/me", {
+        method: "PATCH",
+        body: JSON.stringify({ engagementMode: mode }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tenant-settings/me"] }),
   });
 
   const ackHipaa = useMutation({
@@ -211,6 +221,64 @@ export default function ComplianceSection() {
                 {saveSettings.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Save
               </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="w-5 h-5" />
+            AI Auto-Reply
+          </CardTitle>
+          <CardDescription>
+            Choose how the AI Assistant handles inbound texts. Auto-send is gated — it only fires on
+            high-confidence answers grounded in your published knowledge, in safe topics, with no
+            unresolved conflicts, and only when outbound compliance passes.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading || !settings ? (
+            <Skeleton className="h-20 w-full" />
+          ) : (
+            <div className="space-y-4 max-w-2xl">
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={settings.engagementMode === "gated_auto"}
+                  disabled={saveEngagementMode.isPending}
+                  onCheckedChange={(v) =>
+                    saveEngagementMode.mutate(v ? "gated_auto" : "assisted")
+                  }
+                  data-testid="engagement-mode-toggle"
+                />
+                <div>
+                  <div className="text-sm font-medium flex items-center gap-2">
+                    Gated auto-send
+                    {saveEngagementMode.isPending && (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
+                    )}
+                    <Badge variant="outline">
+                      {settings.engagementMode === "gated_auto" ? "On" : "Off"}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    When off (Assisted), the AI only drafts a private reply for your agent to review
+                    and send. When on, it may send safe answers automatically; everything else still
+                    falls back to an agent draft.
+                  </div>
+                </div>
+              </div>
+
+              {saveEngagementMode.isError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Could not update</AlertTitle>
+                  <AlertDescription>
+                    {(saveEngagementMode.error as Error).message}
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
           )}
         </CardContent>

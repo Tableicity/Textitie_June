@@ -13,15 +13,33 @@ import type { Tenant } from "@workspace/db";
  *
  * STUBBED when GROK_KEYS is missing — returns a synthetic draft so the pipeline
  * keeps flowing without secrets.
+ *
+ * B4: the draft also exposes machine-readable signals (clean reply text, KB
+ * match, model confidence, classroom grounding) so the engagement policy
+ * (lib/engagementPolicy.ts) can decide whether it is safe to auto-send.
  */
 
 const BASE_URL = "https://api.x.ai/v1";
+
+export type StudentConfidence = "high" | "medium" | "low";
 
 export type StudentDraft = {
   status: "stubbed" | "drafted" | "failed";
   whisperBody: string;
   detail: string;
   latencyMs: number;
+  // --- B4 auto-send signals (advisory; the policy combines them) ---
+  /** Clean SMS-ready reply parsed from the DRAFT REPLY section ("" if absent). */
+  draftReply: string;
+  /** True when the KB MATCH line names a real Classroom answer (not "none"). */
+  kbMatched: boolean;
+  /** Model-emitted confidence; null when unparseable (treated as NOT high). */
+  confidence: StudentConfidence | null;
+  /**
+   * True only when the answer was grounded in the PUBLISHED CLASSROOM — not the
+   * legacy knowledge_base blob and not the stub. Auto-send requires this.
+   */
+  groundedInClassroom: boolean;
 };
 
 let cachedClient: OpenAI | null = null;
@@ -39,12 +57,56 @@ const SYSTEM_PROMPT = `You are the SAMA Student Assistant — a junior helper fo
 
 You will receive (1) the tenant's published Classroom knowledge and (2) a single inbound customer SMS.
 
-Produce ONE concise Private Note (under 600 chars) with three sections, marked exactly:
-SUMMARY: one sentence, intent of the message.
-DRAFT REPLY: a polite SMS-length draft the human agent can send (no signature, no greetings if redundant).
-KB MATCH: if the customer's question is directly answered by the Classroom knowledge, quote the answer in one sentence and prefix with "KB:". Otherwise write "KB: none".
+Produce ONE concise Private Note (under 600 chars) with FOUR sections, each on its own line and marked EXACTLY with these labels:
+SUMMARY: one sentence, the intent of the message.
+DRAFT REPLY: a polite SMS-length draft the human agent can send (no signature, no greetings if redundant). This must be ONLY the message text — nothing else.
+KB MATCH: if the customer's question is directly and fully answered by the Classroom knowledge, quote that answer in one sentence. Otherwise write exactly: none
+CONFIDENCE: high, medium, or low. Use "high" ONLY when the Classroom knowledge directly and completely answers the question and your DRAFT REPLY is taken from it. Use "medium" if the Classroom partially covers it. Use "low" if the Classroom does not cover it or you are guessing.
 
 Be terse. The human agent is busy. Do not use markdown. Plain text only.`;
+
+/**
+ * Parse the Student's four labelled sections out of the raw model text. Tolerant
+ * of extra whitespace, missing sections, multi-line content, and a stray "KB:"
+ * prefix on the KB MATCH line. Exported for unit testing.
+ */
+export function parseStudentSections(text: string): {
+  draftReply: string;
+  kbMatched: boolean;
+  confidence: StudentConfidence | null;
+} {
+  const sections: Record<string, string> = {};
+  let current: string | null = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const m = rawLine.match(/^\s*(SUMMARY|DRAFT REPLY|KB MATCH|KB|CONFIDENCE)\s*:\s*(.*)$/i);
+    if (m) {
+      let label = m[1].toUpperCase();
+      if (label === "KB") label = "KB MATCH";
+      sections[label] = (sections[label] ? sections[label] + "\n" : "") + m[2];
+      current = label;
+    } else if (current) {
+      sections[current] += "\n" + rawLine;
+    }
+  }
+  for (const k of Object.keys(sections)) sections[k] = sections[k].trim();
+
+  const draftReply = (sections["DRAFT REPLY"] ?? "").trim();
+
+  let kbContent = (sections["KB MATCH"] ?? "").trim();
+  kbContent = kbContent.replace(/^kb\s*:\s*/i, "").trim();
+  const kbMatched = kbContent.length > 0 && kbContent.toLowerCase() !== "none";
+
+  const confFirst = (sections["CONFIDENCE"] ?? "")
+    .toLowerCase()
+    .trim()
+    .split(/[^a-z]+/)[0];
+  const confidence: StudentConfidence | null =
+    confFirst === "high" || confFirst === "medium" || confFirst === "low"
+      ? confFirst
+      : null;
+
+  return { draftReply, kbMatched, confidence };
+}
 
 export async function studentWhisper(opts: {
   tenant: Tenant;
@@ -62,21 +124,25 @@ export async function studentWhisper(opts: {
   if (!oai) {
     return {
       status: "stubbed",
-      whisperBody: `[SAMA Student — STUBBED]\nSUMMARY: (no GROK_KEYS set)\nDRAFT REPLY: (AI Student offline — agent must reply manually)\nKB: none`,
+      whisperBody: `[SAMA Student — STUBBED]\nSUMMARY: (no GROK_KEYS set)\nDRAFT REPLY: (AI Student offline — agent must reply manually)\nKB MATCH: none\nCONFIDENCE: low`,
       detail: "GROK_KEYS not set",
       latencyMs: Date.now() - start,
+      draftReply: "",
+      kbMatched: false,
+      confidence: null,
+      groundedInClassroom: false,
     };
   }
 
   const classroom = (opts.classroomContext ?? "").trim();
   const legacy = (opts.tenant.knowledgeBase ?? "").trim();
   const knowledge = classroom.length > 0 ? classroom : legacy;
-  const knowledgeSource =
-    classroom.length > 0
-      ? "PUBLISHED CLASSROOM"
-      : legacy.length > 0
-        ? "LEGACY KNOWLEDGE BASE"
-        : "NONE";
+  const groundedInClassroom = classroom.length > 0;
+  const knowledgeSource = groundedInClassroom
+    ? "PUBLISHED CLASSROOM"
+    : legacy.length > 0
+      ? "LEGACY KNOWLEDGE BASE"
+      : "NONE";
 
   const userPrompt = [
     `TENANT: ${opts.tenant.name} (${opts.tenant.slug})`,
@@ -107,13 +173,24 @@ export async function studentWhisper(opts: {
         whisperBody: "[SAMA Student] (empty response from model)",
         detail: "Grok returned empty content",
         latencyMs: Date.now() - start,
+        draftReply: "",
+        kbMatched: false,
+        confidence: null,
+        groundedInClassroom: false,
       };
     }
+    const parsed = parseStudentSections(text);
     return {
       status: "drafted",
       whisperBody: `[SAMA Student — ${MODEL}]\n${text}`,
       detail: `model=${MODEL} source=${knowledgeSource} tokens=${resp.usage?.total_tokens ?? "?"}`,
       latencyMs: Date.now() - start,
+      draftReply: parsed.draftReply,
+      kbMatched: parsed.kbMatched,
+      confidence: parsed.confidence,
+      // Grounding is a property of the retrieval source, not the model text:
+      // even a confident answer off the legacy blob must never auto-send.
+      groundedInClassroom,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -122,6 +199,10 @@ export async function studentWhisper(opts: {
       whisperBody: `[SAMA Student] error: ${msg}`,
       detail: `Grok exception: ${msg}`,
       latencyMs: Date.now() - start,
+      draftReply: "",
+      kbMatched: false,
+      confidence: null,
+      groundedInClassroom: false,
     };
   }
 }

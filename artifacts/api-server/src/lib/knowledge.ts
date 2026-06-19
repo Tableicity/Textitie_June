@@ -1,10 +1,11 @@
-import { eq, and, desc, sql, type SQL } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, type SQL } from "drizzle-orm";
 import {
   db,
   knowledgeDocumentsTable,
   knowledgeChunksTable,
   classroomVersionsTable,
   classroomFactsTable,
+  absorbedFactsTable,
   type ClassroomFact,
   type ClassroomVersion,
   type KnowledgeDocument,
@@ -542,6 +543,33 @@ export async function retrieveClassroomFacts(
     .from(classroomFactsTable)
     .where(eq(classroomFactsTable.versionId, version.id))
     .limit(limit);
+}
+
+/**
+ * True when the tenant has at least one UNRESOLVED conflict (absorbed fact with
+ * status='conflict') in any of the given categories. The B4 auto-send gate calls
+ * this with the answer's grounding categories plus the always-sensitive
+ * pricing/compliance ones: a corpus that still holds a flagged contradiction
+ * touching the answer must never auto-send. Conflicts only exist at the absorbed
+ * layer (classroom_facts has no status column), so we check there.
+ */
+export async function hasUnresolvedConflicts(
+  tenantId: number,
+  categories: FactCategory[],
+): Promise<boolean> {
+  if (categories.length === 0) return false;
+  const rows = await db
+    .select({ id: absorbedFactsTable.id })
+    .from(absorbedFactsTable)
+    .where(
+      and(
+        eq(absorbedFactsTable.tenantId, tenantId),
+        eq(absorbedFactsTable.status, "conflict"),
+        inArray(absorbedFactsTable.category, categories),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 // Parse the model's JSON output. Accepts either an array of

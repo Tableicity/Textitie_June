@@ -5,6 +5,7 @@
  * SAMA Control Plane API
  * OpenAPI spec version: 0.1.0
  */
+import type { TenantSettingsEngagementMode } from "./tenantSettingsEngagementMode";
 
 export interface TenantSettings {
   id: number;
@@ -31,4 +32,6 @@ export interface TenantSettings {
   baaAcknowledgedBy?: number | null;
   /** @nullable */
   hipaaEligible?: boolean | null;
+  /** How the AI Student engages on inbound texts. "assisted" drafts a private whisper for the agent; "gated_auto" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance. */
+  engagementMode: TenantSettingsEngagementMode;
 }

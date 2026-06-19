@@ -26,6 +26,7 @@ async function loadTenantSettings(tenantId: number) {
       baaAcknowledgedAt: tenantsTable.baaAcknowledgedAt,
       baaAcknowledgedBy: tenantsTable.baaAcknowledgedBy,
       hipaaEligible: tiersTable.hipaaEligible,
+      engagementMode: tenantsTable.engagementMode,
     })
     .from(tenantsTable)
     .leftJoin(tiersTable, eq(tiersTable.code, tenantsTable.tierCode))
@@ -55,8 +56,15 @@ router.patch("/tenant-settings/me", requireTenantAuth, async (req, res) => {
     res.status(403).json({ error: "Admin or owner role required" });
     return;
   }
-  const { name, quietHoursStart, quietHoursEnd, quietHoursTz, frequencyCapPerDay, requireDoubleOptIn } =
-    req.body ?? {};
+  const {
+    name,
+    quietHoursStart,
+    quietHoursEnd,
+    quietHoursTz,
+    frequencyCapPerDay,
+    requireDoubleOptIn,
+    engagementMode,
+  } = req.body ?? {};
 
   const patch: Record<string, unknown> = {};
   if (name !== undefined) {
@@ -118,6 +126,13 @@ router.patch("/tenant-settings/me", requireTenantAuth, async (req, res) => {
       return;
     }
     patch.requireDoubleOptIn = requireDoubleOptIn;
+  }
+  if (engagementMode !== undefined) {
+    if (engagementMode !== "assisted" && engagementMode !== "gated_auto") {
+      res.status(400).json({ error: "engagementMode must be 'assisted' or 'gated_auto'" });
+      return;
+    }
+    patch.engagementMode = engagementMode;
   }
 
   if (Object.keys(patch).length === 0) {

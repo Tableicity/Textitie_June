@@ -152,6 +152,7 @@ export * from "./tenantMeResult";
 export * from "./tenantNumberStatus";
 export * from "./tenantPhoneNumberItem";
 export * from "./tenantSettings";
+export * from "./tenantSettingsEngagementMode";
 export * from "./tenantUserInfo";
 export * from "./tenantUserItem";
 export * from "./tenantUsersResponse";

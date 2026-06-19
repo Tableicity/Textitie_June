@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable, contactsTable, tenantsTable } from "@workspace/db";
-import { getSender } from "../lib/senders";
+import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable, contactsTable } from "@workspace/db";
+import { sendConversationReply } from "../lib/outboundReply";
 import { eventBus } from "../lib/eventBus";
 import { eq, and, desc, isNull, ilike, or, gte, lte, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -8,11 +8,9 @@ import { requireTenantAuth } from "../middleware/tenantAuth";
 import { pickAgent } from "../lib/routing";
 import type { RoutingStrategy } from "../lib/routing";
 import { recordMessageUsage } from "../lib/stripe-stub";
-import { checkOutboundCompliance } from "../lib/compliance";
 import { recordAudit } from "../lib/audit";
 import { enqueueSync } from "../lib/integrations/syncWorker";
 import { maybeEnqueueSurveyForClose } from "../lib/surveyDispatcher";
-import { guardOutboundFrom } from "../lib/outboundFrom";
 
 const router = Router();
 
@@ -496,101 +494,52 @@ router.post(
       }
 
       const conv = convRows[0];
-      const compliance = await checkOutboundCompliance(tenantId, req.tenantUser!.tenantSlug, conv.contactPhone);
-      if (!compliance.ok) {
-        res.status(422).json({ error: compliance.message, reason: compliance.reason });
-        return;
-      }
 
-      // Resolve From: prefer department.phone_number, fall back to tenant.phone_number,
-      // then global SAMA_FROM_NUMBER (handled inside TwilioSender).
-      let fromOverride: string | null = null;
-      if (conv.departmentId) {
-        const dept = await db
-          .select({ phoneNumber: departmentsTable.phoneNumber })
-          .from(departmentsTable)
-          .where(
-            and(
-              eq(departmentsTable.id, conv.departmentId),
-              eq(departmentsTable.tenantId, tenantId),
-            ),
-          )
-          .limit(1);
-        fromOverride = dept[0]?.phoneNumber ?? null;
-      }
-      if (!fromOverride) {
-        const tenant = await db
-          .select({ phoneNumber: tenantsTable.phoneNumber })
-          .from(tenantsTable)
-          .where(eq(tenantsTable.id, tenantId))
-          .limit(1);
-        fromOverride = tenant[0]?.phoneNumber ?? null;
-      }
-
-      // Guardrail: refuse loudly if this account has no number of its own
-      // rather than silently borrowing the global default (which belongs to a
-      // real tenant and splits replies into that tenant's inbox).
-      const fromGuard = guardOutboundFrom({ tenantId, fromOverride });
-      if (!fromGuard.ok) {
-        res.status(422).json({ error: fromGuard.message, reason: fromGuard.reason });
-        return;
-      }
-
-      // Persist-first: insert as 'pending' BEFORE calling carrier so a crash
-      // between Twilio acceptance and DB write can never leave a delivered
-      // message unrecorded. Reconciliation can sweep stale 'pending' rows.
-      const now = new Date();
-      const [pendingRow] = await db
-        .insert(messagesTable)
-        .values({
-          conversationId,
-          direction: "outbound",
-          body: body.trim(),
-          senderName: req.tenantUser!.email,
-          read: true,
-          status: "pending",
-        })
-        .returning();
-
-      const sender = getSender();
-      const sendResult = await sender.send({
-        to: conv.contactPhone,
-        body: body.trim(),
+      // Compliance, From-resolution, persist-first, send, and status update all
+      // live in the shared helper so the agent reply path and the B4 auto-send
+      // path can never drift. HTTP status mapping stays here.
+      const result = await sendConversationReply({
         tenantId,
+        tenantSlug: req.tenantUser!.tenantSlug,
+        conversationId,
+        contactPhone: conv.contactPhone,
+        departmentId: conv.departmentId,
+        body: body.trim(),
+        senderName: req.tenantUser!.email,
         conductorAuthorized: true,
-        fromOverride,
-        // Pass the row id so Twilio's status callback can update by PK and
-        // never lose a delivery update to the externalId race.
-        messageId: pendingRow.id,
       });
 
-      const finalStatus = sendResult.status === "sent" ? "sent" : "failed";
-      const [updatedRow] = await db
-        .update(messagesTable)
-        .set({
-          status: finalStatus,
-          externalId: sendResult.externalId ?? null,
-          errorMessage: sendResult.status === "sent" ? null : sendResult.responseSummary,
-        })
-        .where(eq(messagesTable.id, pendingRow.id))
-        .returning();
+      if (!result.ok) {
+        if (result.reason === "compliance") {
+          res.status(422).json({ error: result.errorMessage, reason: result.complianceReason });
+          return;
+        }
+        // no_sending_number | number_not_owned
+        res.status(422).json({ error: result.errorMessage, reason: result.reason });
+        return;
+      }
 
-      if (sendResult.status !== "sent") {
+      if (result.status !== "sent") {
         logger.warn(
-          { conversationId, tenantId, messageId: pendingRow.id, summary: sendResult.responseSummary },
+          {
+            conversationId,
+            tenantId,
+            messageId: result.messageRow.id,
+            summary: result.sendSummary,
+          },
           "Outbound send failed; message persisted with status=failed",
         );
         res.status(502).json({
           error: "Carrier rejected the message",
-          detail: sendResult.responseSummary,
-          message: updatedRow,
+          detail: result.sendSummary,
+          message: result.messageRow,
         });
         return;
       }
 
       await db
         .update(conversationsTable)
-        .set({ lastMessageAt: now })
+        .set({ lastMessageAt: new Date() })
         .where(eq(conversationsTable.id, conversationId));
 
       recordMessageUsage(tenantId, req.tenantUser!.tenantSlug).catch((usageErr) => {
@@ -603,7 +552,7 @@ router.post(
         direction: "outbound",
       });
 
-      res.status(201).json(updatedRow);
+      res.status(201).json(result.messageRow);
     } catch (err) {
       logger.error({ err }, "Send message error");
       res.status(500).json({ error: "Internal server error" });

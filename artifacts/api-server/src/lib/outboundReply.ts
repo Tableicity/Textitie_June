@@ -1,0 +1,140 @@
+import { db, messagesTable, departmentsTable, tenantsTable } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
+import { checkOutboundCompliance } from "./compliance";
+import { guardOutboundFrom } from "./outboundFrom";
+import { getSender } from "./senders";
+import type { SendStatus } from "./senders/types";
+
+type MessageRow = typeof messagesTable.$inferSelect;
+
+export type OutboundReplyResult =
+  | {
+      ok: true;
+      messageRow: MessageRow;
+      status: SendStatus;
+      sendSummary: string | null;
+    }
+  | {
+      ok: false;
+      reason: "compliance" | "no_sending_number" | "number_not_owned";
+      errorMessage: string;
+      complianceReason?: string;
+    };
+
+/**
+ * Single source of truth for sending an outbound SMS into an existing
+ * conversation, persist-first. Used by the agent reply route AND the B4 gated
+ * auto-send path so the two can never drift.
+ *
+ * Flow (mirrors the original conversations.ts logic exactly):
+ *  1. (optional) checkOutboundCompliance — run at SEND time to avoid TOCTOU.
+ *  2. Resolve the From number: department.phone_number ⇒ tenant.phone_number.
+ *  3. guardOutboundFrom — fail closed if the tenant owns no sending number
+ *     rather than silently borrowing the global default (another tenant's
+ *     number), which would split replies into the wrong inbox.
+ *  4. Insert the outbound row as 'pending' BEFORE calling the carrier so a crash
+ *     mid-send can never leave a delivered message unrecorded.
+ *  5. send() via the active sender, then update the row to sent/failed.
+ *
+ * Callers own conversation lookup, lastMessageAt bumps, usage metering,
+ * eventBus publishes, Chatwoot mirroring, and HTTP status mapping.
+ */
+export async function sendConversationReply(opts: {
+  tenantId: number;
+  tenantSlug: string;
+  conversationId: number;
+  contactPhone: string;
+  departmentId: number | null;
+  body: string;
+  senderName: string;
+  conductorAuthorized: boolean;
+  /** Defaults to true. Set false only if the caller just ran the check. */
+  runComplianceCheck?: boolean;
+}): Promise<OutboundReplyResult> {
+  const {
+    tenantId,
+    tenantSlug,
+    conversationId,
+    contactPhone,
+    departmentId,
+    body,
+    senderName,
+    conductorAuthorized,
+  } = opts;
+  const runCompliance = opts.runComplianceCheck ?? true;
+
+  if (runCompliance) {
+    const compliance = await checkOutboundCompliance(tenantId, tenantSlug, contactPhone);
+    if (!compliance.ok) {
+      return {
+        ok: false,
+        reason: "compliance",
+        errorMessage: compliance.message,
+        complianceReason: compliance.reason,
+      };
+    }
+  }
+
+  let fromOverride: string | null = null;
+  if (departmentId) {
+    const dept = await db
+      .select({ phoneNumber: departmentsTable.phoneNumber })
+      .from(departmentsTable)
+      .where(and(eq(departmentsTable.id, departmentId), eq(departmentsTable.tenantId, tenantId)))
+      .limit(1);
+    fromOverride = dept[0]?.phoneNumber ?? null;
+  }
+  if (!fromOverride) {
+    const tenant = await db
+      .select({ phoneNumber: tenantsTable.phoneNumber })
+      .from(tenantsTable)
+      .where(eq(tenantsTable.id, tenantId))
+      .limit(1);
+    fromOverride = tenant[0]?.phoneNumber ?? null;
+  }
+
+  const fromGuard = guardOutboundFrom({ tenantId, fromOverride });
+  if (!fromGuard.ok) {
+    return { ok: false, reason: fromGuard.reason, errorMessage: fromGuard.message };
+  }
+
+  const [pendingRow] = await db
+    .insert(messagesTable)
+    .values({
+      conversationId,
+      direction: "outbound",
+      body,
+      senderName,
+      read: true,
+      status: "pending",
+    })
+    .returning();
+
+  const sender = getSender();
+  const sendResult = await sender.send({
+    to: contactPhone,
+    body,
+    tenantId,
+    conductorAuthorized,
+    fromOverride,
+    messageId: pendingRow.id,
+  });
+
+  const finalStatus = sendResult.status === "sent" ? "sent" : "failed";
+  const [updatedRow] = await db
+    .update(messagesTable)
+    .set({
+      status: finalStatus,
+      externalId: sendResult.externalId ?? null,
+      errorMessage: sendResult.status === "sent" ? null : sendResult.responseSummary,
+    })
+    .where(eq(messagesTable.id, pendingRow.id))
+    .returning();
+
+  return {
+    ok: true,
+    messageRow: updatedRow,
+    status: sendResult.status,
+    sendSummary: sendResult.responseSummary,
+  };
+}
