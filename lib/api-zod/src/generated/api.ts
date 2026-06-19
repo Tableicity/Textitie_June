@@ -2197,6 +2197,7 @@ export const ListAbsorbedFactsResponseItem = zod.object({
   tenantId: zod.number(),
   sessionId: zod.number().nullable(),
   documentId: zod.number().nullable(),
+  messageId: zod.number().nullable(),
   sourceLabel: zod.string(),
   statement: zod.string(),
   status: zod.enum(["draft", "published", "rejected"]),
@@ -2224,11 +2225,50 @@ export const UpdateAbsorbedFactStatusResponse = zod.object({
   tenantId: zod.number(),
   sessionId: zod.number().nullable(),
   documentId: zod.number().nullable(),
+  messageId: zod.number().nullable(),
   sourceLabel: zod.string(),
   statement: zod.string(),
   status: zod.enum(["draft", "published", "rejected"]),
   tokenCount: zod.number(),
   createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Absorb a Professor answer into draft knowledge facts (Conductor-only)
+ */
+export const AbsorbProfessorAnswerParams = zod.object({
+  tenantId: zod.coerce.number(),
+  sessionId: zod.coerce.number(),
+  messageId: zod.coerce.number(),
+});
+
+export const AbsorbProfessorAnswerResponse = zod.object({
+  absorbedCount: zod.number(),
+  facts: zod.array(
+    zod.object({
+      id: zod.number(),
+      tenantId: zod.number(),
+      sessionId: zod.number().nullable(),
+      documentId: zod.number().nullable(),
+      messageId: zod.number().nullable(),
+      sourceLabel: zod.string(),
+      statement: zod.string(),
+      status: zod.enum(["draft", "published", "rejected"]),
+      tokenCount: zod.number(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  session: zod.object({
+    id: zod.number(),
+    tenantId: zod.number(),
+    title: zod.string(),
+    status: zod.enum(["active", "archived", "pushed"]),
+    model: zod.string(),
+    tokensUsed: zod.number(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  }),
+  stubbed: zod.boolean(),
 });
 
 /**

@@ -1341,6 +1341,8 @@ export interface AbsorbedFact {
   sessionId: number | null;
   /** @nullable */
   documentId: number | null;
+  /** @nullable */
+  messageId: number | null;
   sourceLabel: string;
   statement: string;
   status: AbsorbedFactStatus;
@@ -1387,6 +1389,13 @@ export interface LibraryIngestResult {
   document: KnowledgeDocument;
   absorbedCount: number;
   session?: ProfessorSession;
+}
+
+export interface AbsorbAnswerResult {
+  absorbedCount: number;
+  facts: AbsorbedFact[];
+  session: ProfessorSession;
+  stubbed: boolean;
 }
 
 export interface ProfessorChatResult {

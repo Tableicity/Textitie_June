@@ -173,6 +173,10 @@ export const absorbedFactsTable = pgTable(
       { onDelete: "set null" },
     ),
     documentId: integer("document_id"),
+    // Set when the fact was absorbed from a Professor chat answer (vs. an
+    // attached source document). Lets the UI mark an answer as absorbed and
+    // keeps re-absorbing the same answer idempotent.
+    messageId: integer("message_id"),
     sourceLabel: text("source_label").notNull(),
     statement: text("statement").notNull(),
     // "draft" | "published" | "rejected"

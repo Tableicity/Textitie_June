@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AbsorbAnswerResult,
   AbsorbedFact,
   AbsorbedFactStatusInput,
   AddDepartmentMemberInput,
@@ -9849,6 +9850,104 @@ export const useUpdateAbsorbedFactStatus = <
   TContext
 > => {
   return useMutation(getUpdateAbsorbedFactStatusMutationOptions(options));
+};
+
+/**
+ * @summary Absorb a Professor answer into draft knowledge facts (Conductor-only)
+ */
+export const getAbsorbProfessorAnswerUrl = (
+  tenantId: number,
+  sessionId: number,
+  messageId: number,
+) => {
+  return `/api/tenants/${tenantId}/professor/sessions/${sessionId}/messages/${messageId}/absorb`;
+};
+
+export const absorbProfessorAnswer = async (
+  tenantId: number,
+  sessionId: number,
+  messageId: number,
+  options?: RequestInit,
+): Promise<AbsorbAnswerResult> => {
+  return customFetch<AbsorbAnswerResult>(
+    getAbsorbProfessorAnswerUrl(tenantId, sessionId, messageId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getAbsorbProfessorAnswerMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof absorbProfessorAnswer>>,
+    TError,
+    { tenantId: number; sessionId: number; messageId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof absorbProfessorAnswer>>,
+  TError,
+  { tenantId: number; sessionId: number; messageId: number },
+  TContext
+> => {
+  const mutationKey = ["absorbProfessorAnswer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof absorbProfessorAnswer>>,
+    { tenantId: number; sessionId: number; messageId: number }
+  > = (props) => {
+    const { tenantId, sessionId, messageId } = props ?? {};
+
+    return absorbProfessorAnswer(
+      tenantId,
+      sessionId,
+      messageId,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AbsorbProfessorAnswerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof absorbProfessorAnswer>>
+>;
+
+export type AbsorbProfessorAnswerMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Absorb a Professor answer into draft knowledge facts (Conductor-only)
+ */
+export const useAbsorbProfessorAnswer = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof absorbProfessorAnswer>>,
+    TError,
+    { tenantId: number; sessionId: number; messageId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof absorbProfessorAnswer>>,
+  TError,
+  { tenantId: number; sessionId: number; messageId: number },
+  TContext
+> => {
+  return useMutation(getAbsorbProfessorAnswerMutationOptions(options));
 };
 
 /**

@@ -16,6 +16,7 @@ import {
   useGetCurrentClassroom,
   getGetCurrentClassroomQueryKey,
   usePushToClassroom,
+  useAbsorbProfessorAnswer,
   useAddLibraryUrl,
   useAddLibraryText,
 } from "@workspace/api-client-react";
@@ -152,9 +153,22 @@ export default function Professor() {
   const archiveSession = useArchiveProfessorSession();
   const updateFact = useUpdateAbsorbedFactStatus();
   const pushToClassroom = usePushToClassroom();
+  const absorbAnswer = useAbsorbProfessorAnswer();
 
   const acceptedCount = useMemo(
     () => (absorbed ?? []).filter((f) => f.status === "published").length,
+    [absorbed],
+  );
+
+  // Which Professor answers have already been turned into absorbed facts, so
+  // each answer can show its absorbed state instead of re-offering the action.
+  const absorbedMsgIds = useMemo(
+    () =>
+      new Set(
+        (absorbed ?? [])
+          .map((f) => f.messageId)
+          .filter((id): id is number => id != null),
+      ),
     [absorbed],
   );
 
@@ -335,6 +349,37 @@ export default function Professor() {
         onSuccess: () =>
           queryClient.invalidateQueries({
             queryKey: getListAbsorbedFactsQueryKey(tenantId, selectedId),
+          }),
+      },
+    );
+  }
+
+  const absorbingId =
+    absorbAnswer.isPending && absorbAnswer.variables
+      ? absorbAnswer.variables.messageId
+      : null;
+
+  function handleAbsorbAnswer(messageId: number) {
+    if (!selectedId) return;
+    absorbAnswer.mutate(
+      { tenantId, sessionId: selectedId, messageId },
+      {
+        onSuccess: (res) => {
+          invalidateSession(selectedId);
+          toast({
+            title: res.stubbed ? "Professor offline" : "Answer absorbed",
+            description: res.stubbed
+              ? "Set the GROK_KEYS secret to extract facts from answers."
+              : res.absorbedCount > 0
+                ? `${res.absorbedCount} fact${res.absorbedCount === 1 ? "" : "s"} added below — accept the ones you want, then Push to Classroom.`
+                : "No distinct facts were found in this answer.",
+          });
+        },
+        onError: (e: any) =>
+          toast({
+            title: "Could not absorb answer",
+            description: e?.message ?? "Unknown error",
+            variant: "destructive",
           }),
       },
     );
@@ -665,6 +710,10 @@ export default function Professor() {
                 role={m.role}
                 content={m.content}
                 professorName={professorName}
+                canAbsorb={m.role === "assistant"}
+                absorbed={absorbedMsgIds.has(m.id)}
+                absorbing={absorbingId === m.id}
+                onAbsorb={() => handleAbsorbAnswer(m.id)}
               />
             ))}
 
@@ -769,13 +818,22 @@ function MessageBubble({
   content,
   professorName,
   streaming,
+  canAbsorb,
+  absorbed,
+  absorbing,
+  onAbsorb,
 }: {
   role: "user" | "assistant" | "system";
   content: string;
   professorName: string;
   streaming?: boolean;
+  canAbsorb?: boolean;
+  absorbed?: boolean;
+  absorbing?: boolean;
+  onAbsorb?: () => void;
 }) {
   const isUser = role === "user";
+  const showAbsorb = !!canAbsorb && !streaming && content.trim().length > 0;
   return (
     <div className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}>
       {!isUser && (
@@ -802,6 +860,38 @@ function MessageBubble({
             </span>
           )}
         </div>
+        {showAbsorb && (
+          <button
+            type="button"
+            onClick={absorbed ? undefined : onAbsorb}
+            disabled={absorbed || absorbing}
+            title={
+              absorbed
+                ? "This answer has been absorbed into knowledge"
+                : "Extract facts from this answer into absorbed knowledge"
+            }
+            className={cn(
+              "mt-1.5 inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+              absorbed
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500 cursor-default"
+                : "border-primary/40 text-primary hover:bg-primary/10",
+            )}
+          >
+            {absorbed ? (
+              <>
+                <Check size={12} /> Absorbed
+              </>
+            ) : absorbing ? (
+              <>
+                <Loader2 size={12} className="animate-spin" /> Absorbing…
+              </>
+            ) : (
+              <>
+                <Sparkles size={12} /> Absorb this answer
+              </>
+            )}
+          </button>
+        )}
       </div>
       {isUser && (
         <div className="h-8 w-8 shrink-0 rounded-full bg-muted flex items-center justify-center">

@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import multer from "multer";
 import {
   db,
@@ -864,6 +864,144 @@ router.post(
       .where(eq(absorbedFactsTable.id, factId))
       .returning();
     res.json(row ?? fact);
+  },
+);
+
+// Turn a Professor chat ANSWER into draft absorbed facts. This is the bridge
+// that lets the external knowledge the Professor brings in conversation flow to
+// the Classroom — not just facts extracted from attached sources. Idempotent
+// per message: re-absorbing the same answer returns its existing facts.
+router.post(
+  "/tenants/:tenantId/professor/sessions/:sessionId/messages/:messageId/absorb",
+  async (req: Request, res: Response): Promise<void> => {
+    const tenantId = parseId(req.params.tenantId);
+    const sessionId = parseId(req.params.sessionId);
+    const messageId = parseId(req.params.messageId);
+    if (tenantId == null || sessionId == null || messageId == null) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+    const session = await getSession(tenantId, sessionId);
+    if (!session) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+    if (session.status !== "active") {
+      res.status(400).json({ error: "Only active sessions can absorb knowledge." });
+      return;
+    }
+    const [message] = await db
+      .select()
+      .from(professorMessagesTable)
+      .where(
+        and(
+          eq(professorMessagesTable.id, messageId),
+          eq(professorMessagesTable.sessionId, sessionId),
+          eq(professorMessagesTable.tenantId, tenantId),
+        ),
+      );
+    if (!message) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+    if (message.role !== "assistant") {
+      res.status(400).json({ error: "Only the Professor's answers can be absorbed." });
+      return;
+    }
+
+    // Idempotent: if this answer was already absorbed, return its facts as-is
+    // instead of re-extracting (and duplicating) them.
+    const existing = await db
+      .select()
+      .from(absorbedFactsTable)
+      .where(
+        and(
+          eq(absorbedFactsTable.tenantId, tenantId),
+          eq(absorbedFactsTable.messageId, messageId),
+        ),
+      )
+      .orderBy(desc(absorbedFactsTable.createdAt));
+    if (existing.length > 0) {
+      res.json({
+        absorbedCount: existing.length,
+        facts: existing,
+        session: toSessionApi(session),
+        stubbed: false,
+      });
+      return;
+    }
+
+    const online = grokClient() != null;
+    let facts: string[];
+    let tokensUsed: number;
+    try {
+      const out = await extractFacts(message.content, "Professor answer");
+      facts = out.facts;
+      tokensUsed = out.tokensUsed;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      req.log.error({ err: msg, messageId }, "Absorb answer failed");
+      res.status(502).json({ error: `Could not absorb answer: ${msg}` });
+      return;
+    }
+
+    // Serialize the check-then-insert per message so two concurrent absorb
+    // calls for the same answer can't both insert (duplicate facts). The slow
+    // Grok extraction above runs OUTSIDE this lock; the advisory lock guards
+    // only the short critical section and releases at transaction end.
+    const { facts: resultFacts, session: resultSession } = await db.transaction(
+      async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(${tenantId}, ${messageId})`,
+        );
+        const raced = await tx
+          .select()
+          .from(absorbedFactsTable)
+          .where(
+            and(
+              eq(absorbedFactsTable.tenantId, tenantId),
+              eq(absorbedFactsTable.messageId, messageId),
+            ),
+          )
+          .orderBy(desc(absorbedFactsTable.createdAt));
+        if (raced.length > 0) {
+          // Another absorb of this answer won the race; return its facts and
+          // don't double-count this (wasted) extraction's tokens.
+          return { facts: raced, session };
+        }
+        let inserted: AbsorbedFact[] = [];
+        if (facts.length > 0) {
+          inserted = await tx
+            .insert(absorbedFactsTable)
+            .values(
+              facts.map((statement) => ({
+                tenantId,
+                sessionId,
+                messageId,
+                documentId: null,
+                sourceLabel: "Professor answer",
+                statement,
+                status: "draft",
+                tokenCount: estimateTokens(statement),
+              })),
+            )
+            .returning();
+        }
+        const [updatedSession] = await tx
+          .update(professorSessionsTable)
+          .set({ tokensUsed: session.tokensUsed + tokensUsed })
+          .where(eq(professorSessionsTable.id, sessionId))
+          .returning();
+        return { facts: inserted, session: updatedSession ?? session };
+      },
+    );
+
+    res.json({
+      absorbedCount: resultFacts.length,
+      facts: resultFacts,
+      session: toSessionApi(resultSession),
+      stubbed: !online,
+    });
   },
 );
 

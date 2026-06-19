@@ -14,6 +14,8 @@ export interface AbsorbedFact {
   sessionId: number | null;
   /** @nullable */
   documentId: number | null;
+  /** @nullable */
+  messageId: number | null;
   sourceLabel: string;
   statement: string;
   status: AbsorbedFactStatus;
