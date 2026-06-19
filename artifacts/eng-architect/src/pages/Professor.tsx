@@ -132,10 +132,18 @@ export default function Professor() {
     () => allSessions.filter((s) => s.status === "active"),
     [allSessions],
   );
-  // Everything not active (archived, or a future "pushed" status) is a prior
-  // session the Conductor can reopen read-only.
-  const priorSessions = useMemo(
-    () => allSessions.filter((s) => s.status !== "active"),
+  // Prior sessions the Conductor can reopen read-only: "archived" (manually
+  // archived) and "pushed" (consumed by a Classroom publish). The pushed bucket
+  // is a catch-all for any non-active/non-archived status so none are hidden.
+  const archivedSessions = useMemo(
+    () => allSessions.filter((s) => s.status === "archived"),
+    [allSessions],
+  );
+  const pushedSessions = useMemo(
+    () =>
+      allSessions.filter(
+        (s) => s.status !== "active" && s.status !== "archived",
+      ),
     [allSessions],
   );
 
@@ -241,7 +249,7 @@ export default function Professor() {
 
   async function handleSend() {
     const content = input.trim();
-    if (!content || !selectedId || isStreaming) return;
+    if (!content || !selectedId || isReadOnly || isStreaming) return;
     setInput("");
     setPendingUser(content);
     setStreamText("");
@@ -358,6 +366,7 @@ export default function Professor() {
   }
 
   function handlePush() {
+    if (isReadOnly) return;
     pushToClassroom.mutate(
       { tenantId, data: {} },
       {
@@ -458,6 +467,10 @@ export default function Professor() {
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (isReadOnly) {
+      e.target.value = "";
+      return;
+    }
     setUploading(true);
     try {
       const form = new FormData();
@@ -601,7 +614,7 @@ export default function Professor() {
                   size="sm"
                   className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
                   onClick={handlePush}
-                  disabled={pushToClassroom.isPending}
+                  disabled={pushToClassroom.isPending || isReadOnly}
                 >
                   <Upload size={14} />
                   {pushToClassroom.isPending ? "Pushing..." : "Push to Classroom"}
@@ -667,13 +680,31 @@ export default function Professor() {
                 ))}
               </div>
 
-              {priorSessions.length > 0 && (
+              {archivedSessions.length > 0 && (
                 <>
                   <div className="px-3 pt-4 pb-2 text-[11px] uppercase tracking-widest text-muted-foreground">
-                    Archived ({priorSessions.length})
+                    Archived ({archivedSessions.length})
                   </div>
                   <div className="px-2 space-y-1">
-                    {priorSessions.map((s) => (
+                    {archivedSessions.map((s) => (
+                      <SessionRow
+                        key={s.id}
+                        session={s}
+                        selected={s.id === selectedId}
+                        onSelect={setSelectedId}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {pushedSessions.length > 0 && (
+                <>
+                  <div className="px-3 pt-4 pb-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+                    Pushed ({pushedSessions.length})
+                  </div>
+                  <div className="px-2 space-y-1">
+                    {pushedSessions.map((s) => (
                       <SessionRow
                         key={s.id}
                         session={s}
@@ -694,8 +725,8 @@ export default function Professor() {
             <div className="m-3 mb-0 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-700 dark:text-amber-500">
               <Lock size={13} className="shrink-0" />
               <span>
-                This session is archived — read-only. Start a new session to
-                curate new knowledge.
+                This session is {selectedSession?.status} — read-only. Start a
+                new session to curate new knowledge.
               </span>
             </div>
           )}
@@ -1081,6 +1112,7 @@ function SessionRow({
       tabIndex={0}
       onClick={() => onSelect(session.id)}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onSelect(session.id);
@@ -1156,6 +1188,10 @@ function LibraryAddPopover({
   const addText = useAddLibraryText();
   const busy = addUrl.isPending || addText.isPending;
 
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
   function reset() {
     setUrl("");
     setText("");
@@ -1173,6 +1209,7 @@ function LibraryAddPopover({
   }
 
   function submit() {
+    if (disabled) return;
     if (mode === "url") {
       if (!url.trim()) return;
       addUrl.mutate(
