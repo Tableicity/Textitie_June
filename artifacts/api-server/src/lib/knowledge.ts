@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, type SQL } from "drizzle-orm";
 import {
   db,
   knowledgeDocumentsTable,
@@ -355,25 +355,47 @@ export async function retrieveLibraryContext(
   tenantId: number,
   query: string,
   limit = 8,
-): Promise<{ text: string; documentId: number }[]> {
+): Promise<
+  { text: string; documentId: number; title: string; sourceUrl: string | null }[]
+> {
   const q = query.trim();
   if (!q) return [];
-  const rows = await db
-    .select({
-      text: knowledgeChunksTable.text,
-      documentId: knowledgeChunksTable.documentId,
-    })
-    .from(knowledgeChunksTable)
-    .where(
-      and(
-        eq(knowledgeChunksTable.tenantId, tenantId),
-        sql`to_tsvector('english', ${knowledgeChunksTable.text}) @@ websearch_to_tsquery('english', ${q})`,
-      ),
-    )
-    .orderBy(
-      sql`ts_rank(to_tsvector('english', ${knowledgeChunksTable.text}), websearch_to_tsquery('english', ${q})) DESC`,
-    )
-    .limit(limit);
+
+  const runSearch = (tsquery: SQL) =>
+    db
+      .select({
+        text: knowledgeChunksTable.text,
+        documentId: knowledgeChunksTable.documentId,
+        title: knowledgeDocumentsTable.title,
+        sourceUrl: knowledgeDocumentsTable.sourceUrl,
+      })
+      .from(knowledgeChunksTable)
+      .innerJoin(
+        knowledgeDocumentsTable,
+        eq(knowledgeChunksTable.documentId, knowledgeDocumentsTable.id),
+      )
+      .where(
+        and(
+          eq(knowledgeChunksTable.tenantId, tenantId),
+          sql`to_tsvector('english', ${knowledgeChunksTable.text}) @@ ${tsquery}`,
+        ),
+      )
+      .orderBy(
+        sql`ts_rank(to_tsvector('english', ${knowledgeChunksTable.text}), ${tsquery}) DESC`,
+      )
+      .limit(limit);
+
+  // 1) Precise: websearch_to_tsquery ANDs every lexeme — great for tight
+  //    queries. 2) Fallback: the same normalized lexemes OR-ed together, so
+  //    conversational phrasing ("tell me in 250 words why ...") can't zero out
+  //    the match just because filler words ("250", "words") aren't in any
+  //    source. We re-rank by ts_rank either way, so the best chunks float up.
+  const precise = sql`websearch_to_tsquery('english', ${q})`;
+  let rows = await runSearch(precise);
+  if (rows.length === 0) {
+    const loose = sql`replace(websearch_to_tsquery('english', ${q})::text, '&', '|')::tsquery`;
+    rows = await runSearch(loose);
+  }
   return rows;
 }
 
@@ -487,14 +509,24 @@ export async function professorReply(opts: {
       stubbed: true,
     };
   }
-  const system = `You are "the Professor", a niche subject-matter expert helping a human curate a per-tenant knowledge base for "${opts.tenantName}". You absorb provided sources and answer the human's questions to refine, organize, and verify knowledge that lightweight "student" assistants will later use to answer customer messages. Be substantive but concise. Ground answers in the LIBRARY CONTEXT when relevant; if the context is empty or insufficient, say so and ask for the source.
+  const system = `You are "the Professor" — a brilliant, well-read subject-matter expert working WITH a human curator to build and sharpen the knowledge base for "${opts.tenantName}". This is a collaborative, two-way learning session, not a lookup service.
+
+You draw on two sources of knowledge:
+1. LIBRARY CONTEXT (below): the tenant's own curated sources. Treat these as authoritative for anything specific to "${opts.tenantName}" — their policies, pricing, procedures, numbers, and voice. Prefer them over your own assumptions and cite them when you use them.
+2. Your own deep expertise: you genuinely know business communication, SMS / A2P 10DLC compliance, customer support, marketing, and the tenant's domain. When the Library is empty, thin, or off-topic, DO NOT refuse and DO NOT ask the human to paste a source instead of thinking — answer fully and substantively from what you know.
+
+Every turn:
+- Engage the actual question and give a substantive, well-structured answer (respect any length the curator asks for).
+- Move the curation forward: note what the Library is missing or where it is unverified, ask one sharp clarifying question, and propose concrete, atomic facts worth absorbing so the Students can reuse them later.
+- Be explicit about provenance: separate what is grounded in the tenant's Library (cite it) from what is your own general expertise (offer to absorb it if the curator agrees).
+- Never reply with "no library context available." Your intelligence leads; the Library augments you, it does not gate you.
 
 LIBRARY CONTEXT:
-${opts.libraryContext || "(no sources retrieved for this query)"}`;
+${opts.libraryContext || "(No tenant sources matched this turn — answer from your own expertise and help the curator decide what is worth capturing.)"}`;
   const resp = await oai.chat.completions.create({
     model: PROFESSOR_MODEL,
     temperature: 0.3,
-    max_tokens: 1000,
+    max_tokens: 1500,
     messages: [{ role: "system", content: system }, ...opts.history],
   });
   const content = resp.choices[0]?.message?.content?.trim() ?? "";

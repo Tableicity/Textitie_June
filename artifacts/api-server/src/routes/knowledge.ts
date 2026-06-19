@@ -152,7 +152,14 @@ async function buildTurnContext(session: ProfessorSession, userContent: string) 
     session.tenantId,
     userContent,
   );
-  const libraryContext = contextRows.map((r) => r.text).join("\n\n---\n\n");
+  // Label each chunk with its source so the Professor can actually cite the
+  // tenant's Library (the prompt asks it to attribute Library-grounded facts).
+  const libraryContext = contextRows
+    .map((r) => {
+      const src = r.sourceUrl ? `${r.title} — ${r.sourceUrl}` : r.title;
+      return `[Source: ${src}]\n${r.text}`;
+    })
+    .join("\n\n---\n\n");
   return {
     tenantName: tenant?.name ?? "this tenant",
     libraryContext,
@@ -160,10 +167,20 @@ async function buildTurnContext(session: ProfessorSession, userContent: string) 
 }
 
 function professorSystemPrompt(tenantName: string, libraryContext: string) {
-  return `You are "the Professor", a niche subject-matter expert helping a human curate a per-tenant knowledge base for "${tenantName}". You absorb provided sources and answer the human's questions to refine, organize, and verify knowledge that lightweight "student" assistants will later use to answer customer messages. Be substantive but concise. Ground answers in the LIBRARY CONTEXT when relevant; if the context is empty or insufficient, say so and ask for the source.
+  return `You are "the Professor" — a brilliant, well-read subject-matter expert working WITH a human curator to build and sharpen the knowledge base for "${tenantName}". This is a collaborative, two-way learning session, not a lookup service.
+
+You draw on two sources of knowledge:
+1. LIBRARY CONTEXT (below): the tenant's own curated sources. Treat these as authoritative for anything specific to "${tenantName}" — their policies, pricing, procedures, numbers, and voice. Prefer them over your own assumptions and cite them when you use them.
+2. Your own deep expertise: you genuinely know business communication, SMS / A2P 10DLC compliance, customer support, marketing, and the tenant's domain. When the Library is empty, thin, or off-topic, DO NOT refuse and DO NOT ask the human to paste a source instead of thinking — answer fully and substantively from what you know.
+
+Every turn:
+- Engage the actual question and give a substantive, well-structured answer (respect any length the curator asks for).
+- Move the curation forward: note what the Library is missing or where it is unverified, ask one sharp clarifying question, and propose concrete, atomic facts worth absorbing so the Students can reuse them later.
+- Be explicit about provenance: separate what is grounded in the tenant's Library (cite it) from what is your own general expertise (offer to absorb it if the curator agrees).
+- Never reply with "no library context available." Your intelligence leads; the Library augments you, it does not gate you.
 
 LIBRARY CONTEXT:
-${libraryContext || "(no sources retrieved for this query)"}`;
+${libraryContext || "(No tenant sources matched this turn — answer from your own expertise and help the curator decide what is worth capturing.)"}`;
 }
 
 // --- Library -----------------------------------------------------------------
@@ -607,7 +624,7 @@ router.post(
         const resp = await oai.chat.completions.create({
           model: PROFESSOR_MODEL,
           temperature: 0.3,
-          max_tokens: 1000,
+          max_tokens: 1500,
           messages: [
             {
               role: "system",
@@ -732,7 +749,7 @@ router.post(
         const stream = await oai.chat.completions.create({
           model: PROFESSOR_MODEL,
           temperature: 0.3,
-          max_tokens: 1000,
+          max_tokens: 1500,
           stream: true,
           stream_options: { include_usage: true },
           messages: [
