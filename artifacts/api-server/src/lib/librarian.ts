@@ -1,6 +1,12 @@
 import { grokClient, PROFESSOR_MODEL } from "./grokClient";
 import { normalizeCategory, type FactCategory } from "./knowledge";
 import { logger } from "./logger";
+import { trigrams, trigramSimilarity } from "./textSimilarity";
+
+// Re-exported for existing call sites and unit tests that import the trigram
+// helpers from the Librarian. The implementations now live in ./textSimilarity
+// so knowledge.ts can reuse them without a circular import.
+export { trigrams, trigramSimilarity };
 
 /**
  * The Librarian — push-time knowledge hygiene.
@@ -86,26 +92,9 @@ const DEFAULTS: Required<LibrarianOptions> = {
 const SENSITIVE_CATEGORIES = new Set<FactCategory>(["pricing", "compliance"]);
 
 // ---------------------------------------------------------------------------
-// Pure helpers (exported for unit tests).
+// Pure helpers (exported for unit tests). trigrams/trigramSimilarity live in
+// ./textSimilarity and are re-exported above.
 // ---------------------------------------------------------------------------
-
-/** pg_trgm-style trigram set: lowercased, non-alphanumerics collapsed, padded. */
-export function trigrams(input: string): Set<string> {
-  const norm =
-    "  " + input.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() + " ";
-  const set = new Set<string>();
-  for (let i = 0; i + 3 <= norm.length; i++) set.add(norm.slice(i, i + 3));
-  return set;
-}
-
-/** Jaccard similarity of two trigram sets (0..1). */
-export function trigramSimilarity(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let inter = 0;
-  for (const t of a) if (b.has(t)) inter++;
-  const union = a.size + b.size - inter;
-  return union === 0 ? 0 : inter / union;
-}
 
 // Generic words that carry no subject identity in a pricing/compliance fact —
 // excluded so facts aren't clustered just because they both say "plan"/"price".

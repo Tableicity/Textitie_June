@@ -14,9 +14,19 @@ import {
   classifyQueryCategory,
   normalizeCategory,
   hasUnresolvedConflicts,
+  retrieveLibraryContext,
+  professorEscalate,
+  persistEscalatedFacts,
+  claimEscalationSlot,
   type FactCategory,
+  type ProfessorEscalation,
 } from "../lib/knowledge";
-import { normalizeEngagementMode, evaluateAutoSend } from "../lib/engagementPolicy";
+import {
+  normalizeEngagementMode,
+  evaluateAutoSend,
+  evaluateProfessorEscalationSend,
+} from "../lib/engagementPolicy";
+import { grokConfigured } from "../lib/grokClient";
 import { sendConversationReply } from "../lib/outboundReply";
 import { processInboundMessage } from "../lib/automationEngine";
 import { attributeInboundResponse } from "../lib/campaignAttribution";
@@ -409,6 +419,115 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                   "SAMA Student: draft ready",
                 );
 
+                // ---- Autonomous Professor escalation (self-learning loop) ----
+                // When the Student is NOT grounded (no Classroom match), escalate
+                // to the Professor model: it answers from the Library + its own
+                // expertise, returns reusable FACTS we persist into the Classroom
+                // (so we never ask twice), plus a customer-ready reply. The
+                // customer's text is UNTRUSTED — a question, never truth. Runs in
+                // BOTH modes (learning is always valuable); only the SEND below is
+                // mode-gated.
+                let escalation: ProfessorEscalation | null = null;
+                let escalationPersisted = 0;
+                let escalatedCategories: FactCategory[] = [];
+                if (
+                  grokConfigured() &&
+                  draft.status === "drafted" &&
+                  !draft.kbMatched &&
+                  !result.handled &&
+                  claimEscalationSlot(tenant.id, messageBody)
+                ) {
+                  try {
+                    const lib = await retrieveLibraryContext(tenant.id, messageBody);
+                    const libraryContext = lib
+                      .map((c) => c.text)
+                      .join("\n\n")
+                      .slice(0, 8000);
+                    escalation = await professorEscalate({
+                      tenantName: tenant.name,
+                      libraryContext,
+                      question: messageBody,
+                    });
+                    if (
+                      escalation.status === "answered" &&
+                      escalation.facts.length > 0
+                    ) {
+                      const persistResult = await persistEscalatedFacts(
+                        tenant.id,
+                        escalation.facts,
+                      );
+                      escalationPersisted = persistResult.persisted;
+                      escalatedCategories = Array.from(
+                        new Set(
+                          escalation.facts.map((f) =>
+                            normalizeCategory(f.category),
+                          ),
+                        ),
+                      );
+                      logger.info(
+                        {
+                          tenantSlug,
+                          conversationId,
+                          confidence: escalation.confidence,
+                          factsReturned: escalation.facts.length,
+                          persisted: escalationPersisted,
+                          versionId: persistResult.versionId,
+                          categories: escalatedCategories,
+                        },
+                        "SAMA Professor: escalation learned",
+                      );
+                      try {
+                        await tdb.insert(auditLogsTable).values({
+                          tenantId: tenant.id,
+                          actorUserId: null,
+                          actorEmail: "system:ai-professor",
+                          action: "ai.professor_escalation",
+                          entityType: "conversation",
+                          entityId: String(conversationId),
+                          afterJson: {
+                            inboundSid,
+                            confidence: escalation.confidence,
+                            factsReturned: escalation.facts.length,
+                            persisted: escalationPersisted,
+                            versionId: persistResult.versionId,
+                            categories: escalatedCategories,
+                          },
+                        });
+                      } catch (e) {
+                        logger.warn(
+                          { err: e instanceof Error ? e.message : String(e) },
+                          "Professor escalation audit write failed (non-blocking)",
+                        );
+                      }
+                    } else {
+                      logger.info(
+                        { tenantSlug, conversationId, status: escalation.status },
+                        "SAMA Professor: escalation produced no persistable facts",
+                      );
+                    }
+                  } catch (err) {
+                    logger.warn(
+                      { err: err instanceof Error ? err.message : String(err) },
+                      "SAMA Professor: escalation failed (non-blocking)",
+                    );
+                    escalation = null;
+                  }
+                }
+
+                // The Professor-vetted escalation answer supersedes the Student
+                // draft as the reply when it produced and persisted real facts.
+                const escalated =
+                  !!escalation &&
+                  escalation.status === "answered" &&
+                  escalationPersisted > 0 &&
+                  escalation.customerReply.trim().length > 0;
+                const replyText = escalated
+                  ? escalation!.customerReply.trim()
+                  : draft.draftReply.trim();
+                const whisperToPost = escalated
+                  ? `[SAMA Professor — escalation]\n${escalation!.customerReply.trim()}\n(learned ${escalationPersisted} fact(s); confidence ${escalation!.confidence})`
+                  : draft.whisperBody;
+
                 // Decide whether to auto-send. Suppressed entirely when the
                 // automation engine already handled this inbound (keyword reply,
                 // opt-out, etc.) so a customer never gets two replies.
@@ -417,11 +536,12 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                   const groundingCategories = facts.map((f) =>
                     normalizeCategory(f.category),
                   );
-                  // Check conflicts in the grounding categories PLUS the always-
+                  // Conflict check spans the answer's categories (escalated facts
+                  // when escalated, else the Student grounding) PLUS the always-
                   // sensitive pricing/compliance ones, and the query intent.
                   const conflictCats = Array.from(
                     new Set<FactCategory>([
-                      ...groundingCategories,
+                      ...(escalated ? escalatedCategories : groundingCategories),
                       "pricing",
                       "compliance",
                       ...(queryCategory ? [queryCategory] : []),
@@ -453,19 +573,35 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                     );
                   }
 
-                  const decision = evaluateAutoSend({
-                    engagementMode,
-                    draftStatus: draft.status,
-                    confidence: draft.confidence,
-                    kbMatched: draft.kbMatched,
-                    groundedInClassroom: draft.groundedInClassroom,
-                    queryCategory,
-                    groundingCategories,
-                    hasConflict,
-                    complianceOk,
-                  });
+                  // Two gates: the Professor escalation gate (fresh grounding +
+                  // safe-category/conflict/compliance floors) when escalated;
+                  // otherwise the standard Student auto-send gate.
+                  const decision = escalated
+                    ? evaluateProfessorEscalationSend({
+                        engagementMode,
+                        grokConfigured: true,
+                        escalationStatus: escalation!.status,
+                        confidence: escalation!.confidence,
+                        factsPersisted: escalationPersisted,
+                        hasReply: replyText.length > 0,
+                        escalatedCategories,
+                        queryCategory,
+                        hasConflict,
+                        complianceOk,
+                        automationHandled: result.handled,
+                      })
+                    : evaluateAutoSend({
+                        engagementMode,
+                        draftStatus: draft.status,
+                        confidence: draft.confidence,
+                        kbMatched: draft.kbMatched,
+                        groundedInClassroom: draft.groundedInClassroom,
+                        queryCategory,
+                        groundingCategories,
+                        hasConflict,
+                        complianceOk,
+                      });
 
-                  const replyText = draft.draftReply.trim();
                   if (decision.autoSend && inboundSid && replyText) {
                     // Idempotency: claim the inbound SID before sending. The
                     // unique (tenant_id, inbound_sid) index lets exactly one
@@ -524,9 +660,14 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                             afterJson: {
                               inboundSid,
                               messageId: sent.messageRow.id,
-                              confidence: draft.confidence,
+                              escalated,
+                              confidence: escalated
+                                ? escalation!.confidence
+                                : draft.confidence,
                               queryCategory,
-                              groundingCategories,
+                              groundingCategories: escalated
+                                ? escalatedCategories
+                                : groundingCategories,
                             },
                           });
                         } catch (e) {
@@ -584,7 +725,12 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                     }
                   } else if (!decision.autoSend) {
                     logger.info(
-                      { tenantSlug, conversationId, reasons: decision.reasons },
+                      {
+                        tenantSlug,
+                        conversationId,
+                        escalated,
+                        reasons: decision.reasons,
+                      },
                       "SAMA Student: auto-send gated off; whisper only",
                     );
                   }
@@ -605,7 +751,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                     accountId: tenant.chatwootAccountId,
                     inboxId: tenant.chatwootInboxId,
                     contactPhone: fromNumber,
-                    body: autoSent ? draft.draftReply.trim() : draft.whisperBody,
+                    body: autoSent ? replyText : whisperToPost,
                     messageType: "outgoing",
                     private: !autoSent,
                   });

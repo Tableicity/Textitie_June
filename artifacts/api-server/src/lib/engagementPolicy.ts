@@ -92,3 +92,63 @@ export function evaluateAutoSend(input: AutoSendInput): AutoSendDecision {
 
   return { autoSend: reasons.length === 0, reasons };
 }
+
+export type EscalationSendInput = {
+  engagementMode: EngagementMode;
+  grokConfigured: boolean;
+  escalationStatus: "answered" | "stubbed" | "failed";
+  confidence: "high" | "medium" | "low" | null;
+  /** Count of NON-duplicate facts actually written to the Classroom. */
+  factsPersisted: number;
+  /** True when the escalation produced a non-empty customer reply. */
+  hasReply: boolean;
+  /** Categories of the persisted escalation facts. */
+  escalatedCategories: FactCategory[];
+  /** Classified intent of the inbound message (null when unclassified). */
+  queryCategory: FactCategory | null;
+  hasConflict: boolean;
+  complianceOk: boolean;
+  automationHandled: boolean;
+};
+
+/**
+ * Dedicated gate for AUTO-SENDING an autonomous-Professor escalation answer.
+ *
+ * The Professor generated fresh grounding, so this bypasses the Student's
+ * KB/category/grounding gate — but it must NOT bypass the safety floors: the
+ * escalated facts must ALL be in a SAFE category (high-stakes pricing /
+ * compliance / technical_setup answers are learned but only DRAFTED for a
+ * human), there must be no unresolved conflict touching them, telephony
+ * compliance must pass, and the Professor must be explicitly "high" confidence.
+ * Fail-closed, exactly like evaluateAutoSend.
+ */
+export function evaluateProfessorEscalationSend(
+  input: EscalationSendInput,
+): AutoSendDecision {
+  const reasons: string[] = [];
+
+  if (input.engagementMode !== "gated_auto") reasons.push("mode_not_gated_auto");
+  if (input.automationHandled) reasons.push("automation_handled");
+  if (!input.grokConfigured) reasons.push("grok_offline");
+  if (input.escalationStatus !== "answered") reasons.push("escalation_not_answered");
+  if (input.confidence !== "high") reasons.push("confidence_not_high");
+  if (input.factsPersisted < 1) reasons.push("no_facts_persisted");
+  if (!input.hasReply) reasons.push("no_reply_text");
+  if (input.escalatedCategories.length === 0) {
+    reasons.push("no_escalated_categories");
+  } else if (
+    !input.escalatedCategories.every((c) => SAFE_AUTO_CATEGORIES.has(c))
+  ) {
+    reasons.push("unsafe_escalated_category");
+  }
+  // A risky inbound INTENT always blocks, independent of how the Professor
+  // categorized its facts — the fact classifier can under-tag, and we will not
+  // auto-send a pricing/compliance/setup answer just because facts read benign.
+  if (input.queryCategory && RISKY_QUERY_CATEGORIES.has(input.queryCategory)) {
+    reasons.push("risky_query_category");
+  }
+  if (input.hasConflict) reasons.push("unresolved_conflict");
+  if (!input.complianceOk) reasons.push("compliance_block");
+
+  return { autoSend: reasons.length === 0, reasons };
+}

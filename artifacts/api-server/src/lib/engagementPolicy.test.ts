@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeEngagementMode,
   evaluateAutoSend,
+  evaluateProfessorEscalationSend,
   type AutoSendInput,
+  type EscalationSendInput,
 } from "./engagementPolicy";
 
 // A fully-passing input. Every gate test below clones this and flips ONE field
@@ -147,5 +149,127 @@ describe("evaluateAutoSend", () => {
         "compliance_block",
       ]),
     );
+  });
+});
+
+// A fully-passing Professor-escalation send input. Each gate test clones this
+// and flips ONE field to prove the gate independently blocks the send.
+const HAPPY_ESC: EscalationSendInput = {
+  engagementMode: "gated_auto",
+  grokConfigured: true,
+  escalationStatus: "answered",
+  confidence: "high",
+  factsPersisted: 2,
+  hasReply: true,
+  escalatedCategories: ["general", "features"],
+  queryCategory: "general",
+  hasConflict: false,
+  complianceOk: true,
+  automationHandled: false,
+};
+
+describe("evaluateProfessorEscalationSend", () => {
+  it("auto-sends when every gate passes", () => {
+    const d = evaluateProfessorEscalationSend(HAPPY_ESC);
+    expect(d.autoSend).toBe(true);
+    expect(d.reasons).toEqual([]);
+  });
+
+  it("blocks outside gated_auto mode", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, engagementMode: "assisted" }).reasons,
+    ).toContain("mode_not_gated_auto");
+  });
+
+  it("blocks when the automation engine already handled the inbound", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, automationHandled: true }).reasons,
+    ).toContain("automation_handled");
+  });
+
+  it("blocks when Grok is offline", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, grokConfigured: false }).reasons,
+    ).toContain("grok_offline");
+  });
+
+  it("blocks when the escalation did not answer", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, escalationStatus: "failed" }).reasons,
+    ).toContain("escalation_not_answered");
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, escalationStatus: "stubbed" }).reasons,
+    ).toContain("escalation_not_answered");
+  });
+
+  it("blocks when confidence is not explicitly high", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, confidence: "medium" }).reasons,
+    ).toContain("confidence_not_high");
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, confidence: null }).reasons,
+    ).toContain("confidence_not_high");
+  });
+
+  it("blocks when no facts were persisted (nothing learned)", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, factsPersisted: 0 }).reasons,
+    ).toContain("no_facts_persisted");
+  });
+
+  it("blocks when there is no reply text", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, hasReply: false }).reasons,
+    ).toContain("no_reply_text");
+  });
+
+  it("blocks when there are no escalated categories", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, escalatedCategories: [] }).reasons,
+    ).toContain("no_escalated_categories");
+  });
+
+  it("blocks when any escalated fact is in a high-stakes (unsafe) category", () => {
+    expect(
+      evaluateProfessorEscalationSend({
+        ...HAPPY_ESC,
+        escalatedCategories: ["general", "pricing"],
+      }).reasons,
+    ).toContain("unsafe_escalated_category");
+    expect(
+      evaluateProfessorEscalationSend({
+        ...HAPPY_ESC,
+        escalatedCategories: ["compliance"],
+      }).reasons,
+    ).toContain("unsafe_escalated_category");
+  });
+
+  it("blocks a risky inbound intent even when the facts are labeled benign", () => {
+    // The Professor labeled its facts general/features, but the customer's
+    // QUESTION reads as pricing — the intent gate must still block auto-send.
+    expect(
+      evaluateProfessorEscalationSend({
+        ...HAPPY_ESC,
+        queryCategory: "pricing",
+      }).reasons,
+    ).toContain("risky_query_category");
+    expect(
+      evaluateProfessorEscalationSend({
+        ...HAPPY_ESC,
+        queryCategory: "compliance",
+      }).reasons,
+    ).toContain("risky_query_category");
+  });
+
+  it("blocks on an unresolved conflict", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, hasConflict: true }).reasons,
+    ).toContain("unresolved_conflict");
+  });
+
+  it("blocks when telephony compliance fails", () => {
+    expect(
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, complianceOk: false }).reasons,
+    ).toContain("compliance_block");
   });
 });

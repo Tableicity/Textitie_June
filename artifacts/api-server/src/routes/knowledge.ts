@@ -35,6 +35,7 @@ import {
   estimateTokens,
   normalizeCategory,
   FACT_CATEGORIES,
+  CLASSROOM_PUSH_LOCK,
   type ExtractedFact,
 } from "../lib/knowledge";
 import { adjudicateForPush } from "../lib/librarian";
@@ -56,10 +57,9 @@ const upload = multer({
 const MAX_ACTIVE_SESSIONS = 5;
 const HISTORY_LIMIT = 20;
 
-// Second arg to pg_advisory_xact_lock for the per-tenant Classroom push lock.
-// 0 is safe: the absorb route's lock uses (tenantId, messageId) and messageId
-// is a serial starting at 1, so this namespace never collides.
-const CLASSROOM_PUSH_LOCK = 0;
+// CLASSROOM_PUSH_LOCK (the second arg to pg_advisory_xact_lock for the
+// per-tenant Classroom push lock) is defined in ../lib/knowledge and imported
+// above, so the Professor live-escalation path serializes on the same lock.
 
 // --- shape mappers (strip internal-only columns from API payloads) -----------
 
