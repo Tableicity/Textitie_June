@@ -20,6 +20,8 @@ export interface AbsorbedFact {
   statement: string;
   status: AbsorbedFactStatus;
   category: string;
+  /** @nullable */
+  conflictReason: string | null;
   tokenCount: number;
   createdAt: Date;
 }

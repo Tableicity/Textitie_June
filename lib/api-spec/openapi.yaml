@@ -4744,8 +4744,9 @@ components:
         statement: { type: string }
         status:
           type: string
-          enum: [draft, published, rejected]
+          enum: [draft, published, rejected, conflict]
         category: { type: string }
+        conflictReason: { type: ["string", "null"] }
         tokenCount: { type: integer }
         createdAt: { type: string, format: date-time }
       required:
@@ -4758,6 +4759,7 @@ components:
         - statement
         - status
         - category
+        - conflictReason
         - tokenCount
         - createdAt
 
@@ -4813,6 +4815,8 @@ components:
           items:
             $ref: "#/components/schemas/ClassroomFact"
         factCount: { type: integer }
+        mergedCount: { type: integer }
+        conflictCount: { type: integer }
       required:
         - facts
         - factCount

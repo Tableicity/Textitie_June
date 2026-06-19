@@ -9,7 +9,10 @@ import {
 } from "@workspace/api-zod";
 import { postChatwootMessage } from "../lib/chatwoot";
 import { studentWhisper } from "@workspace/ai-student";
-import { retrieveClassroomFacts } from "../lib/knowledge";
+import {
+  retrieveClassroomFacts,
+  classifyQueryCategory,
+} from "../lib/knowledge";
 import { processInboundMessage } from "../lib/automationEngine";
 import { attributeInboundResponse } from "../lib/campaignAttribution";
 import { processDeliveryStatus } from "../lib/deliveryStatus";
@@ -157,9 +160,13 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
             try {
               let classroomContext = "";
               try {
+                // Cheap synchronous intent classification (no LLM, no added
+                // latency) BOOSTS same-category facts during retrieval.
+                const queryCategory = classifyQueryCategory(studentBody);
                 const facts = await retrieveClassroomFacts(
                   studentTenant.id,
                   studentBody,
+                  { category: queryCategory },
                 );
                 classroomContext = facts
                   .map((f) => `- ${f.statement} (source: ${f.sourceLabel})`)

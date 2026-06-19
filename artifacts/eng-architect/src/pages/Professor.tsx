@@ -52,6 +52,7 @@ import {
   Briefcase,
   User,
   Check,
+  AlertTriangle,
   X,
   Loader2,
   Link2,
@@ -352,16 +353,26 @@ export default function Professor() {
             queryKey: getListProfessorSessionsQueryKey(tenantId),
           });
           if (selectedId) invalidateSession(selectedId);
+          const extras: string[] = [];
+          if (snapshot.mergedCount)
+            extras.push(`${snapshot.mergedCount} duplicate(s) merged`);
+          if (snapshot.conflictCount)
+            extras.push(
+              `${snapshot.conflictCount} conflict(s) flagged for review`,
+            );
           toast({
             title: "Published to Classroom",
-            description: `Version ${snapshot.version?.version ?? "?"} is live with ${snapshot.factCount} facts.`,
+            description:
+              `Version ${snapshot.version?.version ?? "?"} is live with ${snapshot.factCount} facts.` +
+              (extras.length ? ` ${extras.join("; ")}.` : ""),
           });
         },
         onError: (e: any) =>
           toast({
-            title: "Nothing to publish",
+            title: "Couldn't publish",
             description:
-              e?.message ?? "Curate some knowledge before pushing to the Classroom.",
+              e?.message ??
+              "Curate some knowledge (or resolve conflicts) before pushing to the Classroom.",
             variant: "destructive",
           }),
       },
@@ -678,7 +689,11 @@ export default function Professor() {
                         {g.facts.map((f) => (
                           <div
                             key={f.id}
-                            className="flex items-start gap-2 text-xs border-b pb-2 last:border-0"
+                            className={cn(
+                              "flex items-start gap-2 text-xs border-b pb-2 last:border-0",
+                              f.status === "conflict" &&
+                                "rounded-md border border-amber-500/40 bg-amber-500/5 p-2",
+                            )}
                           >
                             <div className="flex-1 space-y-1">
                               <span
@@ -690,6 +705,23 @@ export default function Professor() {
                               >
                                 {f.statement}
                               </span>
+                              {f.status === "conflict" && (
+                                <div className="flex items-start gap-1 text-[11px] text-amber-600">
+                                  <AlertTriangle
+                                    size={12}
+                                    className="mt-0.5 shrink-0"
+                                  />
+                                  <span>
+                                    <span className="font-medium">
+                                      Conflict —{" "}
+                                    </span>
+                                    {f.conflictReason ??
+                                      "Contradicts another accepted fact."}{" "}
+                                    Accept (✓) the correct one and reject (✗) the
+                                    other.
+                                  </span>
+                                </div>
+                              )}
                               <select
                                 value={f.category ?? "general"}
                                 onChange={(e) =>

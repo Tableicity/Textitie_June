@@ -54,6 +54,53 @@ export function normalizeCategory(raw: unknown): FactCategory {
     : "general";
 }
 
+// Keyword signals for the cheap inbound-intent classifier. Ordered so that, on a
+// tie, the higher-stakes category wins (pricing/compliance before the rest) —
+// safe because the result only BOOSTS same-category facts during retrieval.
+const CATEGORY_PATTERNS: readonly [
+  Exclude<FactCategory, "general">,
+  RegExp,
+][] = [
+  [
+    "pricing",
+    /\b(pric\w*|cost\w*|how much|fees?|charges?|charged|bill\w*|invoices?|refunds?|discounts?|coupons?|plans?|tiers?|subscriptions?|subscribe|upgrades?|downgrades?|trials?|payments?|pay|dollars?)\b|\$\s?\d/gi,
+  ],
+  [
+    "compliance",
+    /\b(hipaa|gdpr|tcpa|ccpa|consent|opt[\s-]?outs?|opt[\s-]?ins?|unsubscribe|privacy|baa|complian\w*|regulat\w*|legal|terms|encrypt\w*|secure|security)\b/gi,
+  ],
+  [
+    "technical_setup",
+    /\b(set\s?up|setup|install\w*|configur\w*|integrat\w*|api|webhooks?|connect\w*|port\w*|dns|domains?|verif\w*|log\s?in|login|passwords?|reset|errors?|broken|troubleshoot\w*|sync\w*|not working)\b/gi,
+  ],
+  [
+    "features",
+    /\b(features?|can (?:i|you|we)|does it|do you (?:support|have)|able to|capabilit\w*|how do i|is there|supports?)\b/gi,
+  ],
+];
+
+/**
+ * Cheap, synchronous intent→category classifier for an inbound message. Used to
+ * BOOST same-category Classroom facts during retrieval — never to gate them, so
+ * a wrong guess only reshuffles ranking and can't hide a fact. Returns null when
+ * no category clearly dominates, leaving retrieval on pure relevance. Kept as a
+ * heuristic (not an LLM call) so it adds zero latency to the answer pipeline.
+ */
+export function classifyQueryCategory(text: string): FactCategory | null {
+  const t = (text ?? "").trim();
+  if (!t) return null;
+  let best: FactCategory | null = null;
+  let bestScore = 0;
+  for (const [cat, re] of CATEGORY_PATTERNS) {
+    const score = t.match(re)?.length ?? 0;
+    if (score > bestScore) {
+      bestScore = score;
+      best = cat;
+    }
+  }
+  return best;
+}
+
 export interface ExtractedFact {
   statement: string;
   category: FactCategory;
@@ -448,10 +495,19 @@ export async function getCurrentClassroomVersion(
 export async function retrieveClassroomFacts(
   tenantId: number,
   query: string,
-  limit = 12,
+  opts: { limit?: number; category?: FactCategory | null } = {},
 ): Promise<ClassroomFact[]> {
+  const limit = opts.limit ?? 12;
+  const category = opts.category ?? null;
   const version = await getCurrentClassroomVersion(tenantId);
   if (!version) return [];
+  // Same-category facts float above equally-relevant off-category ones. This is
+  // a BOOST, not a gate: every FTS match is still eligible and the fallback
+  // still returns the whole version, so a misclassification can never make a
+  // fact unreachable — it only reshuffles ranking.
+  const boost = category
+    ? sql`(case when ${classroomFactsTable.category} = ${category} then 1 else 0 end) DESC, `
+    : sql``;
   const q = query.trim();
   if (q) {
     const rows = await db
@@ -464,10 +520,22 @@ export async function retrieveClassroomFacts(
         ),
       )
       .orderBy(
-        sql`ts_rank(to_tsvector('english', ${classroomFactsTable.statement}), websearch_to_tsquery('english', ${q})) DESC`,
+        sql`${boost}ts_rank(to_tsvector('english', ${classroomFactsTable.statement}), websearch_to_tsquery('english', ${q})) DESC`,
       )
       .limit(limit);
     if (rows.length > 0) return rows;
+  }
+  // No lexical match (or empty query): return the version's facts, still
+  // category-first when we have a classification.
+  if (category) {
+    return await db
+      .select()
+      .from(classroomFactsTable)
+      .where(eq(classroomFactsTable.versionId, version.id))
+      .orderBy(
+        sql`(case when ${classroomFactsTable.category} = ${category} then 1 else 0 end) DESC`,
+      )
+      .limit(limit);
   }
   return await db
     .select()

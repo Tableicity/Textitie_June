@@ -37,6 +37,7 @@ import {
   FACT_CATEGORIES,
   type ExtractedFact,
 } from "../lib/knowledge";
+import { adjudicateForPush } from "../lib/librarian";
 import { grokClient, PROFESSOR_MODEL } from "../lib/grokClient";
 
 /**
@@ -54,6 +55,11 @@ const upload = multer({
 
 const MAX_ACTIVE_SESSIONS = 5;
 const HISTORY_LIMIT = 20;
+
+// Second arg to pg_advisory_xact_lock for the per-tenant Classroom push lock.
+// 0 is safe: the absorb route's lock uses (tenantId, messageId) and messageId
+// is a serial starting at 1, so this namespace never collides.
+const CLASSROOM_PUSH_LOCK = 0;
 
 // --- shape mappers (strip internal-only columns from API payloads) -----------
 
@@ -865,7 +871,9 @@ router.post(
     }
     const [row] = await db
       .update(absorbedFactsTable)
-      .set({ status: parsed.data.status })
+      // Resolving a fact (accept/reject) also clears any conflict flag the
+      // Librarian set — the contradiction has been adjudicated by a human.
+      .set({ status: parsed.data.status, conflictReason: null })
       .where(eq(absorbedFactsTable.id, factId))
       .returning();
     res.json(row ?? fact);
@@ -1124,19 +1132,80 @@ router.post(
       return;
     }
 
-    const [latest] = await db
-      .select({ version: classroomVersionsTable.version })
-      .from(classroomVersionsTable)
-      .where(eq(classroomVersionsTable.tenantId, tenantId))
-      .orderBy(desc(classroomVersionsTable.version))
-      .limit(1);
-    const nextVersion = (latest?.version ?? 0) + 1;
-    const tokenCount = factsToPublish.reduce(
+    // Librarian pass — collapse near-duplicate/refinement facts and FLAG
+    // contradictions before snapshotting. Runs the (slow, read-only) Grok
+    // adjudication BEFORE the transaction so we never hold the tx open across
+    // LLM calls; all resulting writes (conflict marking + version + facts) are
+    // applied atomically inside the tx below.
+    const verdict = await adjudicateForPush(
+      factsToPublish.map((f) => ({
+        id: f.id,
+        statement: f.statement,
+        category: f.category,
+        sourceLabel: f.sourceLabel,
+        tokenCount: f.tokenCount ?? 0,
+      })),
+    );
+
+    const tokenCount = verdict.publish.reduce(
       (sum, f) => sum + (f.tokenCount ?? 0),
       0,
     );
 
+    // Flag a contradiction onto its source absorbed facts. Guarded by tenantId
+    // and status="published" so a fact the Conductor concurrently rejected (in
+    // the window between adjudication and commit) is never clobbered.
+    type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+    const markConflicts = async (tx: Tx) => {
+      for (const c of verdict.conflicts) {
+        await tx
+          .update(absorbedFactsTable)
+          .set({ status: "conflict", conflictReason: c.reason })
+          .where(
+            and(
+              eq(absorbedFactsTable.id, c.id),
+              eq(absorbedFactsTable.tenantId, tenantId),
+              eq(absorbedFactsTable.status, "published"),
+            ),
+          );
+      }
+    };
+
+    // Everything collapsed into conflicts — there's nothing safe to publish.
+    // Still persist the conflict flags so the Conductor can resolve them, then
+    // tell the caller to fix the contradictions before re-pushing.
+    if (verdict.publish.length === 0) {
+      await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(${tenantId}, ${CLASSROOM_PUSH_LOCK})`,
+        );
+        await markConflicts(tx);
+      });
+      res.status(400).json({
+        error:
+          "All accepted facts are in conflict — resolve the flagged contradictions before publishing.",
+        conflictCount: verdict.conflictCount,
+      });
+      return;
+    }
+
     const snapshot = await db.transaction(async (tx) => {
+      // Serialize pushes per tenant: with the lock held, concurrent pushes
+      // can't duplicate version numbers or interleave published/superseded
+      // rows. nextVersion is read INSIDE the lock so it reflects committed work.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(${tenantId}, ${CLASSROOM_PUSH_LOCK})`,
+      );
+      // Flag contradictions: excluded from this snapshot, held for the
+      // Conductor to resolve (re-accept the right one / reject the wrong one).
+      await markConflicts(tx);
+      const [latest] = await tx
+        .select({ version: classroomVersionsTable.version })
+        .from(classroomVersionsTable)
+        .where(eq(classroomVersionsTable.tenantId, tenantId))
+        .orderBy(desc(classroomVersionsTable.version))
+        .limit(1);
+      const nextVersion = (latest?.version ?? 0) + 1;
       await tx
         .update(classroomVersionsTable)
         .set({ status: "superseded" })
@@ -1153,7 +1222,7 @@ router.post(
           version: nextVersion,
           status: "published",
           summary: parsed.data.summary ?? null,
-          factCount: factsToPublish.length,
+          factCount: verdict.publish.length,
           tokenCount,
         })
         .returning();
@@ -1161,7 +1230,7 @@ router.post(
       const facts = await tx
         .insert(classroomFactsTable)
         .values(
-          factsToPublish.map((f) => ({
+          verdict.publish.map((f) => ({
             tenantId,
             versionId: version.id,
             sourceLabel: f.sourceLabel,
@@ -1171,15 +1240,8 @@ router.post(
           })),
         )
         .returning();
-      await tx
-        .update(absorbedFactsTable)
-        .set({ status: "published" })
-        .where(
-          inArray(
-            absorbedFactsTable.id,
-            factsToPublish.map((f) => f.id),
-          ),
-        );
+      // Source absorbed facts stay "published" (they were already accepted and
+      // remain the curation history); only conflicts were re-flagged above.
       // Free the active-session slots that fed this Classroom version.
       if (sessionIds.length > 0) {
         await tx
@@ -1209,6 +1271,8 @@ router.post(
       version: toVersionApi(snapshot.version),
       facts: snapshot.facts,
       factCount: snapshot.facts.length,
+      mergedCount: verdict.mergedCount,
+      conflictCount: verdict.conflictCount,
     });
   },
 );

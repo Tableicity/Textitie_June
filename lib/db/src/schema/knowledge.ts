@@ -179,12 +179,18 @@ export const absorbedFactsTable = pgTable(
     messageId: integer("message_id"),
     sourceLabel: text("source_label").notNull(),
     statement: text("statement").notNull(),
-    // "draft" | "published" | "rejected"
+    // "draft" | "published" | "rejected" | "conflict". "conflict" is set by the
+    // Librarian at push time when a fact contradicts another accepted fact; the
+    // Conductor resolves it by re-accepting (published) or rejecting one side.
     status: text("status").notNull().default("draft"),
     // Routing category — "pricing" | "compliance" | "features" |
     // "technical_setup" | "general". Plain text (no DB enum/check) + app-level
     // validation so a bad value can never 500 a list query; default "general".
     category: text("category").notNull().default("general"),
+    // Human-readable explanation set alongside status "conflict" so the
+    // Conductor can see WHY two facts collide (e.g. differing prices). Null
+    // for every other status.
+    conflictReason: text("conflict_reason"),
     tokenCount: integer("token_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

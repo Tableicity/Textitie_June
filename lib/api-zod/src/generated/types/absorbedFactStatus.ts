@@ -13,4 +13,5 @@ export const AbsorbedFactStatus = {
   draft: "draft",
   published: "published",
   rejected: "rejected",
+  conflict: "conflict",
 } as const;

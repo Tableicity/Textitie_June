@@ -12,4 +12,6 @@ export interface ClassroomSnapshot {
   version?: ClassroomVersion;
   facts: ClassroomFact[];
   factCount: number;
+  mergedCount?: number;
+  conflictCount?: number;
 }

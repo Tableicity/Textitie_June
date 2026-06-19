@@ -2200,8 +2200,9 @@ export const ListAbsorbedFactsResponseItem = zod.object({
   messageId: zod.number().nullable(),
   sourceLabel: zod.string(),
   statement: zod.string(),
-  status: zod.enum(["draft", "published", "rejected"]),
+  status: zod.enum(["draft", "published", "rejected", "conflict"]),
   category: zod.string(),
+  conflictReason: zod.string().nullable(),
   tokenCount: zod.number(),
   createdAt: zod.coerce.date(),
 });
@@ -2229,8 +2230,9 @@ export const UpdateAbsorbedFactStatusResponse = zod.object({
   messageId: zod.number().nullable(),
   sourceLabel: zod.string(),
   statement: zod.string(),
-  status: zod.enum(["draft", "published", "rejected"]),
+  status: zod.enum(["draft", "published", "rejected", "conflict"]),
   category: zod.string(),
+  conflictReason: zod.string().nullable(),
   tokenCount: zod.number(),
   createdAt: zod.coerce.date(),
 });
@@ -2261,8 +2263,9 @@ export const UpdateAbsorbedFactCategoryResponse = zod.object({
   messageId: zod.number().nullable(),
   sourceLabel: zod.string(),
   statement: zod.string(),
-  status: zod.enum(["draft", "published", "rejected"]),
+  status: zod.enum(["draft", "published", "rejected", "conflict"]),
   category: zod.string(),
+  conflictReason: zod.string().nullable(),
   tokenCount: zod.number(),
   createdAt: zod.coerce.date(),
 });
@@ -2287,8 +2290,9 @@ export const AbsorbProfessorAnswerResponse = zod.object({
       messageId: zod.number().nullable(),
       sourceLabel: zod.string(),
       statement: zod.string(),
-      status: zod.enum(["draft", "published", "rejected"]),
+      status: zod.enum(["draft", "published", "rejected", "conflict"]),
       category: zod.string(),
+      conflictReason: zod.string().nullable(),
       tokenCount: zod.number(),
       createdAt: zod.coerce.date(),
     }),
@@ -2338,6 +2342,8 @@ export const GetCurrentClassroomResponse = zod.object({
     }),
   ),
   factCount: zod.number(),
+  mergedCount: zod.number().optional(),
+  conflictCount: zod.number().optional(),
 });
 
 /**

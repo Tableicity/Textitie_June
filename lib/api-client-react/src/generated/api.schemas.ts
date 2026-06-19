@@ -1332,6 +1332,7 @@ export const AbsorbedFactStatus = {
   draft: "draft",
   published: "published",
   rejected: "rejected",
+  conflict: "conflict",
 } as const;
 
 export interface AbsorbedFact {
@@ -1347,6 +1348,8 @@ export interface AbsorbedFact {
   statement: string;
   status: AbsorbedFactStatus;
   category: string;
+  /** @nullable */
+  conflictReason: string | null;
   tokenCount: number;
   createdAt: string;
 }
@@ -1385,6 +1388,8 @@ export interface ClassroomSnapshot {
   version?: ClassroomVersion;
   facts: ClassroomFact[];
   factCount: number;
+  mergedCount?: number;
+  conflictCount?: number;
 }
 
 export interface LibraryIngestResult {
