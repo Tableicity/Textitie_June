@@ -20,3 +20,4 @@
 - [FTS retrieval AND-semantics](fts-retrieval-and-semantics.md) — websearch_to_tsquery ANDs every lexeme; conversational queries silently return 0 matches; add an OR fallback + don't let the prompt hard-refuse on empty RAG.
 - [AI auto-send safety contract](ai-autosend-idempotency.md) — autopilot gate fail-closed; ai_auto_replies SID claim terminal only on completed send; a FAILED send must DELETE the claim or webhook retries dead-letter.
 - [Engagement-mode invariants](engagement-modes-invariants.md) — manual/copilot/autopilot; fold legacy aliases on EVERY write path; learn IFF autonomous unedited send; human send → human_handled returns autopilot to green.
+- [Auto-reply latency & handback](autoreply-latency-and-handback.md) — ungrounded Qs route to the slow reasoning Professor on the reply path (minutes); "dropped 2nd msg" is really the fail-closed gate ghosting compliance/pricing/setup topics with no customer ack.
