@@ -7,10 +7,12 @@ import { EventEmitter } from "node:events";
  * Event shape: `tenant:{tenantId}` channel emits payloads like
  *   { type: "message:new", conversationId, direction }
  *   { type: "conversation:new", conversationId }
+ *   { type: "ai:state", conversationId }   (Student/Professor draft or handback ready)
  */
 export type RealtimeEvent =
   | { type: "message:new"; conversationId: number; direction: "inbound" | "outbound" }
-  | { type: "conversation:new"; conversationId: number };
+  | { type: "conversation:new"; conversationId: number }
+  | { type: "ai:state"; conversationId: number };
 
 class TenantEventBus extends EventEmitter {
   constructor() {

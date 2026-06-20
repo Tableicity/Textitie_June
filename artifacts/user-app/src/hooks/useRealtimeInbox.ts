@@ -9,7 +9,8 @@ import { getTenantToken } from "@/lib/auth";
 
 type RealtimeEvent =
   | { type: "message:new"; conversationId: number; direction: "inbound" | "outbound" }
-  | { type: "conversation:new"; conversationId: number };
+  | { type: "conversation:new"; conversationId: number }
+  | { type: "ai:state"; conversationId: number };
 
 /**
  * Subscribe to the SSE event stream and invalidate inbox queries on the fly.
@@ -58,6 +59,27 @@ export function useRealtimeInbox(): void {
           queryKey: getListConversationsQueryKey(),
           exact: false,
         });
+      });
+
+      // AI draft / handback became ready AFTER the inbound message:new already
+      // fired. Without this the Co-Pilot draft never reaches the composer until
+      // the NEXT inbound message triggers a refetch. Refresh the conversation
+      // (carries aiState) + the list (drives the mode/handback chips).
+      es.addEventListener("ai", (ev) => {
+        try {
+          const data = JSON.parse((ev as MessageEvent).data) as RealtimeEvent;
+          if (data.type === "ai:state") {
+            void queryClient.invalidateQueries({
+              queryKey: getGetConversationQueryKey(data.conversationId),
+            });
+            void queryClient.invalidateQueries({
+              queryKey: getListConversationsQueryKey(),
+              exact: false,
+            });
+          }
+        } catch {
+          /* malformed event — ignore */
+        }
       });
 
       es.onerror = () => {

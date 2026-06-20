@@ -413,6 +413,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                     conversationId,
                     latestInboundMessageId: inboundMessageId,
                   });
+                  eventBus.publish(tenant.id, { type: "ai:state", conversationId });
                   logger.info(
                     {
                       tenantSlug,
@@ -546,6 +547,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                       latestInboundMessageId: inboundMessageId,
                       inboundSid,
                     });
+                    eventBus.publish(tenant.id, { type: "ai:state", conversationId });
                     logger.info(
                       {
                         tenantSlug,
@@ -575,6 +577,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                         latestInboundMessageId: inboundMessageId,
                         inboundSid,
                       });
+                      eventBus.publish(tenant.id, { type: "ai:state", conversationId });
                       logger.warn(
                         { tenantSlug, conversationId, draftStatus: draft.status },
                         "SAMA Auto-Pilot: Grok produced no draft; Blue handback",
@@ -815,6 +818,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                               latestInboundMessageId: inboundMessageId,
                               inboundSid,
                             });
+                            eventBus.publish(tenant.id, { type: "ai:state", conversationId });
                             logger.error(
                               {
                                 tenantSlug,
@@ -863,6 +867,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                           latestInboundMessageId: inboundMessageId,
                           inboundSid,
                         });
+                        eventBus.publish(tenant.id, { type: "ai:state", conversationId });
                         logger.info(
                           {
                             tenantSlug,

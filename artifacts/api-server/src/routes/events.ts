@@ -14,6 +14,7 @@ const router = Router();
  * Stream emits:
  *   event: message    data: { conversationId, direction }
  *   event: conversation data: { conversationId }
+ *   event: ai         data: { conversationId }   (AI draft/handback state changed)
  *   event: ping       data: { ts }    (every 25s, keeps proxies from killing the connection)
  */
 router.get("/events/stream", (req, res) => {
@@ -40,7 +41,9 @@ router.get("/events/stream", (req, res) => {
         ? "message"
         : event.type === "conversation:new"
           ? "conversation"
-          : "event";
+          : event.type === "ai:state"
+            ? "ai"
+            : "event";
     res.write(`event: ${name}\n`);
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };

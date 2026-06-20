@@ -7,11 +7,11 @@ description: Why ungrounded inbound questions are slow and why "sensitive" topic
 
 Two distinct problems, often mistaken for "the second of two rapid questions gets dropped."
 
-## 1. Latency (minutes) on ungrounded questions
+## 1. Latency on ungrounded questions — the "minutes" claim was WRONG
 - A customer question that isn't in the tenant Classroom/KB makes the fast Student draft `!kbMatched`.
-- `evaluateAutoSend` requires `kbMatched` + `groundedInClassroom` + grounding facts, so the Student's draft can **never** auto-send for an unknown question.
-- The only auto-sendable answer then comes from the **Professor escalation**, which runs `PROFESSOR_MODEL` = `grok-4.3`, a **reasoning** model, *on the customer-reply path*. Reasoning + JSON extraction (facts + reply + 3 questions) = tens of seconds to minutes.
-- **Lesson:** real-time customer replies must not depend on the reasoning Professor. The reasoning model is for *learning* (fact curation), not for answering live. Decouple: answer fast, learn in the background.
+- `evaluateAutoSend` requires `kbMatched` + `groundedInClassroom` + grounding facts, so the Student's draft can **never** auto-send for an unknown question; the only auto-sendable answer comes from the **Professor escalation** (`PROFESSOR_MODEL` = `grok-4.3`, a reasoning model).
+- **CORRECTION (verified against prod logs 2026-06-20):** the escalation is NOT "tens of seconds to minutes." Measured: Student ~600ms, Professor escalation ~5s. The old "minutes" figure here was never measured and is disproven. Do **not** diagnose draft-not-appearing as model latency — see the real cause in `inbox-realtime-draft-refresh.md`.
+- **Lesson (still valid as a design preference, not a measured pain):** keep live customer replies off the reasoning Professor where you can; reasoning is for *learning* (fact curation). Decouple answer-fast from learn-in-background. But this is about throughput at scale, not the "first response shows on the second question" symptom — that one was a missing realtime event, not slowness.
 
 ## 2. The "dropped" message is the safety gate ghosting sensitive topics
 - It is **not** the escalation throttle. `claimEscalationSlot` is keyed `tenantId:normalizedQuestionText` — two *different* questions get different keys and never collide. It only caps repeats of the *same* question (5-min TTL).

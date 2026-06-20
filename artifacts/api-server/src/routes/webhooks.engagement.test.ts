@@ -12,6 +12,7 @@ import {
   optOutsTable,
   phoneNumbersTable,
 } from "@workspace/db";
+import { eventBus, type RealtimeEvent } from "../lib/eventBus";
 
 // Disable the Twilio signature gate (see webhooks.blocked.test.ts) and force the
 // Grok stub path so every branch is deterministic without an LLM: the Student
@@ -170,6 +171,37 @@ describe("AI engagement modes (webhooks/twilio durable pipeline)", () => {
 
     const convId = await conversationIdFor(tenants.copilot.id, from);
     expect(await outboundCountFor(convId!)).toBe(0);
+  });
+
+  it("CO-PILOT: publishes an 'ai:state' realtime event when the draft is staged", async () => {
+    // Regression guard: the Co-Pilot draft is written ~seconds AFTER the inbound
+    // message:new already fired. Without a post-write ai:state event the inbox
+    // composer never refreshes until the NEXT inbound message — the exact bug
+    // this test pins down. Subscribe BEFORE posting so we capture the emit.
+    const from = "+15556660006";
+    const captured: RealtimeEvent[] = [];
+    const unsubscribe = eventBus.subscribe(tenants.copilot.id, (e) => {
+      captured.push(e);
+    });
+    try {
+      const res = await postInbound(tenants.copilot.phone, from, "what is your pricing?");
+      expect(res.status).toBe(201);
+
+      const got = await waitFor(async () =>
+        captured.some((e) => e.type === "ai:state"),
+      );
+      expect(got).toBe(true);
+
+      const convId = await conversationIdFor(tenants.copilot.id, from);
+      expect(convId).not.toBeNull();
+      expect(
+        captured.some(
+          (e) => e.type === "ai:state" && e.conversationId === convId,
+        ),
+      ).toBe(true);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("AUTO-PILOT: hands back ('failed' grok_error) when the model can't draft, no send", async () => {
