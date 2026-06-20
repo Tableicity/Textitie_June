@@ -1,0 +1,263 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import request from "supertest";
+import { and, eq } from "drizzle-orm";
+import {
+  db,
+  tenantsTable,
+  contactsTable,
+  conversationsTable,
+  conversationAiStatesTable,
+  messagesTable,
+  auditLogsTable,
+  optOutsTable,
+  phoneNumbersTable,
+} from "@workspace/db";
+
+// Disable the Twilio signature gate (see webhooks.blocked.test.ts) and force the
+// Grok stub path so every branch is deterministic without an LLM: the Student
+// returns status "stubbed" with an empty draft, so Co-Pilot stages an empty
+// draft and Auto-Pilot hands back (grok_error). The MODE BRANCHING is what these
+// tests assert; the gate/learning logic with a live model is covered by the
+// engagementPolicy unit tests.
+delete process.env["TWILIO_AUTH_TOKEN"];
+delete process.env["GROK_KEYS"];
+
+const { default: app } = await import("../app");
+
+const RUN = `engtest-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+
+type Mode = "manual" | "copilot" | "autopilot";
+const tenants: Record<Mode, { id: number; phone: string }> = {
+  manual: { id: 0, phone: `+1991${String(Date.now()).slice(-7)}` },
+  copilot: { id: 0, phone: `+1992${String(Date.now()).slice(-7)}` },
+  autopilot: { id: 0, phone: `+1993${String(Date.now()).slice(-7)}` },
+};
+
+function postInbound(toPhone: string, from: string, body: string) {
+  return request(app)
+    .post("/api/webhooks/twilio")
+    .type("form")
+    .send({ To: toPhone, From: from, Body: body });
+}
+
+async function waitFor(
+  predicate: () => Promise<boolean>,
+  timeoutMs = 9000,
+  intervalMs = 150,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return true;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return false;
+}
+
+async function conversationIdFor(
+  tenantId: number,
+  phone: string,
+): Promise<number | null> {
+  const rows = await db
+    .select({ id: conversationsTable.id })
+    .from(conversationsTable)
+    .where(
+      and(
+        eq(conversationsTable.tenantId, tenantId),
+        eq(conversationsTable.contactPhone, phone),
+      ),
+    )
+    .limit(1);
+  return rows[0]?.id ?? null;
+}
+
+async function aiStateFor(conversationId: number) {
+  const rows = await db
+    .select()
+    .from(conversationAiStatesTable)
+    .where(eq(conversationAiStatesTable.conversationId, conversationId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function outboundCountFor(conversationId: number): Promise<number> {
+  const rows = await db
+    .select({ id: messagesTable.id })
+    .from(messagesTable)
+    .where(
+      and(
+        eq(messagesTable.conversationId, conversationId),
+        eq(messagesTable.direction, "outbound"),
+      ),
+    );
+  return rows.length;
+}
+
+beforeAll(async () => {
+  for (const mode of Object.keys(tenants) as Mode[]) {
+    const t = tenants[mode];
+    const [row] = await db
+      .insert(tenantsTable)
+      .values({
+        slug: `${RUN}-${mode}`,
+        name: `Engagement ${mode} tenant`,
+        region: "us",
+        tierCode: "starter",
+        phoneNumber: t.phone,
+        engagementMode: mode,
+      })
+      .returning({ id: tenantsTable.id });
+    t.id = row.id;
+    await db
+      .insert(phoneNumbersTable)
+      .values({ phoneNumber: t.phone, tenantId: t.id, kind: "primary" });
+  }
+});
+
+afterAll(async () => {
+  for (const mode of Object.keys(tenants) as Mode[]) {
+    const tenantId = tenants[mode].id;
+    if (!tenantId) continue;
+    const convs = await db
+      .select({ id: conversationsTable.id })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.tenantId, tenantId));
+    for (const c of convs) {
+      await db
+        .delete(conversationAiStatesTable)
+        .where(eq(conversationAiStatesTable.conversationId, c.id));
+      await db.delete(messagesTable).where(eq(messagesTable.conversationId, c.id));
+    }
+    await db
+      .delete(conversationsTable)
+      .where(eq(conversationsTable.tenantId, tenantId));
+    await db.delete(optOutsTable).where(eq(optOutsTable.tenantId, tenantId));
+    await db.delete(contactsTable).where(eq(contactsTable.tenantId, tenantId));
+    await db.delete(auditLogsTable).where(eq(auditLogsTable.tenantId, tenantId));
+    await db.delete(tenantsTable).where(eq(tenantsTable.id, tenantId));
+  }
+});
+
+describe("AI engagement modes (webhooks/twilio durable pipeline)", () => {
+  it("MANUAL: records the inbound but writes NO AI state and never replies", async () => {
+    const from = "+15551110001";
+    const res = await postInbound(tenants.manual.phone, from, "what are your hours?");
+    expect(res.status).toBe(201);
+
+    const convId = await waitFor(async () =>
+      (await conversationIdFor(tenants.manual.id, from)) != null,
+    ).then(() => conversationIdFor(tenants.manual.id, from));
+    expect(convId).not.toBeNull();
+
+    // The AI block runs right after the inbound is recorded; settle, then assert
+    // manual mode produced no AI state and no outbound.
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(await aiStateFor(convId!)).toBeNull();
+    expect(await outboundCountFor(convId!)).toBe(0);
+  });
+
+  it("CO-PILOT: stages a 'drafted' AI state and never auto-sends", async () => {
+    const from = "+15552220002";
+    const res = await postInbound(tenants.copilot.phone, from, "do you offer refunds?");
+    expect(res.status).toBe(201);
+
+    const got = await waitFor(async () => {
+      const convId = await conversationIdFor(tenants.copilot.id, from);
+      if (convId == null) return false;
+      const st = await aiStateFor(convId);
+      return st?.status === "drafted";
+    });
+    expect(got).toBe(true);
+
+    const convId = await conversationIdFor(tenants.copilot.id, from);
+    expect(await outboundCountFor(convId!)).toBe(0);
+  });
+
+  it("AUTO-PILOT: hands back ('failed' grok_error) when the model can't draft, no send", async () => {
+    const from = "+15553330003";
+    const res = await postInbound(tenants.autopilot.phone, from, "how much is the pro plan?");
+    expect(res.status).toBe(201);
+
+    const got = await waitFor(async () => {
+      const convId = await conversationIdFor(tenants.autopilot.id, from);
+      if (convId == null) return false;
+      const st = await aiStateFor(convId);
+      return st?.status === "failed";
+    });
+    expect(got).toBe(true);
+
+    const convId = await conversationIdFor(tenants.autopilot.id, from);
+    const st = await aiStateFor(convId!);
+    expect(st?.reasonCode).toBe("grok_error");
+    expect(st?.reasonText).toBeTruthy();
+    expect(await outboundCountFor(convId!)).toBe(0);
+  });
+
+  it("per-conversation override 'manual' beats an autopilot tenant default", async () => {
+    const from = "+15554440004";
+    // Pre-create the open conversation the inbound will match, with a manual
+    // override against the autopilot tenant.
+    const [conv] = await db
+      .insert(conversationsTable)
+      .values({
+        tenantId: tenants.autopilot.id,
+        contactPhone: from,
+        contactName: from,
+        status: "open",
+        engagementModeOverride: "manual",
+        lastMessageAt: new Date(),
+      })
+      .returning({ id: conversationsTable.id });
+
+    const res = await postInbound(tenants.autopilot.phone, from, "are you open today?");
+    expect(res.status).toBe(201);
+
+    // Wait until the inbound message lands on the pre-created conversation, then
+    // settle and assert the manual override suppressed any AI state (no failed/
+    // drafted row that the autopilot default would otherwise have written).
+    const landed = await waitFor(async () => {
+      const rows = await db
+        .select({ id: messagesTable.id })
+        .from(messagesTable)
+        .where(
+          and(
+            eq(messagesTable.conversationId, conv.id),
+            eq(messagesTable.direction, "inbound"),
+          ),
+        );
+      return rows.length > 0;
+    });
+    expect(landed).toBe(true);
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(await aiStateFor(conv.id)).toBeNull();
+    expect(await outboundCountFor(conv.id)).toBe(0);
+  });
+
+  it("automation-handled inbound (opt-out) supersedes AI: no draft is staged", async () => {
+    const from = "+15555550005";
+    const res = await postInbound(tenants.copilot.phone, from, "STOP");
+    expect(res.status).toBe(201);
+
+    // The opt-out write is the signal the automation engine handled it.
+    const optedOut = await waitFor(async () => {
+      const rows = await db
+        .select({ id: optOutsTable.id })
+        .from(optOutsTable)
+        .where(
+          and(
+            eq(optOutsTable.tenantId, tenants.copilot.id),
+            eq(optOutsTable.phoneNumber, from),
+          ),
+        );
+      return rows.length > 0;
+    });
+    expect(optedOut).toBe(true);
+
+    await new Promise((r) => setTimeout(r, 800));
+    const convId = await conversationIdFor(tenants.copilot.id, from);
+    if (convId != null) {
+      const st = await aiStateFor(convId);
+      // Either no row, or a superseded one — never a staged draft.
+      expect(st?.status ?? "superseded").not.toBe("drafted");
+    }
+  });
+});

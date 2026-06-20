@@ -22,10 +22,15 @@ import {
   type ProfessorEscalation,
 } from "../lib/knowledge";
 import {
-  normalizeEngagementMode,
+  resolveEffectiveEngagementMode,
   evaluateAutoSend,
   evaluateProfessorEscalationSend,
+  describeHandbackReason,
 } from "../lib/engagementPolicy";
+import {
+  upsertConversationAiState,
+  supersedeConversationAiState,
+} from "../lib/aiStateStore";
 import { grokConfigured } from "../lib/grokClient";
 import { sendConversationReply } from "../lib/outboundReply";
 import { processInboundMessage } from "../lib/automationEngine";
@@ -336,13 +341,17 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 isNewConversation = true;
               }
 
-              await tdb.insert(messagesTable).values({
-                conversationId,
-                direction: "inbound",
-                body: messageBody,
-                senderName: resolvedContactName,
-                read: false,
-              });
+              const [inboundMessageRow] = await tdb
+                .insert(messagesTable)
+                .values({
+                  conversationId,
+                  direction: "inbound",
+                  body: messageBody,
+                  senderName: resolvedContactName,
+                  read: false,
+                })
+                .returning({ id: messagesTable.id });
+              const inboundMessageId = inboundMessageRow?.id ?? null;
 
               await tdb
                 .update(conversationsTable)
@@ -377,395 +386,531 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 await attributeInboundResponse(tenant.id, tenantSlug, fromNumber);
               }
 
-              // ---- AI Student: draft a whisper, and in gated_auto mode,
-              // optionally auto-send a compliant high-confidence reply. Runs
-              // here (in the ordered durable pipeline, AFTER the automation
-              // engine) so we never reply on top of an automation/opt-out, the
-              // conversation+inbound row already exist, and auto-send latency is
-              // off the inbound 200 path. Self-contained try/catch so a Student
-              // failure never disturbs the durable writes above.
+              // ---- AI engagement pipeline (Manual / Co-Pilot / Auto-Pilot) ----
+              // Runs here in the ordered durable pipeline, AFTER the automation
+              // engine, so we never reply on top of an automation/opt-out, the
+              // conversation+inbound rows already exist, and any auto-send latency
+              // is off the inbound 200 path. Self-contained try/catch so an AI
+              // failure never disturbs the durable writes above. Effective mode is
+              // the per-conversation override ?? the tenant default.
               try {
-                const engagementMode = normalizeEngagementMode(tenant.engagementMode);
-                const queryCategory = classifyQueryCategory(messageBody);
-                let facts: ClassroomFact[] = [];
-                try {
-                  facts = await retrieveClassroomFacts(tenant.id, messageBody, {
-                    category: queryCategory,
-                  });
-                } catch (err) {
-                  logger.warn(
-                    { err: err instanceof Error ? err.message : String(err) },
-                    "SAMA Student: classroom retrieval failed, falling back to legacy KB",
-                  );
-                }
-                const classroomContext = facts
-                  .map((f) => `- ${f.statement} (source: ${f.sourceLabel})`)
-                  .join("\n");
-
-                const draft = await studentWhisper({
-                  tenant,
-                  fromNumber,
-                  inboundBody: messageBody,
-                  classroomContext,
-                });
-                logger.info(
-                  {
-                    tenantSlug,
-                    status: draft.status,
-                    latencyMs: draft.latencyMs,
-                    detail: draft.detail,
-                    whisperPreview: draft.whisperBody.slice(0, 500),
-                  },
-                  "SAMA Student: draft ready",
+                const overrideRow = await tdb
+                  .select({ override: conversationsTable.engagementModeOverride })
+                  .from(conversationsTable)
+                  .where(eq(conversationsTable.id, conversationId))
+                  .limit(1);
+                const engagementMode = resolveEffectiveEngagementMode(
+                  overrideRow[0]?.override ?? null,
+                  tenant.engagementMode,
                 );
 
-                // ---- Autonomous Professor escalation (self-learning loop) ----
-                // When the Student is NOT grounded (no Classroom match), escalate
-                // to the Professor model: it answers from the Library + its own
-                // expertise, returns reusable FACTS we persist into the Classroom
-                // (so we never ask twice), plus a customer-ready reply. The
-                // customer's text is UNTRUSTED — a question, never truth. Runs in
-                // BOTH modes (learning is always valuable); only the SEND below is
-                // mode-gated.
-                let escalation: ProfessorEscalation | null = null;
-                let escalationPersisted = 0;
-                let escalatedCategories: FactCategory[] = [];
-                if (
-                  grokConfigured() &&
-                  draft.status === "drafted" &&
-                  !draft.kbMatched &&
-                  !result.handled &&
-                  claimEscalationSlot(tenant.id, messageBody)
-                ) {
+                // MANUAL → AI fully off (no draft/send/learn). AUTOMATION-HANDLED →
+                // the engine already replied. Either way: supersede any prior AI
+                // state and skip the AI entirely.
+                if (engagementMode === "manual" || result.handled) {
+                  await supersedeConversationAiState({
+                    tenantId: tenant.id,
+                    conversationId,
+                    latestInboundMessageId: inboundMessageId,
+                  });
+                  logger.info(
+                    {
+                      tenantSlug,
+                      conversationId,
+                      engagementMode,
+                      automationHandled: result.handled,
+                    },
+                    "SAMA AI: skipped (manual mode or automation handled); state superseded",
+                  );
+                } else {
+                  // CO-PILOT and AUTO-PILOT both draft. Retrieve Classroom grounding.
+                  const queryCategory = classifyQueryCategory(messageBody);
+                  let facts: ClassroomFact[] = [];
                   try {
-                    const lib = await retrieveLibraryContext(tenant.id, messageBody);
-                    const libraryContext = lib
-                      .map((c) => c.text)
-                      .join("\n\n")
-                      .slice(0, 8000);
-                    escalation = await professorEscalate({
-                      tenantName: tenant.name,
-                      libraryContext,
-                      question: messageBody,
+                    facts = await retrieveClassroomFacts(tenant.id, messageBody, {
+                      category: queryCategory,
                     });
-                    if (
-                      escalation.status === "answered" &&
-                      escalation.facts.length > 0
-                    ) {
-                      const persistResult = await persistEscalatedFacts(
-                        tenant.id,
-                        escalation.facts,
-                      );
-                      escalationPersisted = persistResult.persisted;
+                  } catch (err) {
+                    logger.warn(
+                      { err: err instanceof Error ? err.message : String(err) },
+                      "SAMA Student: classroom retrieval failed, falling back to legacy KB",
+                    );
+                  }
+                  const classroomContext = facts
+                    .map((f) => `- ${f.statement} (source: ${f.sourceLabel})`)
+                    .join("\n");
+
+                  const draft = await studentWhisper({
+                    tenant,
+                    fromNumber,
+                    inboundBody: messageBody,
+                    classroomContext,
+                  });
+                  logger.info(
+                    {
+                      tenantSlug,
+                      engagementMode,
+                      status: draft.status,
+                      latencyMs: draft.latencyMs,
+                      detail: draft.detail,
+                      whisperPreview: draft.whisperBody.slice(0, 500),
+                    },
+                    "SAMA Student: draft ready",
+                  );
+
+                  // ---- Professor escalation (GENERATE + SCREEN ONLY here) ----
+                  // When the Student is ungrounded, the Professor answers from the
+                  // Library + its expertise: a better DRAFT now, and (Auto-Pilot
+                  // only, AFTER a confirmed verbatim auto-send) the facts we LEARN.
+                  // We DELIBERATELY do not persist here — learning is gated on an
+                  // autonomous, unedited send (the unifying learning rule). The
+                  // customer's text is UNTRUSTED — a question, never truth.
+                  let escalation: ProfessorEscalation | null = null;
+                  let escalatedCategories: FactCategory[] = [];
+                  if (
+                    grokConfigured() &&
+                    draft.status === "drafted" &&
+                    !draft.kbMatched &&
+                    claimEscalationSlot(tenant.id, messageBody)
+                  ) {
+                    try {
+                      const lib = await retrieveLibraryContext(tenant.id, messageBody);
+                      const libraryContext = lib
+                        .map((c) => c.text)
+                        .join("\n\n")
+                        .slice(0, 8000);
+                      escalation = await professorEscalate({
+                        tenantName: tenant.name,
+                        libraryContext,
+                        question: messageBody,
+                      });
                       escalatedCategories = Array.from(
                         new Set(
-                          escalation.facts.map((f) =>
-                            normalizeCategory(f.category),
-                          ),
+                          escalation.facts.map((f) => normalizeCategory(f.category)),
                         ),
                       );
                       logger.info(
                         {
                           tenantSlug,
                           conversationId,
+                          status: escalation.status,
                           confidence: escalation.confidence,
-                          factsReturned: escalation.facts.length,
-                          persisted: escalationPersisted,
-                          versionId: persistResult.versionId,
+                          screenedFacts: escalation.facts.length,
                           categories: escalatedCategories,
                         },
-                        "SAMA Professor: escalation learned",
+                        "SAMA Professor: escalation drafted (persist gated on auto-send)",
                       );
-                      try {
-                        await tdb.insert(auditLogsTable).values({
-                          tenantId: tenant.id,
-                          actorUserId: null,
-                          actorEmail: "system:ai-professor",
-                          action: "ai.professor_escalation",
-                          entityType: "conversation",
-                          entityId: String(conversationId),
-                          afterJson: {
-                            inboundSid,
-                            confidence: escalation.confidence,
-                            factsReturned: escalation.facts.length,
-                            persisted: escalationPersisted,
-                            versionId: persistResult.versionId,
-                            categories: escalatedCategories,
-                          },
-                        });
-                      } catch (e) {
-                        logger.warn(
-                          { err: e instanceof Error ? e.message : String(e) },
-                          "Professor escalation audit write failed (non-blocking)",
-                        );
-                      }
-                    } else {
-                      logger.info(
-                        { tenantSlug, conversationId, status: escalation.status },
-                        "SAMA Professor: escalation produced no persistable facts",
+                    } catch (err) {
+                      logger.warn(
+                        { err: err instanceof Error ? err.message : String(err) },
+                        "SAMA Professor: escalation failed (non-blocking)",
                       );
+                      escalation = null;
                     }
-                  } catch (err) {
-                    logger.warn(
-                      { err: err instanceof Error ? err.message : String(err) },
-                      "SAMA Professor: escalation failed (non-blocking)",
-                    );
-                    escalation = null;
-                  }
-                }
-
-                // The Professor-vetted escalation answer supersedes the Student
-                // draft as the reply when it produced and persisted real facts.
-                const escalated =
-                  !!escalation &&
-                  escalation.status === "answered" &&
-                  escalationPersisted > 0 &&
-                  escalation.customerReply.trim().length > 0;
-                const replyText = escalated
-                  ? escalation!.customerReply.trim()
-                  : draft.draftReply.trim();
-                const whisperToPost = escalated
-                  ? `[SAMA Professor — escalation]\n${escalation!.customerReply.trim()}\n(learned ${escalationPersisted} fact(s); confidence ${escalation!.confidence})`
-                  : draft.whisperBody;
-
-                // Decide whether to auto-send. Suppressed entirely when the
-                // automation engine already handled this inbound (keyword reply,
-                // opt-out, etc.) so a customer never gets two replies.
-                let autoSent = false;
-                if (engagementMode === "gated_auto" && !result.handled) {
-                  const groundingCategories = facts.map((f) =>
-                    normalizeCategory(f.category),
-                  );
-                  // Conflict check spans the answer's categories (escalated facts
-                  // when escalated, else the Student grounding) PLUS the always-
-                  // sensitive pricing/compliance ones, and the query intent.
-                  const conflictCats = Array.from(
-                    new Set<FactCategory>([
-                      ...(escalated ? escalatedCategories : groundingCategories),
-                      "pricing",
-                      "compliance",
-                      ...(queryCategory ? [queryCategory] : []),
-                    ]),
-                  );
-                  let hasConflict = true; // fail closed if the check throws
-                  try {
-                    hasConflict = await hasUnresolvedConflicts(tenant.id, conflictCats);
-                  } catch (err) {
-                    logger.warn(
-                      { err: err instanceof Error ? err.message : String(err) },
-                      "SAMA Student: conflict check failed; blocking auto-send",
-                    );
-                  }
-                  // Compliance is also re-checked at send time inside the helper
-                  // (TOCTOU-safe); this pre-check fails fast before the gate.
-                  let complianceOk = false;
-                  try {
-                    const c = await checkOutboundCompliance(
-                      tenant.id,
-                      tenantSlug,
-                      fromNumber,
-                    );
-                    complianceOk = c.ok;
-                  } catch (err) {
-                    logger.warn(
-                      { err: err instanceof Error ? err.message : String(err) },
-                      "SAMA Student: compliance precheck failed; blocking auto-send",
-                    );
                   }
 
-                  // Two gates: the Professor escalation gate (fresh grounding +
-                  // safe-category/conflict/compliance floors) when escalated;
-                  // otherwise the standard Student auto-send gate.
-                  const decision = escalated
-                    ? evaluateProfessorEscalationSend({
-                        engagementMode,
-                        grokConfigured: true,
-                        escalationStatus: escalation!.status,
-                        confidence: escalation!.confidence,
-                        factsPersisted: escalationPersisted,
-                        hasReply: replyText.length > 0,
-                        escalatedCategories,
-                        queryCategory,
-                        hasConflict,
-                        complianceOk,
-                        automationHandled: result.handled,
-                      })
-                    : evaluateAutoSend({
-                        engagementMode,
-                        draftStatus: draft.status,
-                        confidence: draft.confidence,
-                        kbMatched: draft.kbMatched,
-                        groundedInClassroom: draft.groundedInClassroom,
-                        queryCategory,
-                        groundingCategories,
-                        hasConflict,
-                        complianceOk,
-                      });
+                  // The Professor answer supersedes the Student draft as the reply
+                  // when it produced screened facts AND a customer reply.
+                  const escalated =
+                    !!escalation &&
+                    escalation.status === "answered" &&
+                    escalation.facts.length > 0 &&
+                    escalation.customerReply.trim().length > 0;
+                  const replyText = escalated
+                    ? escalation!.customerReply.trim()
+                    : draft.draftReply.trim();
+                  const draftSource: "student" | "professor" = escalated
+                    ? "professor"
+                    : "student";
+                  const replyConfidence = escalated
+                    ? escalation!.confidence
+                    : draft.confidence;
+                  const whisperToPost = escalated
+                    ? `[SAMA Professor — escalation]\n${escalation!.customerReply.trim()}\n(confidence ${escalation!.confidence}; ${escalation!.facts.length} fact(s) ready to learn on auto-send)`
+                    : draft.whisperBody;
 
-                  if (decision.autoSend && inboundSid && replyText) {
-                    // Idempotency: claim the inbound SID before sending. The
-                    // unique (tenant_id, inbound_sid) index lets exactly one
-                    // caller win, so a webhook retry can never double-send.
-                    const claimed = await db
-                      .insert(aiAutoRepliesTable)
-                      .values({ tenantId: tenant.id, inboundSid })
-                      .onConflictDoNothing({
-                        target: [
-                          aiAutoRepliesTable.tenantId,
-                          aiAutoRepliesTable.inboundSid,
-                        ],
-                      })
-                      .returning({ id: aiAutoRepliesTable.id });
+                  let autoSent = false;
 
-                    if (claimed.length > 0) {
-                      const sent = await sendConversationReply({
-                        tenantId: tenant.id,
-                        tenantSlug,
-                        conversationId,
-                        contactPhone: fromNumber,
-                        departmentId: null,
-                        body: replyText,
-                        senderName: "Textitie AI",
-                        conductorAuthorized: true,
-                      });
-                      if (sent.ok && sent.status === "sent") {
-                        autoSent = true;
-                        await db
-                          .update(aiAutoRepliesTable)
-                          .set({ outboundMessageId: sent.messageRow.id })
-                          .where(eq(aiAutoRepliesTable.id, claimed[0].id));
-                        await tdb
-                          .update(conversationsTable)
-                          .set({ lastMessageAt: new Date() })
-                          .where(eq(conversationsTable.id, conversationId));
-                        recordMessageUsage(tenant.id, tenantSlug).catch((e) =>
-                          logger.warn(
-                            { err: e, tenantId: tenant.id },
-                            "Usage tracking failed (non-blocking)",
-                          ),
-                        );
-                        eventBus.publish(tenant.id, {
-                          type: "message:new",
-                          conversationId,
-                          direction: "outbound",
-                        });
-                        try {
-                          await tdb.insert(auditLogsTable).values({
-                            tenantId: tenant.id,
-                            actorUserId: null,
-                            actorEmail: "system:ai-student",
-                            action: "ai.auto_replied",
-                            entityType: "conversation",
-                            entityId: String(conversationId),
-                            afterJson: {
-                              inboundSid,
-                              messageId: sent.messageRow.id,
-                              escalated,
-                              confidence: escalated
-                                ? escalation!.confidence
-                                : draft.confidence,
-                              queryCategory,
-                              groundingCategories: escalated
-                                ? escalatedCategories
-                                : groundingCategories,
-                            },
-                          });
-                        } catch (e) {
-                          logger.warn(
-                            { err: e instanceof Error ? e.message : String(e) },
-                            "AI auto-reply audit write failed (non-blocking)",
-                          );
-                        }
-                        logger.info(
-                          { tenantSlug, conversationId, messageId: sent.messageRow.id },
-                          "SAMA Student: AUTO-SENT reply",
-                        );
-                      } else {
-                        // Claimed but the send did not complete (Twilio reject,
-                        // stub, transient error). The customer received nothing,
-                        // so RELEASE the claim — deleting it lets a webhook retry
-                        // re-attempt instead of being permanently suppressed. A
-                        // completed send (outboundMessageId set) is the ONLY
-                        // terminal state. We still fall through to the whisper so
-                        // an agent has a draft in the meantime.
-                        await db
-                          .delete(aiAutoRepliesTable)
-                          .where(eq(aiAutoRepliesTable.id, claimed[0].id));
-                        logger.error(
-                          {
-                            tenantSlug,
-                            conversationId,
-                            reason: sent.ok ? sent.status : sent.reason,
-                          },
-                          "SAMA Student: auto-send claimed but send failed; released claim, posting whisper instead",
-                        );
-                      }
-                    } else {
-                      // Another invocation already owns this SID. Treat as
-                      // auto-sent only if that one actually completed the send.
-                      const existing = await db
-                        .select({
-                          outboundMessageId: aiAutoRepliesTable.outboundMessageId,
-                        })
-                        .from(aiAutoRepliesTable)
-                        .where(
-                          and(
-                            eq(aiAutoRepliesTable.tenantId, tenant.id),
-                            eq(aiAutoRepliesTable.inboundSid, inboundSid),
-                          ),
-                        )
-                        .limit(1);
-                      if (existing[0]?.outboundMessageId != null) {
-                        autoSent = true;
-                        logger.info(
-                          { tenantSlug, conversationId },
-                          "SAMA Student: auto-send already completed (idempotent skip)",
-                        );
-                      }
-                    }
-                  } else if (!decision.autoSend) {
+                  // ============ CO-PILOT ============
+                  // Draft into the composer for a human to edit + send. NEVER
+                  // auto-sends and NEVER learns.
+                  if (engagementMode === "copilot") {
+                    await upsertConversationAiState({
+                      tenantId: tenant.id,
+                      conversationId,
+                      status: "drafted",
+                      draftBody: replyText.length > 0 ? replyText : null,
+                      draftSource,
+                      confidence: replyConfidence,
+                      queryCategory,
+                      latestInboundMessageId: inboundMessageId,
+                      inboundSid,
+                    });
                     logger.info(
                       {
                         tenantSlug,
                         conversationId,
-                        escalated,
-                        reasons: decision.reasons,
+                        draftSource,
+                        hasDraft: replyText.length > 0,
                       },
-                      "SAMA Student: auto-send gated off; whisper only",
+                      "SAMA Co-Pilot: draft staged for human review",
+                    );
+                  } else {
+                    // ============ AUTO-PILOT ============
+                    const groundingCategories = facts.map((f) =>
+                      normalizeCategory(f.category),
+                    );
+
+                    if (draft.status !== "drafted" && !escalated) {
+                      // Grok produced no usable draft → Blue handback (failed).
+                      await upsertConversationAiState({
+                        tenantId: tenant.id,
+                        conversationId,
+                        status: "failed",
+                        draftBody: null,
+                        confidence: draft.confidence,
+                        queryCategory,
+                        reasonCode: "grok_error",
+                        reasonText: describeHandbackReason(["grok_error"]),
+                        latestInboundMessageId: inboundMessageId,
+                        inboundSid,
+                      });
+                      logger.warn(
+                        { tenantSlug, conversationId, draftStatus: draft.status },
+                        "SAMA Auto-Pilot: Grok produced no draft; Blue handback",
+                      );
+                    } else {
+                      // Conflict check spans the answer's categories PLUS the
+                      // always-sensitive pricing/compliance ones and the query
+                      // intent. Compliance is re-checked at send time too.
+                      const conflictCats = Array.from(
+                        new Set<FactCategory>([
+                          ...(escalated ? escalatedCategories : groundingCategories),
+                          "pricing",
+                          "compliance",
+                          ...(queryCategory ? [queryCategory] : []),
+                        ]),
+                      );
+                      let hasConflict = true; // fail closed if the check throws
+                      try {
+                        hasConflict = await hasUnresolvedConflicts(
+                          tenant.id,
+                          conflictCats,
+                        );
+                      } catch (err) {
+                        logger.warn(
+                          { err: err instanceof Error ? err.message : String(err) },
+                          "SAMA Auto-Pilot: conflict check failed; blocking auto-send",
+                        );
+                      }
+                      let complianceOk = false;
+                      try {
+                        const c = await checkOutboundCompliance(
+                          tenant.id,
+                          tenantSlug,
+                          fromNumber,
+                        );
+                        complianceOk = c.ok;
+                      } catch (err) {
+                        logger.warn(
+                          { err: err instanceof Error ? err.message : String(err) },
+                          "SAMA Auto-Pilot: compliance precheck failed; blocking auto-send",
+                        );
+                      }
+
+                      const decision = escalated
+                        ? evaluateProfessorEscalationSend({
+                            engagementMode,
+                            grokConfigured: true,
+                            escalationStatus: escalation!.status,
+                            confidence: escalation!.confidence,
+                            screenedFactCount: escalation!.facts.length,
+                            hasReply: replyText.length > 0,
+                            escalatedCategories,
+                            queryCategory,
+                            hasConflict,
+                            complianceOk,
+                            automationHandled: result.handled,
+                          })
+                        : evaluateAutoSend({
+                            engagementMode,
+                            draftStatus: draft.status,
+                            confidence: draft.confidence,
+                            kbMatched: draft.kbMatched,
+                            groundedInClassroom: draft.groundedInClassroom,
+                            queryCategory,
+                            groundingCategories,
+                            hasConflict,
+                            complianceOk,
+                          });
+
+                      if (decision.autoSend && inboundSid && replyText) {
+                        // Idempotency: claim the inbound SID before sending. The
+                        // unique (tenant_id, inbound_sid) index lets exactly one
+                        // caller win, so a webhook retry can never double-send.
+                        const claimed = await db
+                          .insert(aiAutoRepliesTable)
+                          .values({ tenantId: tenant.id, inboundSid })
+                          .onConflictDoNothing({
+                            target: [
+                              aiAutoRepliesTable.tenantId,
+                              aiAutoRepliesTable.inboundSid,
+                            ],
+                          })
+                          .returning({ id: aiAutoRepliesTable.id });
+
+                        if (claimed.length > 0) {
+                          const sent = await sendConversationReply({
+                            tenantId: tenant.id,
+                            tenantSlug,
+                            conversationId,
+                            contactPhone: fromNumber,
+                            departmentId: null,
+                            body: replyText,
+                            senderName: "Textitie AI",
+                            conductorAuthorized: true,
+                          });
+                          if (sent.ok && sent.status === "sent") {
+                            autoSent = true;
+                            await db
+                              .update(aiAutoRepliesTable)
+                              .set({ outboundMessageId: sent.messageRow.id })
+                              .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+                            await tdb
+                              .update(conversationsTable)
+                              .set({ lastMessageAt: new Date() })
+                              .where(eq(conversationsTable.id, conversationId));
+
+                            // ---- LEARN (only here) ----
+                            // The reply went out autonomously and verbatim, so
+                            // persist the Professor's screened facts as Classroom
+                            // truth (so we never ask twice). No human-touch path
+                            // ever reaches this line.
+                            let learnedFacts = 0;
+                            if (escalated) {
+                              try {
+                                const persistResult = await persistEscalatedFacts(
+                                  tenant.id,
+                                  escalation!.facts,
+                                );
+                                learnedFacts = persistResult.persisted;
+                                logger.info(
+                                  {
+                                    tenantSlug,
+                                    conversationId,
+                                    persisted: learnedFacts,
+                                    versionId: persistResult.versionId,
+                                    categories: escalatedCategories,
+                                  },
+                                  "SAMA Professor: learned facts after autonomous send",
+                                );
+                                try {
+                                  await tdb.insert(auditLogsTable).values({
+                                    tenantId: tenant.id,
+                                    actorUserId: null,
+                                    actorEmail: "system:ai-professor",
+                                    action: "ai.professor_escalation",
+                                    entityType: "conversation",
+                                    entityId: String(conversationId),
+                                    afterJson: {
+                                      inboundSid,
+                                      confidence: escalation!.confidence,
+                                      factsReturned: escalation!.facts.length,
+                                      persisted: learnedFacts,
+                                      versionId: persistResult.versionId,
+                                      categories: escalatedCategories,
+                                    },
+                                  });
+                                } catch (e) {
+                                  logger.warn(
+                                    { err: e instanceof Error ? e.message : String(e) },
+                                    "Professor escalation audit write failed (non-blocking)",
+                                  );
+                                }
+                              } catch (err) {
+                                logger.warn(
+                                  { err: err instanceof Error ? err.message : String(err) },
+                                  "SAMA Professor: fact persistence after send failed (non-blocking)",
+                                );
+                              }
+                            }
+
+                            await upsertConversationAiState({
+                              tenantId: tenant.id,
+                              conversationId,
+                              status: "auto_sent",
+                              draftBody: null,
+                              draftSource,
+                              confidence: replyConfidence,
+                              queryCategory,
+                              latestInboundMessageId: inboundMessageId,
+                              inboundSid,
+                              outboundMessageId: sent.messageRow.id,
+                              autoSentAt: new Date(),
+                            });
+
+                            recordMessageUsage(tenant.id, tenantSlug).catch((e) =>
+                              logger.warn(
+                                { err: e, tenantId: tenant.id },
+                                "Usage tracking failed (non-blocking)",
+                              ),
+                            );
+                            eventBus.publish(tenant.id, {
+                              type: "message:new",
+                              conversationId,
+                              direction: "outbound",
+                            });
+                            try {
+                              await tdb.insert(auditLogsTable).values({
+                                tenantId: tenant.id,
+                                actorUserId: null,
+                                actorEmail: "system:ai-student",
+                                action: "ai.auto_replied",
+                                entityType: "conversation",
+                                entityId: String(conversationId),
+                                afterJson: {
+                                  inboundSid,
+                                  messageId: sent.messageRow.id,
+                                  escalated,
+                                  learnedFacts,
+                                  confidence: replyConfidence,
+                                  queryCategory,
+                                  groundingCategories: escalated
+                                    ? escalatedCategories
+                                    : groundingCategories,
+                                },
+                              });
+                            } catch (e) {
+                              logger.warn(
+                                { err: e instanceof Error ? e.message : String(e) },
+                                "AI auto-reply audit write failed (non-blocking)",
+                              );
+                            }
+                            logger.info(
+                              {
+                                tenantSlug,
+                                conversationId,
+                                messageId: sent.messageRow.id,
+                              },
+                              "SAMA Auto-Pilot: AUTO-SENT reply",
+                            );
+                          } else {
+                            // Claimed but the send did not complete. The customer
+                            // received nothing, so RELEASE the claim (delete) so a
+                            // webhook retry can re-attempt. Blue handback (failed),
+                            // no learn.
+                            await db
+                              .delete(aiAutoRepliesTable)
+                              .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+                            await upsertConversationAiState({
+                              tenantId: tenant.id,
+                              conversationId,
+                              status: "failed",
+                              draftBody: replyText.length > 0 ? replyText : null,
+                              draftSource,
+                              confidence: replyConfidence,
+                              queryCategory,
+                              reasonCode: "send_failed",
+                              reasonText: describeHandbackReason(["send_failed"]),
+                              latestInboundMessageId: inboundMessageId,
+                              inboundSid,
+                            });
+                            logger.error(
+                              {
+                                tenantSlug,
+                                conversationId,
+                                reason: sent.ok ? sent.status : sent.reason,
+                              },
+                              "SAMA Auto-Pilot: claimed but send failed; released claim, Blue handback",
+                            );
+                          }
+                        } else {
+                          // Another invocation already owns this SID. Treat as
+                          // auto-sent only if that one actually completed the send.
+                          const existing = await db
+                            .select({
+                              outboundMessageId:
+                                aiAutoRepliesTable.outboundMessageId,
+                            })
+                            .from(aiAutoRepliesTable)
+                            .where(
+                              and(
+                                eq(aiAutoRepliesTable.tenantId, tenant.id),
+                                eq(aiAutoRepliesTable.inboundSid, inboundSid),
+                              ),
+                            )
+                            .limit(1);
+                          if (existing[0]?.outboundMessageId != null) {
+                            autoSent = true;
+                            logger.info(
+                              { tenantSlug, conversationId },
+                              "SAMA Auto-Pilot: auto-send already completed (idempotent skip)",
+                            );
+                          }
+                        }
+                      } else if (!decision.autoSend) {
+                        // Gate refused → Blue handback for THIS message, no learn.
+                        await upsertConversationAiState({
+                          tenantId: tenant.id,
+                          conversationId,
+                          status: "refused",
+                          draftBody: replyText.length > 0 ? replyText : null,
+                          draftSource,
+                          confidence: replyConfidence,
+                          queryCategory,
+                          reasonCode: decision.reasons[0] ?? "gate_refused",
+                          reasonText: describeHandbackReason(decision.reasons),
+                          latestInboundMessageId: inboundMessageId,
+                          inboundSid,
+                        });
+                        logger.info(
+                          {
+                            tenantSlug,
+                            conversationId,
+                            escalated,
+                            reasons: decision.reasons,
+                          },
+                          "SAMA Auto-Pilot: auto-send gated off; Blue handback",
+                        );
+                      }
+                    }
+                  }
+
+                  // Post to Chatwoot when configured: a PUBLIC mirror of an
+                  // auto-sent reply, else a PRIVATE whisper draft so Chatwoot-side
+                  // agents always see an accurate thread.
+                  if (
+                    chatwootResult &&
+                    chatwootResult.status === "sent" &&
+                    chatwootResult.conversationId &&
+                    tenant.chatwootAccountId &&
+                    tenant.chatwootInboxId
+                  ) {
+                    const post = await postChatwootMessage({
+                      accountId: tenant.chatwootAccountId,
+                      inboxId: tenant.chatwootInboxId,
+                      contactPhone: fromNumber,
+                      body: autoSent ? replyText : whisperToPost,
+                      messageType: "outgoing",
+                      private: !autoSent,
+                    });
+                    logger.info(
+                      {
+                        tenantSlug,
+                        whisperPost: post.status,
+                        autoSent,
+                        detail: post.detail,
+                      },
+                      autoSent
+                        ? "SAMA Student: mirrored auto-reply to Chatwoot"
+                        : "SAMA Student: posted Whisper to Chatwoot",
                     );
                   }
-                }
-
-                // Post to Chatwoot when configured: a PRIVATE whisper draft when
-                // we did NOT auto-send (assisted, gated-off, or failed send), or
-                // a PUBLIC mirror of the sent reply when we DID, so Chatwoot-side
-                // agents always see an accurate thread.
-                if (
-                  chatwootResult &&
-                  chatwootResult.status === "sent" &&
-                  chatwootResult.conversationId &&
-                  tenant.chatwootAccountId &&
-                  tenant.chatwootInboxId
-                ) {
-                  const post = await postChatwootMessage({
-                    accountId: tenant.chatwootAccountId,
-                    inboxId: tenant.chatwootInboxId,
-                    contactPhone: fromNumber,
-                    body: autoSent ? replyText : whisperToPost,
-                    messageType: "outgoing",
-                    private: !autoSent,
-                  });
-                  logger.info(
-                    { tenantSlug, whisperPost: post.status, autoSent, detail: post.detail },
-                    autoSent
-                      ? "SAMA Student: mirrored auto-reply to Chatwoot"
-                      : "SAMA Student: posted Whisper to Chatwoot",
-                  );
                 }
               } catch (err) {
                 logger.warn(
                   { err: err instanceof Error ? err.message : String(err) },
-                  "SAMA Student: whisper/auto-send pipeline failed",
+                  "SAMA AI: engagement pipeline failed",
                 );
               }
             } catch (err) {

@@ -254,14 +254,15 @@ export interface TenantChangePasswordResult {
 }
 
 /**
- * How the AI Student engages on inbound texts. "assisted" drafts a private whisper for the agent; "gated_auto" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance.
+ * How the AI engages on inbound texts. "manual" = AI off (no draft, no auto-send, no learning). "copilot" drafts a reply into the composer for a human to edit and send (never learns). "autopilot" may auto-send the reply verbatim when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance — and only then persists what it learned. Legacy values "assisted"/"gated_auto" are still accepted on write and normalized to copilot/autopilot.
  */
 export type TenantSettingsEngagementMode =
   (typeof TenantSettingsEngagementMode)[keyof typeof TenantSettingsEngagementMode];
 
 export const TenantSettingsEngagementMode = {
-  assisted: "assisted",
-  gated_auto: "gated_auto",
+  manual: "manual",
+  copilot: "copilot",
+  autopilot: "autopilot",
 } as const;
 
 export interface TenantSettings {
@@ -289,19 +290,20 @@ export interface TenantSettings {
   baaAcknowledgedBy?: number | null;
   /** @nullable */
   hipaaEligible?: boolean | null;
-  /** How the AI Student engages on inbound texts. "assisted" drafts a private whisper for the agent; "gated_auto" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance. */
+  /** How the AI engages on inbound texts. "manual" = AI off (no draft, no auto-send, no learning). "copilot" drafts a reply into the composer for a human to edit and send (never learns). "autopilot" may auto-send the reply verbatim when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance — and only then persists what it learned. Legacy values "assisted"/"gated_auto" are still accepted on write and normalized to copilot/autopilot. */
   engagementMode: TenantSettingsEngagementMode;
 }
 
 /**
- * AI Student engagement mode — "assisted" (whisper draft only) or "gated_auto" (may auto-send safe answers).
+ * AI engagement mode — "manual" (AI off), "copilot" (draft only, never learns) or "autopilot" (may auto-send safe answers and learn). Legacy "assisted"/"gated_auto" are accepted and normalized.
  */
 export type UpdateTenantSettingsInputEngagementMode =
   (typeof UpdateTenantSettingsInputEngagementMode)[keyof typeof UpdateTenantSettingsInputEngagementMode];
 
 export const UpdateTenantSettingsInputEngagementMode = {
-  assisted: "assisted",
-  gated_auto: "gated_auto",
+  manual: "manual",
+  copilot: "copilot",
+  autopilot: "autopilot",
 } as const;
 
 /**
@@ -332,7 +334,7 @@ export interface UpdateTenantSettingsInput {
    */
   frequencyCapPerDay?: number;
   requireDoubleOptIn?: boolean;
-  /** AI Student engagement mode — "assisted" (whisper draft only) or "gated_auto" (may auto-send safe answers). */
+  /** AI engagement mode — "manual" (AI off), "copilot" (draft only, never learns) or "autopilot" (may auto-send safe answers and learn). Legacy "assisted"/"gated_auto" are accepted and normalized. */
   engagementMode?: UpdateTenantSettingsInputEngagementMode;
 }
 
@@ -344,6 +346,76 @@ export const ConversationStatus = {
   closed: "closed",
   snoozed: "snoozed",
 } as const;
+
+/**
+ * Per-conversation engagement mode that overrides the tenant default. null = inherit the tenant's engagementMode.
+ * @nullable
+ */
+export type ConversationEngagementModeOverride =
+  | (typeof ConversationEngagementModeOverride)[keyof typeof ConversationEngagementModeOverride]
+  | null;
+
+export const ConversationEngagementModeOverride = {
+  manual: "manual",
+  copilot: "copilot",
+  autopilot: "autopilot",
+} as const;
+
+/**
+ * Resolved mode = engagementModeOverride ?? tenant.engagementMode.
+ */
+export type ConversationEffectiveEngagementMode =
+  (typeof ConversationEffectiveEngagementMode)[keyof typeof ConversationEffectiveEngagementMode];
+
+export const ConversationEffectiveEngagementMode = {
+  manual: "manual",
+  copilot: "copilot",
+  autopilot: "autopilot",
+} as const;
+
+/**
+ * Latest AI reply state for this conversation (one row per conversation); null if the AI has not produced a state yet.
+ * @nullable
+ */
+export type ConversationAiState = {
+  /** Lifecycle of the latest AI reply. "drafted" = Co-Pilot draft waiting in the composer. "auto_sent" = Auto-Pilot sent it. "failed" = Grok/send error (Blue handback). "refused" = safety gate blocked it (Blue handback). "human_handled" = a human took the wheel for this reply. "superseded" = a newer inbound replaced it. */
+  status:
+    | "idle"
+    | "drafted"
+    | "auto_sent"
+    | "failed"
+    | "refused"
+    | "human_handled"
+    | "superseded";
+  /**
+   * Suggested reply text to pre-fill the composer (Co-Pilot).
+   * @nullable
+   */
+  draftBody: string | null;
+  /** @nullable */
+  draftSource: "student" | "professor" | null;
+  /** @nullable */
+  confidence?: string | null;
+  /** @nullable */
+  queryCategory?: string | null;
+  /**
+   * Machine code for a Blue handback (e.g. grok_error, gate_refused).
+   * @nullable
+   */
+  reasonCode: string | null;
+  /**
+   * Human-readable chip text near the composer on a Blue handback.
+   * @nullable
+   */
+  reasonText: string | null;
+  /** @nullable */
+  latestInboundMessageId?: number | null;
+  /** @nullable */
+  outboundMessageId?: number | null;
+  /** @nullable */
+  autoSentAt?: string | null;
+  updatedAt: string;
+} | null;
 
 export interface Conversation {
   id: number;
@@ -371,6 +443,18 @@ export interface Conversation {
   createdAt: string;
   /** @nullable */
   contactLocation?: string | null;
+  /**
+   * Per-conversation engagement mode that overrides the tenant default. null = inherit the tenant's engagementMode.
+   * @nullable
+   */
+  engagementModeOverride: ConversationEngagementModeOverride;
+  /** Resolved mode = engagementModeOverride ?? tenant.engagementMode. */
+  effectiveEngagementMode: ConversationEffectiveEngagementMode;
+  /**
+   * Latest AI reply state for this conversation (one row per conversation); null if the AI has not produced a state yet.
+   * @nullable
+   */
+  aiState: ConversationAiState;
 }
 
 export type MessageDirection =
@@ -1116,12 +1200,31 @@ export const UpdateConversationInputStatus = {
   closed: "closed",
 } as const;
 
+/**
+ * Per-conversation engagement mode override; null clears it (inherit tenant).
+ * @nullable
+ */
+export type UpdateConversationInputEngagementModeOverride =
+  | (typeof UpdateConversationInputEngagementModeOverride)[keyof typeof UpdateConversationInputEngagementModeOverride]
+  | null;
+
+export const UpdateConversationInputEngagementModeOverride = {
+  manual: "manual",
+  copilot: "copilot",
+  autopilot: "autopilot",
+} as const;
+
 export interface UpdateConversationInput {
   status?: UpdateConversationInputStatus;
   /** @nullable */
   dispositionId?: number | null;
   /** @nullable */
   resolutionNote?: string | null;
+  /**
+   * Per-conversation engagement mode override; null clears it (inherit tenant).
+   * @nullable
+   */
+  engagementModeOverride?: UpdateConversationInputEngagementModeOverride;
 }
 
 export interface Disposition {

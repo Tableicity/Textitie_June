@@ -9,8 +9,9 @@ When an inbound Student draft is **ungrounded** (`!kbMatched`) the webhook escal
 autonomous Professor (grok-4.3) that answers from the tenant Library + its own expertise and
 returns strict JSON (2-3 atomic categorized facts + a customer reply + 3 engagement questions +
 confidence). Facts are auto-persisted as **published truth** into the current Classroom version so
-the system never asks the same thing twice; `gated_auto` may auto-send the reply, `assisted`
-whispers it.
+the system never asks the same thing twice; under `autopilot` it may auto-send the reply, `copilot`
+whispers/drafts it, `manual` skips AI entirely. (Modes are canonical `manual | copilot | autopilot`;
+legacy `gated_auto`→`autopilot`, `assisted`→`copilot`, aliased on write.)
 
 ## Injection safety is deterministic, not provenance-trust
 The customer SMS is QUERY-ONLY and must NEVER become a persisted fact. The Professor labels each
@@ -31,9 +32,10 @@ alone could be subverted by injection → customer-supplied claims could be auto
 
 ## Auto-send gate is stricter than the persistence gate
 Persisting a fact ≠ allowed to auto-send it. `evaluateProfessorEscalationSend` (fail-closed,
-`gated_auto` only) additionally requires: only SAFE categories (`general`/`features` — pricing,
-compliance, technical_setup always whisper), high confidence, ≥1 fact persisted, no unresolved
-conflict, telephony compliance OK, automation didn't already handle it, AND the **independent
+`autopilot` only) additionally requires: only SAFE categories (`general`/`features` — pricing,
+compliance, technical_setup always whisper), high confidence, ≥1 fact **persistable** (screened,
+not merely model-returned), no unresolved conflict, telephony compliance OK, automation didn't
+already handle it, AND the **independent
 inbound query intent is not risky** (a risky inbound intent blocks the send even if the Professor
 labeled its facts benign — the fact classifier can under-tag).
 

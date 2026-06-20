@@ -3296,12 +3296,16 @@ components:
           type: ["boolean", "null"]
         engagementMode:
           type: string
-          enum: [assisted, gated_auto]
+          enum: [manual, copilot, autopilot]
           description: >-
-            How the AI Student engages on inbound texts. "assisted" drafts a
-            private whisper for the agent; "gated_auto" may auto-send the reply
-            when it is high-confidence, classroom-grounded, conflict-free, in a
-            safe category, and passes outbound compliance.
+            How the AI engages on inbound texts. "manual" = AI off (no draft,
+            no auto-send, no learning). "copilot" drafts a reply into the
+            composer for a human to edit and send (never learns). "autopilot"
+            may auto-send the reply verbatim when it is high-confidence,
+            classroom-grounded, conflict-free, in a safe category, and passes
+            outbound compliance — and only then persists what it learned.
+            Legacy values "assisted"/"gated_auto" are still accepted on write
+            and normalized to copilot/autopilot.
       required:
         - id
         - name
@@ -3336,8 +3340,11 @@ components:
           type: boolean
         engagementMode:
           type: string
-          enum: [assisted, gated_auto]
-          description: AI Student engagement mode — "assisted" (whisper draft only) or "gated_auto" (may auto-send safe answers).
+          enum: [manual, copilot, autopilot]
+          description: >-
+            AI engagement mode — "manual" (AI off), "copilot" (draft only,
+            never learns) or "autopilot" (may auto-send safe answers and learn).
+            Legacy "assisted"/"gated_auto" are accepted and normalized.
 
     ConversationStatus:
       type: string
@@ -3381,6 +3388,65 @@ components:
           format: date-time
         contactLocation:
           type: ["string", "null"]
+        engagementModeOverride:
+          type: ["string", "null"]
+          enum: [manual, copilot, autopilot, null]
+          description: >-
+            Per-conversation engagement mode that overrides the tenant default.
+            null = inherit the tenant's engagementMode.
+        effectiveEngagementMode:
+          type: string
+          enum: [manual, copilot, autopilot]
+          description: Resolved mode = engagementModeOverride ?? tenant.engagementMode.
+        aiState:
+          type: ["object", "null"]
+          description: >-
+            Latest AI reply state for this conversation (one row per
+            conversation); null if the AI has not produced a state yet.
+          properties:
+            status:
+              type: string
+              enum: [idle, drafted, auto_sent, failed, refused, human_handled, superseded]
+              description: >-
+                Lifecycle of the latest AI reply. "drafted" = Co-Pilot draft
+                waiting in the composer. "auto_sent" = Auto-Pilot sent it.
+                "failed" = Grok/send error (Blue handback). "refused" = safety
+                gate blocked it (Blue handback). "human_handled" = a human took
+                the wheel for this reply. "superseded" = a newer inbound
+                replaced it.
+            draftBody:
+              type: ["string", "null"]
+              description: Suggested reply text to pre-fill the composer (Co-Pilot).
+            draftSource:
+              type: ["string", "null"]
+              enum: [student, professor, null]
+            confidence:
+              type: ["string", "null"]
+            queryCategory:
+              type: ["string", "null"]
+            reasonCode:
+              type: ["string", "null"]
+              description: Machine code for a Blue handback (e.g. grok_error, gate_refused).
+            reasonText:
+              type: ["string", "null"]
+              description: Human-readable chip text near the composer on a Blue handback.
+            latestInboundMessageId:
+              type: ["integer", "null"]
+            outboundMessageId:
+              type: ["integer", "null"]
+            autoSentAt:
+              type: ["string", "null"]
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+          required:
+            - status
+            - draftBody
+            - draftSource
+            - reasonCode
+            - reasonText
+            - updatedAt
       required:
         - id
         - tenantId
@@ -3392,6 +3458,9 @@ components:
         - assignedAt
         - lastMessageAt
         - createdAt
+        - engagementModeOverride
+        - effectiveEngagementMode
+        - aiState
 
     MessageDirection:
       type: string
@@ -4513,6 +4582,10 @@ components:
           type: ["integer", "null"]
         resolutionNote:
           type: ["string", "null"]
+        engagementModeOverride:
+          type: ["string", "null"]
+          enum: [manual, copilot, autopilot, null]
+          description: Per-conversation engagement mode override; null clears it (inherit tenant).
 
     Disposition:
       type: object

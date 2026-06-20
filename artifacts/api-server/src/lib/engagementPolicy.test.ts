@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   normalizeEngagementMode,
+  resolveEffectiveEngagementMode,
   evaluateAutoSend,
   evaluateProfessorEscalationSend,
   type AutoSendInput,
@@ -10,7 +11,7 @@ import {
 // A fully-passing input. Every gate test below clones this and flips ONE field
 // so we prove each gate independently blocks the send.
 const HAPPY: AutoSendInput = {
-  engagementMode: "gated_auto",
+  engagementMode: "autopilot",
   draftStatus: "drafted",
   confidence: "high",
   kbMatched: true,
@@ -22,22 +23,48 @@ const HAPPY: AutoSendInput = {
 };
 
 describe("normalizeEngagementMode", () => {
-  it("passes through known modes", () => {
-    expect(normalizeEngagementMode("assisted")).toBe("assisted");
-    expect(normalizeEngagementMode("gated_auto")).toBe("gated_auto");
+  it("passes through canonical modes", () => {
+    expect(normalizeEngagementMode("manual")).toBe("manual");
+    expect(normalizeEngagementMode("copilot")).toBe("copilot");
+    expect(normalizeEngagementMode("autopilot")).toBe("autopilot");
+  });
+
+  it("maps legacy aliases to canonical modes (no data migration)", () => {
+    expect(normalizeEngagementMode("assisted")).toBe("copilot");
+    expect(normalizeEngagementMode("gated_auto")).toBe("autopilot");
   });
 
   it("is case/whitespace tolerant", () => {
-    expect(normalizeEngagementMode("  GATED_AUTO ")).toBe("gated_auto");
-    expect(normalizeEngagementMode("Assisted")).toBe("assisted");
+    expect(normalizeEngagementMode("  AUTOPILOT ")).toBe("autopilot");
+    expect(normalizeEngagementMode("Assisted")).toBe("copilot");
+    expect(normalizeEngagementMode(" Gated_Auto ")).toBe("autopilot");
   });
 
-  it("defaults unknown/empty/non-string to assisted (fail-safe)", () => {
-    expect(normalizeEngagementMode("auto")).toBe("assisted");
-    expect(normalizeEngagementMode("")).toBe("assisted");
-    expect(normalizeEngagementMode(null)).toBe("assisted");
-    expect(normalizeEngagementMode(undefined)).toBe("assisted");
-    expect(normalizeEngagementMode(42)).toBe("assisted");
+  it("defaults unknown/empty/non-string to copilot (safe: drafts only)", () => {
+    expect(normalizeEngagementMode("auto")).toBe("copilot");
+    expect(normalizeEngagementMode("")).toBe("copilot");
+    expect(normalizeEngagementMode(null)).toBe("copilot");
+    expect(normalizeEngagementMode(undefined)).toBe("copilot");
+    expect(normalizeEngagementMode(42)).toBe("copilot");
+  });
+});
+
+describe("resolveEffectiveEngagementMode", () => {
+  it("uses the conversation override when present", () => {
+    expect(resolveEffectiveEngagementMode("manual", "autopilot")).toBe("manual");
+    expect(resolveEffectiveEngagementMode("autopilot", "copilot")).toBe("autopilot");
+  });
+
+  it("inherits the tenant mode when the override is null/empty", () => {
+    expect(resolveEffectiveEngagementMode(null, "autopilot")).toBe("autopilot");
+    expect(resolveEffectiveEngagementMode("", "manual")).toBe("manual");
+    expect(resolveEffectiveEngagementMode(undefined, "copilot")).toBe("copilot");
+    expect(resolveEffectiveEngagementMode("   ", "autopilot")).toBe("autopilot");
+  });
+
+  it("normalizes legacy aliases on both inputs", () => {
+    expect(resolveEffectiveEngagementMode("gated_auto", "assisted")).toBe("autopilot");
+    expect(resolveEffectiveEngagementMode(null, "gated_auto")).toBe("autopilot");
   });
 });
 
@@ -48,10 +75,12 @@ describe("evaluateAutoSend", () => {
     expect(d.reasons).toEqual([]);
   });
 
-  it("blocks when not in gated_auto mode", () => {
-    const d = evaluateAutoSend({ ...HAPPY, engagementMode: "assisted" });
-    expect(d.autoSend).toBe(false);
-    expect(d.reasons).toContain("mode_not_gated_auto");
+  it("blocks when not in autopilot mode", () => {
+    for (const m of ["manual", "copilot"] as const) {
+      const d = evaluateAutoSend({ ...HAPPY, engagementMode: m });
+      expect(d.autoSend).toBe(false);
+      expect(d.reasons).toContain("mode_not_autopilot");
+    }
   });
 
   it("blocks when the draft is not ready (stubbed or failed)", () => {
@@ -125,7 +154,7 @@ describe("evaluateAutoSend", () => {
 
   it("accumulates every failed gate at once", () => {
     const d = evaluateAutoSend({
-      engagementMode: "assisted",
+      engagementMode: "manual",
       draftStatus: "failed",
       confidence: "low",
       kbMatched: false,
@@ -138,7 +167,7 @@ describe("evaluateAutoSend", () => {
     expect(d.autoSend).toBe(false);
     expect(d.reasons).toEqual(
       expect.arrayContaining([
-        "mode_not_gated_auto",
+        "mode_not_autopilot",
         "draft_not_ready",
         "not_grounded_in_classroom",
         "confidence_not_high",
@@ -155,11 +184,11 @@ describe("evaluateAutoSend", () => {
 // A fully-passing Professor-escalation send input. Each gate test clones this
 // and flips ONE field to prove the gate independently blocks the send.
 const HAPPY_ESC: EscalationSendInput = {
-  engagementMode: "gated_auto",
+  engagementMode: "autopilot",
   grokConfigured: true,
   escalationStatus: "answered",
   confidence: "high",
-  factsPersisted: 2,
+  screenedFactCount: 2,
   hasReply: true,
   escalatedCategories: ["general", "features"],
   queryCategory: "general",
@@ -175,10 +204,12 @@ describe("evaluateProfessorEscalationSend", () => {
     expect(d.reasons).toEqual([]);
   });
 
-  it("blocks outside gated_auto mode", () => {
-    expect(
-      evaluateProfessorEscalationSend({ ...HAPPY_ESC, engagementMode: "assisted" }).reasons,
-    ).toContain("mode_not_gated_auto");
+  it("blocks outside autopilot mode", () => {
+    for (const m of ["manual", "copilot"] as const) {
+      expect(
+        evaluateProfessorEscalationSend({ ...HAPPY_ESC, engagementMode: m }).reasons,
+      ).toContain("mode_not_autopilot");
+    }
   });
 
   it("blocks when the automation engine already handled the inbound", () => {
@@ -211,10 +242,10 @@ describe("evaluateProfessorEscalationSend", () => {
     ).toContain("confidence_not_high");
   });
 
-  it("blocks when no facts were persisted (nothing learned)", () => {
+  it("blocks when no facts passed screening (nothing to learn)", () => {
     expect(
-      evaluateProfessorEscalationSend({ ...HAPPY_ESC, factsPersisted: 0 }).reasons,
-    ).toContain("no_facts_persisted");
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, screenedFactCount: 0 }).reasons,
+    ).toContain("no_screened_facts");
   });
 
   it("blocks when there is no reply text", () => {

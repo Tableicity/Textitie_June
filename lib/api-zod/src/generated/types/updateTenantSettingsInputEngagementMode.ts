@@ -7,12 +7,13 @@
  */
 
 /**
- * AI Student engagement mode — "assisted" (whisper draft only) or "gated_auto" (may auto-send safe answers).
+ * AI engagement mode — "manual" (AI off), "copilot" (draft only, never learns) or "autopilot" (may auto-send safe answers and learn). Legacy "assisted"/"gated_auto" are accepted and normalized.
  */
 export type UpdateTenantSettingsInputEngagementMode =
   (typeof UpdateTenantSettingsInputEngagementMode)[keyof typeof UpdateTenantSettingsInputEngagementMode];
 
 export const UpdateTenantSettingsInputEngagementMode = {
-  assisted: "assisted",
-  gated_auto: "gated_auto",
+  manual: "manual",
+  copilot: "copilot",
+  autopilot: "autopilot",
 } as const;

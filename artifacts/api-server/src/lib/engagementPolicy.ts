@@ -13,15 +13,44 @@ import type { StudentConfidence } from "@workspace/ai-student";
  * that is unknown or unsafe blocks the send and we fall back to the whisper.
  */
 
-export const ENGAGEMENT_MODES = ["assisted", "gated_auto"] as const;
+export const ENGAGEMENT_MODES = ["manual", "copilot", "autopilot"] as const;
 export type EngagementMode = (typeof ENGAGEMENT_MODES)[number];
 
-/** Coerce any stored/posted value to a known mode; unknown ⇒ "assisted". */
+// Legacy stored values → canonical modes (no data migration needed).
+const LEGACY_MODE_ALIASES: Record<string, EngagementMode> = {
+  assisted: "copilot",
+  gated_auto: "autopilot",
+};
+
+/**
+ * Coerce any stored/posted value to a canonical mode. Accepts the new modes
+ * (manual|copilot|autopilot) and the legacy aliases (assisted→copilot,
+ * gated_auto→autopilot). Anything unknown ⇒ "copilot" (safe: drafts only,
+ * never auto-sends, never learns).
+ */
 export function normalizeEngagementMode(raw: unknown): EngagementMode {
   const v = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-  return (ENGAGEMENT_MODES as readonly string[]).includes(v)
-    ? (v as EngagementMode)
-    : "assisted";
+  if ((ENGAGEMENT_MODES as readonly string[]).includes(v)) {
+    return v as EngagementMode;
+  }
+  return LEGACY_MODE_ALIASES[v] ?? "copilot";
+}
+
+/**
+ * Resolve the mode that actually governs a conversation: a per-conversation
+ * override wins over the tenant default; a null/empty override inherits the
+ * tenant. Both inputs are normalized (legacy aliases honored).
+ */
+export function resolveEffectiveEngagementMode(
+  conversationOverride: unknown,
+  tenantMode: unknown,
+): EngagementMode {
+  const hasOverride =
+    typeof conversationOverride === "string" &&
+    conversationOverride.trim() !== "";
+  return hasOverride
+    ? normalizeEngagementMode(conversationOverride)
+    : normalizeEngagementMode(tenantMode);
 }
 
 // Categories whose ANSWERS are safe to auto-send without a human in the loop.
@@ -67,7 +96,7 @@ export type AutoSendDecision = { autoSend: boolean; reasons: string[] };
 export function evaluateAutoSend(input: AutoSendInput): AutoSendDecision {
   const reasons: string[] = [];
 
-  if (input.engagementMode !== "gated_auto") reasons.push("mode_not_gated_auto");
+  if (input.engagementMode !== "autopilot") reasons.push("mode_not_autopilot");
   if (input.draftStatus !== "drafted") reasons.push("draft_not_ready");
   // Grounding must come from the curated Classroom — never the legacy blob/stub.
   if (!input.groundedInClassroom) reasons.push("not_grounded_in_classroom");
@@ -93,13 +122,51 @@ export function evaluateAutoSend(input: AutoSendInput): AutoSendDecision {
   return { autoSend: reasons.length === 0, reasons };
 }
 
+// Friendly, customer-agent-facing text for each gate-refusal reason code, in
+// priority order. When Auto-Pilot hands a message back to a human (Blue) we show
+// ONE short chip explaining why — the most important reason wins.
+const HANDBACK_REASON_TEXT: Array<[string, string]> = [
+  ["grok_error", "AI couldn't draft a reply"],
+  ["send_failed", "Auto-send failed — please send manually"],
+  ["compliance_block", "Compliance hold — needs your review"],
+  ["risky_query_category", "Sensitive topic — needs a human"],
+  ["unsafe_grounding_category", "Sensitive topic — needs a human"],
+  ["unsafe_escalated_category", "Sensitive topic — needs a human"],
+  ["unresolved_conflict", "Conflicting knowledge — needs your review"],
+  ["confidence_not_high", "Not confident enough to auto-send"],
+  ["no_kb_match", "No matching knowledge"],
+  ["not_grounded_in_classroom", "No matching knowledge"],
+  ["no_grounding_facts", "No matching knowledge"],
+  ["no_screened_facts", "No matching knowledge"],
+  ["no_escalated_categories", "No matching knowledge"],
+  ["draft_not_ready", "AI couldn't draft a reply"],
+  ["escalation_not_answered", "AI couldn't draft a reply"],
+  ["grok_offline", "AI is offline"],
+];
+
+/**
+ * Pick the single most important human-readable chip text for a Blue handback,
+ * given the machine reason codes the gate produced. Falls back to a generic
+ * "Needs your review" when nothing matches.
+ */
+export function describeHandbackReason(reasons: string[]): string {
+  const set = new Set(reasons);
+  for (const [code, text] of HANDBACK_REASON_TEXT) {
+    if (set.has(code)) return text;
+  }
+  return "Needs your review";
+}
+
 export type EscalationSendInput = {
   engagementMode: EngagementMode;
   grokConfigured: boolean;
   escalationStatus: "answered" | "stubbed" | "failed";
   confidence: "high" | "medium" | "low" | null;
-  /** Count of NON-duplicate facts actually written to the Classroom. */
-  factsPersisted: number;
+  /**
+   * Count of screened facts that WOULD be persisted. The gate runs BEFORE
+   * persistence — facts are only written after a confirmed autonomous send.
+   */
+  screenedFactCount: number;
   /** True when the escalation produced a non-empty customer reply. */
   hasReply: boolean;
   /** Categories of the persisted escalation facts. */
@@ -127,12 +194,12 @@ export function evaluateProfessorEscalationSend(
 ): AutoSendDecision {
   const reasons: string[] = [];
 
-  if (input.engagementMode !== "gated_auto") reasons.push("mode_not_gated_auto");
+  if (input.engagementMode !== "autopilot") reasons.push("mode_not_autopilot");
   if (input.automationHandled) reasons.push("automation_handled");
   if (!input.grokConfigured) reasons.push("grok_offline");
   if (input.escalationStatus !== "answered") reasons.push("escalation_not_answered");
   if (input.confidence !== "high") reasons.push("confidence_not_high");
-  if (input.factsPersisted < 1) reasons.push("no_facts_persisted");
+  if (input.screenedFactCount < 1) reasons.push("no_screened_facts");
   if (!input.hasReply) reasons.push("no_reply_text");
   if (input.escalatedCategories.length === 0) {
     reasons.push("no_escalated_categories");

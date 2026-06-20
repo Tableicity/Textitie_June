@@ -30,6 +30,7 @@ import {
   getListRemindersQueryKey,
   getListContactsQueryKey,
 } from "@workspace/api-client-react";
+import type { UpdateConversationInputEngagementModeOverride } from "@workspace/api-client-react";
 import { useSearch, useLocation } from "wouter";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
@@ -68,6 +69,7 @@ import {
   Archive,
   BellOff,
   BookUser,
+  AlertCircle,
 } from "lucide-react";
 import {
   Sheet,
@@ -186,6 +188,9 @@ export default function Inbox() {
   const [newName, setNewName] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Tracks the last Co-Pilot draft we auto-inserted, so we prefill a draft once
+  // per distinct draft and never re-fight an agent who cleared or edited it.
+  const appliedDraftKeyRef = useRef<string | null>(null);
   const COMPOSE_MAX_CHARS = 1000;
   const COMMON_EMOJIS = [
     "😀","😂","😉","😍","🥰","😎","🤔","🙏",
@@ -436,6 +441,12 @@ export default function Inbox() {
           queryClient.invalidateQueries({
             queryKey: getListConversationsQueryKey(),
           });
+          // Refresh the conversation detail so the AI-state (button color +
+          // handback chip) updates after a human send marks the row handled,
+          // independent of the SSE stream.
+          queryClient.invalidateQueries({
+            queryKey: getGetConversationQueryKey(selectedId),
+          });
         }
       },
     },
@@ -463,6 +474,12 @@ export default function Inbox() {
         setResolveNote("");
       },
     },
+  });
+
+  // Per-conversation engagement-mode override. Kept separate from updateConv so
+  // it doesn't touch the resolve dialog state.
+  const setOverrideMut = useUpdateConversation({
+    mutation: { onSuccess: invalidateConv },
   });
 
   const contactActionPending =
@@ -622,6 +639,56 @@ export default function Inbox() {
   }, [dispositions]);
 
   const composerBusy = sendMessage.isPending || whisperMutation.isPending;
+
+  // --- AI engagement (per-conversation) ---
+  const effectiveMode = selectedConv?.effectiveEngagementMode ?? null;
+  const aiState = selectedConv?.aiState ?? null;
+  const overrideValue = selectedConv?.engagementModeOverride ?? null;
+
+  // Auto-Pilot handed this one message back to a human (gate refused or Grok failed).
+  const isAiHandback =
+    effectiveMode === "autopilot" &&
+    (aiState?.status === "failed" || aiState?.status === "refused");
+
+  // A Co-Pilot (or pre-handback) draft is waiting for a human to review/send.
+  const aiDraftBody = aiState?.draftBody?.trim() ?? "";
+  const aiDraftReady = aiState?.status === "drafted" && aiDraftBody.length > 0;
+
+  // Live send-button colour reflects the effective mode; an Auto-Pilot→Blue
+  // handback overrides green for the one message that needs a human. Whisper
+  // mode keeps its own amber styling and is independent of engagement mode.
+  const sendButtonClass = isWhisperMode
+    ? "bg-amber-600 hover:bg-amber-700"
+    : effectiveMode === "copilot"
+      ? "bg-yellow-500 hover:bg-yellow-600"
+      : effectiveMode === "autopilot" && !isAiHandback
+        ? "bg-emerald-600 hover:bg-emerald-700"
+        : "bg-blue-600 hover:bg-blue-700";
+
+  const modeChip =
+    effectiveMode === "copilot"
+      ? { chip: "bg-yellow-50 text-yellow-800 border border-yellow-300", dot: "bg-yellow-500", label: "Co-Pilot" }
+      : effectiveMode === "autopilot"
+        ? { chip: "bg-emerald-50 text-emerald-700 border border-emerald-200", dot: "bg-emerald-500", label: "Auto-Pilot" }
+        : { chip: "bg-blue-50 text-blue-700 border border-blue-200", dot: "bg-blue-500", label: "Manual" };
+
+  const insertAiDraft = useCallback(() => {
+    if (!aiState?.draftBody || !selectedId) return;
+    setComposeText(aiState.draftBody.slice(0, COMPOSE_MAX_CHARS));
+    appliedDraftKeyRef.current = `${selectedId}:${aiState.updatedAt ?? ""}`;
+    inputRef.current?.focus();
+  }, [aiState?.draftBody, aiState?.updatedAt, selectedId, COMPOSE_MAX_CHARS]);
+
+  // Auto-prefill the composer with a fresh Co-Pilot draft, but never overwrite
+  // text the agent has already typed and never re-apply the same draft twice.
+  useEffect(() => {
+    if (!selectedId || !aiDraftReady || isWhisperMode) return;
+    const key = `${selectedId}:${aiState?.updatedAt ?? ""}`;
+    if (appliedDraftKeyRef.current === key) return;
+    if (composeText.trim().length > 0) return;
+    setComposeText(aiDraftBody.slice(0, COMPOSE_MAX_CHARS));
+    appliedDraftKeyRef.current = key;
+  }, [selectedId, aiDraftReady, aiDraftBody, aiState?.updatedAt, composeText, isWhisperMode, COMPOSE_MAX_CHARS]);
 
   const statusColor = (s: string) => {
     if (s === "online") return "bg-emerald-500";
@@ -844,6 +911,41 @@ export default function Inbox() {
               </button>
 
               <div className="flex items-center gap-1.5">
+                {/* Per-conversation AI engagement override (null = inherit tenant). */}
+                {selectedConv && (
+                  <Select
+                    value={overrideValue ?? "inherit"}
+                    onValueChange={(v) => {
+                      if (!selectedId) return;
+                      setOverrideMut.mutate({
+                        id: selectedId,
+                        data: {
+                          engagementModeOverride:
+                            v === "inherit"
+                              ? null
+                              : (v as UpdateConversationInputEngagementModeOverride),
+                        },
+                      });
+                    }}
+                    disabled={setOverrideMut.isPending}
+                  >
+                    <SelectTrigger
+                      className="h-8 w-[150px] text-xs"
+                      data-testid="select-engagement-override"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span className={`h-2 w-2 rounded-full ${modeChip.dot}`} />
+                        <SelectValue />
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="inherit">Mode: Inherit</SelectItem>
+                      <SelectItem value="manual">Mode: Manual</SelectItem>
+                      <SelectItem value="copilot">Mode: Co-Pilot</SelectItem>
+                      <SelectItem value="autopilot">Mode: Auto-Pilot</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
                 {/* Order: Claim → Resolve → New Message → Halo AI → Buy Gas */}
                 {!selectedConv?.assignedUserId && (
                   <Button
@@ -1262,6 +1364,48 @@ export default function Inbox() {
                     ))}
                   </div>
                 )}
+                {selectedConv && effectiveMode && !isWhisperMode && (
+                  <div
+                    className="flex flex-wrap items-center gap-2 mb-2 text-xs"
+                    data-testid="ai-engagement-status"
+                  >
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium ${modeChip.chip}`}
+                      data-testid="ai-mode-chip"
+                    >
+                      <span className={`h-2 w-2 rounded-full ${modeChip.dot}`} />
+                      {modeChip.label}
+                    </span>
+                    {isAiHandback && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700"
+                        data-testid="ai-handback-reason"
+                      >
+                        <AlertCircle className="h-3 w-3" />
+                        {aiState?.reasonText ||
+                          aiState?.reasonCode ||
+                          "Handed back to you"}
+                      </span>
+                    )}
+                    {aiState?.status === "auto_sent" && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                        <Sparkles className="h-3 w-3" />
+                        Auto-Pilot replied
+                      </span>
+                    )}
+                    {aiDraftReady && composeText.trim() !== aiDraftBody && (
+                      <button
+                        type="button"
+                        onClick={insertAiDraft}
+                        className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-yellow-50 px-2 py-0.5 text-yellow-800 hover:bg-yellow-100"
+                        data-testid="button-insert-ai-draft"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Insert AI draft
+                      </button>
+                    )}
+                  </div>
+                )}
                 <form onSubmit={handleSend} className="flex items-end gap-2">
                   <button
                     type="button"
@@ -1341,10 +1485,9 @@ export default function Inbox() {
                   <Button
                     type="submit"
                     size="icon"
-                    className={`rounded-xl h-[66px] w-[66px] shrink-0 ${
-                      isWhisperMode ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"
-                    }`}
+                    className={`rounded-xl h-[66px] w-[66px] shrink-0 ${sendButtonClass}`}
                     disabled={!composeText.trim() || composerBusy}
+                    data-testid="button-send-message"
                   >
                     <Send className="h-5 w-5" />
                   </Button>

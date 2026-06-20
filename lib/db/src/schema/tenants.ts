@@ -29,12 +29,17 @@ export const tenantsTable = pgTable("tenants", {
   hipaaEnabled: boolean("hipaa_enabled").notNull().default(false),
   baaAcknowledgedAt: timestamp("baa_acknowledged_at", { withTimezone: true }),
   baaAcknowledgedBy: integer("baa_acknowledged_by"),
-  // AI engagement mode for inbound texts. "assisted" (default) drafts a reply
-  // as a private agent whisper only; "gated_auto" lets the Student auto-send the
-  // SMS, but ONLY when every safety gate passes (see lib/engagementPolicy.ts).
-  // Plain text (no DB enum/check) + app-level validation so a bad value can
-  // never 500 a list query; unknown values are treated as "assisted".
-  engagementMode: text("engagement_mode").notNull().default("assisted"),
+  // AI engagement mode for inbound texts (see lib/engagementPolicy.ts):
+  //   "manual"    = AI off (no draft, no auto-send, no learning)
+  //   "copilot"   = drafts a reply into the agent composer; human edits + sends;
+  //                 NEVER learns (default)
+  //   "autopilot" = may auto-send verbatim when every safety gate passes, and
+  //                 only then persists what it learned
+  // Legacy values "assisted"/"gated_auto" are still stored on old rows and are
+  // normalized to copilot/autopilot at read time. Plain text (no DB enum/check)
+  // + app-level validation so a bad value can never 500 a list query; unknown
+  // values are treated as "copilot".
+  engagementMode: text("engagement_mode").notNull().default("copilot"),
   // When true (default), unregistered local numbers for this tenant are billed
   // the $10 Unregistered Carrier Surcharge. An admin can flip this off per
   // tenant from the Conductor /admin/tenants page to waive the surcharge.

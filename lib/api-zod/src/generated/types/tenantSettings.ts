@@ -32,6 +32,6 @@ export interface TenantSettings {
   baaAcknowledgedBy?: number | null;
   /** @nullable */
   hipaaEligible?: boolean | null;
-  /** How the AI Student engages on inbound texts. "assisted" drafts a private whisper for the agent; "gated_auto" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance. */
+  /** How the AI engages on inbound texts. "manual" = AI off (no draft, no auto-send, no learning). "copilot" drafts a reply into the composer for a human to edit and send (never learns). "autopilot" may auto-send the reply verbatim when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance — and only then persists what it learned. Legacy values "assisted"/"gated_auto" are still accepted on write and normalized to copilot/autopilot. */
   engagementMode: TenantSettingsEngagementMode;
 }

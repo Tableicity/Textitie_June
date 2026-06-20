@@ -1,9 +1,12 @@
 ---
 name: AI auto-send safety contract
-description: Rules for the gated_auto engagement-mode auto-send path — fail-closed gate + the ai_auto_replies claim lifecycle.
+description: Rules for the autopilot engagement-mode auto-send path — fail-closed gate + the ai_auto_replies claim lifecycle.
 ---
 
-# AI auto-send (engagement mode `gated_auto`) safety contract
+# AI auto-send (engagement mode `autopilot`) safety contract
+
+> Modes are now canonical `manual | copilot | autopilot` (legacy `gated_auto`→`autopilot`,
+> `assisted`→`copilot`, aliased on write). Auto-send only ever runs under `autopilot`.
 
 The Student may auto-send an SMS reply ONLY through the pure, fail-closed gate
 `evaluateAutoSend` (`artifacts/api-server/src/lib/engagementPolicy.ts`). Keep it a

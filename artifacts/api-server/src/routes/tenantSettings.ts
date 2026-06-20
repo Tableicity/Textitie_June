@@ -5,6 +5,7 @@ import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
 import { recordAudit } from "../lib/audit";
 import { setHipaaEnabled } from "../lib/logger";
+import { ENGAGEMENT_MODES, normalizeEngagementMode } from "../lib/engagementPolicy";
 
 const router = Router();
 
@@ -32,7 +33,11 @@ async function loadTenantSettings(tenantId: number) {
     .leftJoin(tiersTable, eq(tiersTable.code, tenantsTable.tierCode))
     .where(eq(tenantsTable.id, tenantId))
     .limit(1);
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  // Always present the canonical mode to clients even if a legacy alias
+  // (assisted/gated_auto) or null is still stored on the row.
+  return { ...row, engagementMode: normalizeEngagementMode(row.engagementMode) };
 }
 
 router.get("/tenant-settings/me", requireTenantAuth, async (req, res) => {
@@ -128,11 +133,22 @@ router.patch("/tenant-settings/me", requireTenantAuth, async (req, res) => {
     patch.requireDoubleOptIn = requireDoubleOptIn;
   }
   if (engagementMode !== undefined) {
-    if (engagementMode !== "assisted" && engagementMode !== "gated_auto") {
-      res.status(400).json({ error: "engagementMode must be 'assisted' or 'gated_auto'" });
+    // Canonical modes are manual | copilot | autopilot. Legacy aliases
+    // (assisted→copilot, gated_auto→autopilot) are still accepted and folded to
+    // canonical so older clients keep working; we always persist canonical.
+    const canonical =
+      engagementMode === "assisted"
+        ? "copilot"
+        : engagementMode === "gated_auto"
+          ? "autopilot"
+          : engagementMode;
+    if (!(ENGAGEMENT_MODES as readonly string[]).includes(canonical)) {
+      res.status(400).json({
+        error: "engagementMode must be one of manual, copilot, autopilot",
+      });
       return;
     }
-    patch.engagementMode = engagementMode;
+    patch.engagementMode = canonical;
   }
 
   if (Object.keys(patch).length === 0) {

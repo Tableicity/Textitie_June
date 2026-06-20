@@ -5,6 +5,7 @@
  * SAMA Control Plane API
  * OpenAPI spec version: 0.1.0
  */
+import type { UpdateConversationInputEngagementModeOverride } from "./updateConversationInputEngagementModeOverride";
 import type { UpdateConversationInputStatus } from "./updateConversationInputStatus";
 
 export interface UpdateConversationInput {
@@ -13,4 +14,9 @@ export interface UpdateConversationInput {
   dispositionId?: number | null;
   /** @nullable */
   resolutionNote?: string | null;
+  /**
+   * Per-conversation engagement mode override; null clears it (inherit tenant).
+   * @nullable
+   */
+  engagementModeOverride?: UpdateConversationInputEngagementModeOverride;
 }

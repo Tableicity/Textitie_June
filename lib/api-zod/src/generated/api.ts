@@ -439,9 +439,9 @@ export const GetTenantSettingsResponse = zod.object({
   baaAcknowledgedBy: zod.number().nullish(),
   hipaaEligible: zod.boolean().nullish(),
   engagementMode: zod
-    .enum(["assisted", "gated_auto"])
+    .enum(["manual", "copilot", "autopilot"])
     .describe(
-      'How the AI Student engages on inbound texts. \"assisted\" drafts a private whisper for the agent; \"gated_auto\" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance.',
+      'How the AI engages on inbound texts. \"manual\" = AI off (no draft, no auto-send, no learning). \"copilot\" drafts a reply into the composer for a human to edit and send (never learns). \"autopilot\" may auto-send the reply verbatim when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance — and only then persists what it learned. Legacy values \"assisted\"\/\"gated_auto\" are still accepted on write and normalized to copilot\/autopilot.',
     ),
 });
 
@@ -480,10 +480,10 @@ export const UpdateTenantSettingsBody = zod
       .optional(),
     requireDoubleOptIn: zod.boolean().optional(),
     engagementMode: zod
-      .enum(["assisted", "gated_auto"])
+      .enum(["manual", "copilot", "autopilot"])
       .optional()
       .describe(
-        'AI Student engagement mode — \"assisted\" (whisper draft only) or \"gated_auto\" (may auto-send safe answers).',
+        'AI engagement mode — \"manual\" (AI off), \"copilot\" (draft only, never learns) or \"autopilot\" (may auto-send safe answers and learn). Legacy \"assisted\"\/\"gated_auto\" are accepted and normalized.',
       ),
   })
   .describe(
@@ -510,9 +510,9 @@ export const UpdateTenantSettingsResponse = zod.object({
   baaAcknowledgedBy: zod.number().nullish(),
   hipaaEligible: zod.boolean().nullish(),
   engagementMode: zod
-    .enum(["assisted", "gated_auto"])
+    .enum(["manual", "copilot", "autopilot"])
     .describe(
-      'How the AI Student engages on inbound texts. \"assisted\" drafts a private whisper for the agent; \"gated_auto\" may auto-send the reply when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance.',
+      'How the AI engages on inbound texts. \"manual\" = AI off (no draft, no auto-send, no learning). \"copilot\" drafts a reply into the composer for a human to edit and send (never learns). \"autopilot\" may auto-send the reply verbatim when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance — and only then persists what it learned. Legacy values \"assisted\"\/\"gated_auto\" are still accepted on write and normalized to copilot\/autopilot.',
     ),
 });
 
@@ -542,6 +542,71 @@ export const CreateConversationResponse = zod.object({
   lastMessageAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
   contactLocation: zod.string().nullish(),
+  engagementModeOverride: zod
+    .union([
+      zod.literal("manual"),
+      zod.literal("copilot"),
+      zod.literal("autopilot"),
+      zod.literal(null),
+    ])
+    .nullable()
+    .describe(
+      "Per-conversation engagement mode that overrides the tenant default. null = inherit the tenant's engagementMode.",
+    ),
+  effectiveEngagementMode: zod
+    .enum(["manual", "copilot", "autopilot"])
+    .describe(
+      "Resolved mode = engagementModeOverride ?? tenant.engagementMode.",
+    ),
+  aiState: zod
+    .object({
+      status: zod
+        .enum([
+          "idle",
+          "drafted",
+          "auto_sent",
+          "failed",
+          "refused",
+          "human_handled",
+          "superseded",
+        ])
+        .describe(
+          'Lifecycle of the latest AI reply. \"drafted\" = Co-Pilot draft waiting in the composer. \"auto_sent\" = Auto-Pilot sent it. \"failed\" = Grok\/send error (Blue handback). \"refused\" = safety gate blocked it (Blue handback). \"human_handled\" = a human took the wheel for this reply. \"superseded\" = a newer inbound replaced it.',
+        ),
+      draftBody: zod
+        .string()
+        .nullable()
+        .describe("Suggested reply text to pre-fill the composer (Co-Pilot)."),
+      draftSource: zod
+        .union([
+          zod.literal("student"),
+          zod.literal("professor"),
+          zod.literal(null),
+        ])
+        .nullable(),
+      confidence: zod.string().nullish(),
+      queryCategory: zod.string().nullish(),
+      reasonCode: zod
+        .string()
+        .nullable()
+        .describe(
+          "Machine code for a Blue handback (e.g. grok_error, gate_refused).",
+        ),
+      reasonText: zod
+        .string()
+        .nullable()
+        .describe(
+          "Human-readable chip text near the composer on a Blue handback.",
+        ),
+      latestInboundMessageId: zod.number().nullish(),
+      outboundMessageId: zod.number().nullish(),
+      autoSentAt: zod.coerce.date().nullish(),
+      updatedAt: zod.coerce.date(),
+    })
+    .nullable()
+    .describe(
+      "Latest AI reply state for this conversation (one row per conversation); null if the AI has not produced a state yet.",
+    ),
 });
 
 /**
@@ -581,6 +646,71 @@ export const ListConversationsResponseItem = zod.object({
   lastMessageAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
   contactLocation: zod.string().nullish(),
+  engagementModeOverride: zod
+    .union([
+      zod.literal("manual"),
+      zod.literal("copilot"),
+      zod.literal("autopilot"),
+      zod.literal(null),
+    ])
+    .nullable()
+    .describe(
+      "Per-conversation engagement mode that overrides the tenant default. null = inherit the tenant's engagementMode.",
+    ),
+  effectiveEngagementMode: zod
+    .enum(["manual", "copilot", "autopilot"])
+    .describe(
+      "Resolved mode = engagementModeOverride ?? tenant.engagementMode.",
+    ),
+  aiState: zod
+    .object({
+      status: zod
+        .enum([
+          "idle",
+          "drafted",
+          "auto_sent",
+          "failed",
+          "refused",
+          "human_handled",
+          "superseded",
+        ])
+        .describe(
+          'Lifecycle of the latest AI reply. \"drafted\" = Co-Pilot draft waiting in the composer. \"auto_sent\" = Auto-Pilot sent it. \"failed\" = Grok\/send error (Blue handback). \"refused\" = safety gate blocked it (Blue handback). \"human_handled\" = a human took the wheel for this reply. \"superseded\" = a newer inbound replaced it.',
+        ),
+      draftBody: zod
+        .string()
+        .nullable()
+        .describe("Suggested reply text to pre-fill the composer (Co-Pilot)."),
+      draftSource: zod
+        .union([
+          zod.literal("student"),
+          zod.literal("professor"),
+          zod.literal(null),
+        ])
+        .nullable(),
+      confidence: zod.string().nullish(),
+      queryCategory: zod.string().nullish(),
+      reasonCode: zod
+        .string()
+        .nullable()
+        .describe(
+          "Machine code for a Blue handback (e.g. grok_error, gate_refused).",
+        ),
+      reasonText: zod
+        .string()
+        .nullable()
+        .describe(
+          "Human-readable chip text near the composer on a Blue handback.",
+        ),
+      latestInboundMessageId: zod.number().nullish(),
+      outboundMessageId: zod.number().nullish(),
+      autoSentAt: zod.coerce.date().nullish(),
+      updatedAt: zod.coerce.date(),
+    })
+    .nullable()
+    .describe(
+      "Latest AI reply state for this conversation (one row per conversation); null if the AI has not produced a state yet.",
+    ),
 });
 export const ListConversationsResponse = zod.array(
   ListConversationsResponseItem,
@@ -609,6 +739,71 @@ export const GetConversationResponse = zod.object({
   lastMessageAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
   contactLocation: zod.string().nullish(),
+  engagementModeOverride: zod
+    .union([
+      zod.literal("manual"),
+      zod.literal("copilot"),
+      zod.literal("autopilot"),
+      zod.literal(null),
+    ])
+    .nullable()
+    .describe(
+      "Per-conversation engagement mode that overrides the tenant default. null = inherit the tenant's engagementMode.",
+    ),
+  effectiveEngagementMode: zod
+    .enum(["manual", "copilot", "autopilot"])
+    .describe(
+      "Resolved mode = engagementModeOverride ?? tenant.engagementMode.",
+    ),
+  aiState: zod
+    .object({
+      status: zod
+        .enum([
+          "idle",
+          "drafted",
+          "auto_sent",
+          "failed",
+          "refused",
+          "human_handled",
+          "superseded",
+        ])
+        .describe(
+          'Lifecycle of the latest AI reply. \"drafted\" = Co-Pilot draft waiting in the composer. \"auto_sent\" = Auto-Pilot sent it. \"failed\" = Grok\/send error (Blue handback). \"refused\" = safety gate blocked it (Blue handback). \"human_handled\" = a human took the wheel for this reply. \"superseded\" = a newer inbound replaced it.',
+        ),
+      draftBody: zod
+        .string()
+        .nullable()
+        .describe("Suggested reply text to pre-fill the composer (Co-Pilot)."),
+      draftSource: zod
+        .union([
+          zod.literal("student"),
+          zod.literal("professor"),
+          zod.literal(null),
+        ])
+        .nullable(),
+      confidence: zod.string().nullish(),
+      queryCategory: zod.string().nullish(),
+      reasonCode: zod
+        .string()
+        .nullable()
+        .describe(
+          "Machine code for a Blue handback (e.g. grok_error, gate_refused).",
+        ),
+      reasonText: zod
+        .string()
+        .nullable()
+        .describe(
+          "Human-readable chip text near the composer on a Blue handback.",
+        ),
+      latestInboundMessageId: zod.number().nullish(),
+      outboundMessageId: zod.number().nullish(),
+      autoSentAt: zod.coerce.date().nullish(),
+      updatedAt: zod.coerce.date(),
+    })
+    .nullable()
+    .describe(
+      "Latest AI reply state for this conversation (one row per conversation); null if the AI has not produced a state yet.",
+    ),
 });
 
 /**
@@ -622,6 +817,17 @@ export const UpdateConversationBody = zod.object({
   status: zod.enum(["open", "closed"]).optional(),
   dispositionId: zod.number().nullish(),
   resolutionNote: zod.string().nullish(),
+  engagementModeOverride: zod
+    .union([
+      zod.literal("manual"),
+      zod.literal("copilot"),
+      zod.literal("autopilot"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Per-conversation engagement mode override; null clears it (inherit tenant).",
+    ),
 });
 
 export const UpdateConversationResponse = zod.object({
@@ -640,6 +846,71 @@ export const UpdateConversationResponse = zod.object({
   lastMessageAt: zod.coerce.date().nullable(),
   createdAt: zod.coerce.date(),
   contactLocation: zod.string().nullish(),
+  engagementModeOverride: zod
+    .union([
+      zod.literal("manual"),
+      zod.literal("copilot"),
+      zod.literal("autopilot"),
+      zod.literal(null),
+    ])
+    .nullable()
+    .describe(
+      "Per-conversation engagement mode that overrides the tenant default. null = inherit the tenant's engagementMode.",
+    ),
+  effectiveEngagementMode: zod
+    .enum(["manual", "copilot", "autopilot"])
+    .describe(
+      "Resolved mode = engagementModeOverride ?? tenant.engagementMode.",
+    ),
+  aiState: zod
+    .object({
+      status: zod
+        .enum([
+          "idle",
+          "drafted",
+          "auto_sent",
+          "failed",
+          "refused",
+          "human_handled",
+          "superseded",
+        ])
+        .describe(
+          'Lifecycle of the latest AI reply. \"drafted\" = Co-Pilot draft waiting in the composer. \"auto_sent\" = Auto-Pilot sent it. \"failed\" = Grok\/send error (Blue handback). \"refused\" = safety gate blocked it (Blue handback). \"human_handled\" = a human took the wheel for this reply. \"superseded\" = a newer inbound replaced it.',
+        ),
+      draftBody: zod
+        .string()
+        .nullable()
+        .describe("Suggested reply text to pre-fill the composer (Co-Pilot)."),
+      draftSource: zod
+        .union([
+          zod.literal("student"),
+          zod.literal("professor"),
+          zod.literal(null),
+        ])
+        .nullable(),
+      confidence: zod.string().nullish(),
+      queryCategory: zod.string().nullish(),
+      reasonCode: zod
+        .string()
+        .nullable()
+        .describe(
+          "Machine code for a Blue handback (e.g. grok_error, gate_refused).",
+        ),
+      reasonText: zod
+        .string()
+        .nullable()
+        .describe(
+          "Human-readable chip text near the composer on a Blue handback.",
+        ),
+      latestInboundMessageId: zod.number().nullish(),
+      outboundMessageId: zod.number().nullish(),
+      autoSentAt: zod.coerce.date().nullish(),
+      updatedAt: zod.coerce.date(),
+    })
+    .nullable()
+    .describe(
+      "Latest AI reply state for this conversation (one row per conversation); null if the AI has not produced a state yet.",
+    ),
 });
 
 /**

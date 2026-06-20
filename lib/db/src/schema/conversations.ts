@@ -18,6 +18,9 @@ export const conversationsTable = pgTable(
     status: text("status").notNull().default("open"),
     dispositionId: integer("disposition_id"),
     resolutionNote: text("resolution_note"),
+    // Per-conversation engagement mode override (manual|copilot|autopilot).
+    // null = inherit the tenant's engagementMode. App-validated, no DB CHECK.
+    engagementModeOverride: text("engagement_mode_override"),
     tags: text("tags").array(),
     assignedUserId: integer("assigned_user_id")
       .references(() => tenantUsersTable.id, { onDelete: "set null" }),

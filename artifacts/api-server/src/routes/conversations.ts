@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable, contactsTable } from "@workspace/db";
+import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable, contactsTable, tenantsTable, type ConversationAiStateRow } from "@workspace/db";
 import { sendConversationReply } from "../lib/outboundReply";
 import { eventBus } from "../lib/eventBus";
 import { eq, and, desc, isNull, ilike, or, gte, lte, sql } from "drizzle-orm";
@@ -11,8 +11,53 @@ import { recordMessageUsage } from "../lib/stripe-stub";
 import { recordAudit } from "../lib/audit";
 import { enqueueSync } from "../lib/integrations/syncWorker";
 import { maybeEnqueueSurveyForClose } from "../lib/surveyDispatcher";
+import {
+  ENGAGEMENT_MODES,
+  normalizeEngagementMode,
+  resolveEffectiveEngagementMode,
+  type EngagementMode,
+} from "../lib/engagementPolicy";
+import {
+  getConversationAiState,
+  getConversationAiStates,
+  markConversationAiStateHumanHandled,
+} from "../lib/aiStateStore";
 
 const router = Router();
+
+/**
+ * Shape a stored AI-state row into the API `aiState` object (or null). Drives
+ * the inbox send-button color and the Co-Pilot draft. Dates serialize to ISO so
+ * the generated client type (string, date-time) matches the wire format.
+ */
+function toApiAiState(row: ConversationAiStateRow | null) {
+  if (!row) return null;
+  return {
+    status: row.status,
+    draftBody: row.draftBody,
+    draftSource: row.draftSource,
+    confidence: row.confidence,
+    queryCategory: row.queryCategory,
+    reasonCode: row.reasonCode,
+    reasonText: row.reasonText,
+    latestInboundMessageId: row.latestInboundMessageId,
+    outboundMessageId: row.outboundMessageId,
+    autoSentAt: row.autoSentAt ? row.autoSentAt.toISOString() : null,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/** Load + normalize the tenant's default engagement mode (one lookup). */
+async function getTenantEngagementMode(
+  tenantId: number,
+): Promise<EngagementMode> {
+  const rows = await db
+    .select({ engagementMode: tenantsTable.engagementMode })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, tenantId))
+    .limit(1);
+  return normalizeEngagementMode(rows[0]?.engagementMode);
+}
 
 router.get("/conversations", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
@@ -77,6 +122,7 @@ router.get("/conversations", requireTenantAuth, async (req, res) => {
         lastMessageAt: conversationsTable.lastMessageAt,
         createdAt: conversationsTable.createdAt,
         contactLocation: contactsTable.location,
+        engagementModeOverride: conversationsTable.engagementModeOverride,
       })
       .from(conversationsTable)
       .leftJoin(
@@ -90,7 +136,21 @@ router.get("/conversations", requireTenantAuth, async (req, res) => {
       .orderBy(desc(conversationsTable.lastMessageAt))
       .limit(500);
 
-    res.json(rows);
+    const tenantMode = await getTenantEngagementMode(tenantId);
+    const aiStates = await getConversationAiStates(
+      tenantId,
+      rows.map((r) => r.id),
+    );
+    const enriched = rows.map((r) => ({
+      ...r,
+      effectiveEngagementMode: resolveEffectiveEngagementMode(
+        r.engagementModeOverride,
+        tenantMode,
+      ),
+      aiState: toApiAiState(aiStates.get(r.id) ?? null),
+    }));
+
+    res.json(enriched);
   } catch (err) {
     logger.error({ err }, "List conversations error");
     res.status(500).json({ error: "Internal server error" });
@@ -119,6 +179,7 @@ router.get("/conversations/:id", requireTenantAuth, async (req, res) => {
         lastMessageAt: conversationsTable.lastMessageAt,
         createdAt: conversationsTable.createdAt,
         contactLocation: contactsTable.location,
+        engagementModeOverride: conversationsTable.engagementModeOverride,
       })
       .from(conversationsTable)
       .leftJoin(
@@ -141,7 +202,16 @@ router.get("/conversations/:id", requireTenantAuth, async (req, res) => {
       return;
     }
 
-    res.json(rows[0]);
+    const tenantMode = await getTenantEngagementMode(tenantId);
+    const aiState = await getConversationAiState(tenantId, id);
+    res.json({
+      ...rows[0],
+      effectiveEngagementMode: resolveEffectiveEngagementMode(
+        rows[0].engagementModeOverride,
+        tenantMode,
+      ),
+      aiState: toApiAiState(aiState),
+    });
   } catch (err) {
     logger.error({ err }, "Get conversation error");
     res.status(500).json({ error: "Internal server error" });
@@ -210,6 +280,7 @@ router.post("/conversations", requireTenantAuth, async (req, res) => {
         lastMessageAt: conversationsTable.lastMessageAt,
         createdAt: conversationsTable.createdAt,
         contactLocation: contactsTable.location,
+        engagementModeOverride: conversationsTable.engagementModeOverride,
       })
       .from(conversationsTable)
       .leftJoin(
@@ -229,8 +300,18 @@ router.post("/conversations", requireTenantAuth, async (req, res) => {
       .orderBy(desc(conversationsTable.lastMessageAt))
       .limit(1);
 
+    const tenantMode = await getTenantEngagementMode(tenantId);
+
     if (existing.length > 0) {
-      res.status(200).json(existing[0]);
+      const aiState = await getConversationAiState(tenantId, existing[0].id);
+      res.status(200).json({
+        ...existing[0],
+        effectiveEngagementMode: resolveEffectiveEngagementMode(
+          existing[0].engagementModeOverride,
+          tenantMode,
+        ),
+        aiState: toApiAiState(aiState),
+      });
       return;
     }
 
@@ -256,6 +337,11 @@ router.post("/conversations", requireTenantAuth, async (req, res) => {
     res.status(201).json({
       ...created[0],
       contactLocation: contact?.location ?? null,
+      effectiveEngagementMode: resolveEffectiveEngagementMode(
+        created[0].engagementModeOverride,
+        tenantMode,
+      ),
+      aiState: null,
     });
   } catch (err) {
     logger.error({ err }, "Create conversation error");
@@ -351,11 +437,33 @@ router.patch("/conversations/:id", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
   const actorId = req.tenantUser!.tenantUserId;
   const id = Number(req.params.id);
-  const { status, dispositionId, resolutionNote } = req.body ?? {};
+  const { status, dispositionId, resolutionNote, engagementModeOverride } =
+    req.body ?? {};
 
   if (status !== undefined && status !== "open" && status !== "closed") {
     res.status(400).json({ error: "status must be 'open' or 'closed'" });
     return;
+  }
+
+  // null clears the override (inherit tenant). Legacy aliases (assisted→copilot,
+  // gated_auto→autopilot) are folded to canonical so all engagement-mode writes
+  // behave consistently; we always persist a canonical value.
+  let normalizedOverride: string | null | undefined = engagementModeOverride;
+  if (engagementModeOverride !== undefined && engagementModeOverride !== null) {
+    const canonical =
+      engagementModeOverride === "assisted"
+        ? "copilot"
+        : engagementModeOverride === "gated_auto"
+          ? "autopilot"
+          : engagementModeOverride;
+    if (!(ENGAGEMENT_MODES as readonly string[]).includes(canonical)) {
+      res.status(400).json({
+        error:
+          "engagementModeOverride must be one of manual, copilot, autopilot, or null",
+      });
+      return;
+    }
+    normalizedOverride = canonical;
   }
 
   try {
@@ -389,6 +497,12 @@ router.patch("/conversations/:id", requireTenantAuth, async (req, res) => {
     }
     if (resolutionNote !== undefined) {
       patch.resolutionNote = typeof resolutionNote === "string" ? resolutionNote : null;
+    }
+    if (engagementModeOverride !== undefined) {
+      // null = clear the override (inherit the tenant default). Aliases folded above.
+      patch.engagementModeOverride = normalizedOverride as
+        | (typeof ENGAGEMENT_MODES)[number]
+        | null;
     }
     if (Object.keys(patch).length === 0) {
       res.status(400).json({ error: "No valid fields to update" });
@@ -452,7 +566,16 @@ router.patch("/conversations/:id", requireTenantAuth, async (req, res) => {
       after: { status: updated[0].status, dispositionId: updated[0].dispositionId, resolutionNote: updated[0].resolutionNote },
     });
 
-    res.json(updated[0]);
+    const tenantMode = await getTenantEngagementMode(tenantId);
+    const aiState = await getConversationAiState(tenantId, id);
+    res.json({
+      ...updated[0],
+      effectiveEngagementMode: resolveEffectiveEngagementMode(
+        updated[0].engagementModeOverride,
+        tenantMode,
+      ),
+      aiState: toApiAiState(aiState),
+    });
   } catch (err) {
     logger.error({ err }, "Update conversation error");
     res.status(500).json({ error: "Internal server error" });
@@ -541,6 +664,23 @@ router.post(
         .update(conversationsTable)
         .set({ lastMessageAt: new Date() })
         .where(eq(conversationsTable.id, conversationId));
+
+      // A human took the wheel for this reply: flip any pending AI state
+      // (drafted / refused / failed) to human_handled. This both leaves the
+      // Co-Pilot / Blue-handback UI state AND encodes the learning guarantee —
+      // a human touch means we never learn from this exchange (learning only
+      // fires on an autonomous, unedited auto-send). Non-blocking: the message
+      // already went out, so a bookkeeping failure must not 500 the send.
+      await markConversationAiStateHumanHandled({
+        tenantId,
+        conversationId,
+        humanHandledBy: req.tenantUser!.tenantUserId,
+      }).catch((stateErr) => {
+        logger.warn(
+          { err: stateErr, conversationId },
+          "Failed to mark AI state human_handled (non-blocking)",
+        );
+      });
 
       recordMessageUsage(tenantId, req.tenantUser!.tenantSlug).catch((usageErr) => {
         logger.warn({ err: usageErr, tenantId }, "Usage tracking failed (non-blocking)");

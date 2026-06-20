@@ -5,6 +5,9 @@
  * SAMA Control Plane API
  * OpenAPI spec version: 0.1.0
  */
+import type { ConversationAiState } from "./conversationAiState";
+import type { ConversationEffectiveEngagementMode } from "./conversationEffectiveEngagementMode";
+import type { ConversationEngagementModeOverride } from "./conversationEngagementModeOverride";
 import type { ConversationStatus } from "./conversationStatus";
 
 export interface Conversation {
@@ -33,4 +36,16 @@ export interface Conversation {
   createdAt: Date;
   /** @nullable */
   contactLocation?: string | null;
+  /**
+   * Per-conversation engagement mode that overrides the tenant default. null = inherit the tenant's engagementMode.
+   * @nullable
+   */
+  engagementModeOverride: ConversationEngagementModeOverride;
+  /** Resolved mode = engagementModeOverride ?? tenant.engagementMode. */
+  effectiveEngagementMode: ConversationEffectiveEngagementMode;
+  /**
+   * Latest AI reply state for this conversation (one row per conversation); null if the AI has not produced a state yet.
+   * @nullable
+   */
+  aiState: ConversationAiState;
 }
