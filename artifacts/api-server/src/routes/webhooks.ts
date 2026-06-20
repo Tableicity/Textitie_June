@@ -30,6 +30,8 @@ import {
 import {
   upsertConversationAiState,
   supersedeConversationAiState,
+  finalizeCopilotDraftForInbound,
+  stageCopilotDraftForInbound,
 } from "../lib/aiStateStore";
 import { grokConfigured } from "../lib/grokClient";
 import { sendConversationReply } from "../lib/outboundReply";
@@ -468,6 +470,10 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                   // customer's text is UNTRUSTED — a question, never truth.
                   let escalation: ProfessorEscalation | null = null;
                   let escalatedCategories: FactCategory[] = [];
+                  // Set true when the streaming escalation staged a Co-Pilot draft
+                  // early (reply surfaced before the fact-reasoning finished), so
+                  // the finalize below updates-in-place instead of re-upserting.
+                  let copilotEarlyDraftFired = false;
                   if (
                     grokConfigured() &&
                     draft.status === "drafted" &&
@@ -480,11 +486,44 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                         .map((c) => c.text)
                         .join("\n\n")
                         .slice(0, 8000);
-                      escalation = await professorEscalate({
-                        tenantName: tenant.name,
-                        libraryContext,
-                        question: messageBody,
-                      });
+                      escalation = await professorEscalate(
+                        {
+                          tenantName: tenant.name,
+                          libraryContext,
+                          question: messageBody,
+                        },
+                        // Co-Pilot ONLY: stage the customer reply the instant it
+                        // finishes streaming — before the slow fact-reasoning — so
+                        // the composer prefills immediately. Auto-Pilot passes no
+                        // callback: its send gate needs the screened facts +
+                        // confidence, so it cannot act early (the "Professor tax"
+                        // is intentional). Best-effort; the authoritative copilot
+                        // write happens at finalize below.
+                        engagementMode === "copilot"
+                          ? async (reply) => {
+                              // Guarded: a no-op (false) means a human took the
+                              // wheel or a newer turn landed mid-stream — don't
+                              // claim the early draft or notify in that case.
+                              const staged = await stageCopilotDraftForInbound({
+                                tenantId: tenant.id,
+                                conversationId,
+                                latestInboundMessageId: inboundMessageId,
+                                draftBody: reply,
+                                draftSource: "professor",
+                                confidence: null,
+                                queryCategory,
+                                inboundSid,
+                              });
+                              if (staged) {
+                                copilotEarlyDraftFired = true;
+                                eventBus.publish(tenant.id, {
+                                  type: "ai:state",
+                                  conversationId,
+                                });
+                              }
+                            }
+                          : undefined,
+                      );
                       escalatedCategories = Array.from(
                         new Set(
                           escalation.facts.map((f) => normalizeCategory(f.category)),
@@ -536,17 +575,36 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                   // Draft into the composer for a human to edit + send. NEVER
                   // auto-sends and NEVER learns.
                   if (engagementMode === "copilot") {
-                    await upsertConversationAiState({
-                      tenantId: tenant.id,
-                      conversationId,
-                      status: "drafted",
-                      draftBody: replyText.length > 0 ? replyText : null,
-                      draftSource,
-                      confidence: replyConfidence,
-                      queryCategory,
-                      latestInboundMessageId: inboundMessageId,
-                      inboundSid,
-                    });
+                    if (copilotEarlyDraftFired) {
+                      // The streaming callback already staged the draft early.
+                      // Finalize it with the authoritative reply + confidence,
+                      // guarded so we never clobber a human takeover or a newer
+                      // inbound turn that landed during the stream.
+                      await finalizeCopilotDraftForInbound({
+                        tenantId: tenant.id,
+                        conversationId,
+                        latestInboundMessageId: inboundMessageId,
+                        draftBody: replyText.length > 0 ? replyText : null,
+                        draftSource,
+                        confidence: replyConfidence,
+                        queryCategory,
+                        inboundSid,
+                      });
+                    } else {
+                      // No early stream draft (stub/grok-off/grounded/stream
+                      // failure). Guarded like the early write so a concurrent
+                      // human takeover or newer turn is never clobbered.
+                      await stageCopilotDraftForInbound({
+                        tenantId: tenant.id,
+                        conversationId,
+                        latestInboundMessageId: inboundMessageId,
+                        draftBody: replyText.length > 0 ? replyText : null,
+                        draftSource,
+                        confidence: replyConfidence,
+                        queryCategory,
+                        inboundSid,
+                      });
+                    }
                     eventBus.publish(tenant.id, { type: "ai:state", conversationId });
                     logger.info(
                       {
@@ -554,6 +612,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                         conversationId,
                         draftSource,
                         hasDraft: replyText.length > 0,
+                        earlyStreamed: copilotEarlyDraftFired,
                       },
                       "SAMA Co-Pilot: draft staged for human review",
                     );
