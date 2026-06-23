@@ -12,3 +12,9 @@ id = "sLF2zRLk9kNCzsRAL3D-N"
 uri = "file://John/Textline.md"
 type = "text"
 title = "Textline Feature Analysis — SAMA Messaging Roadmap"
+
+[[outputs]]
+id = "A4ranm84aGOSBlLB2lJaE"
+uri = "file://John/LLM Training Manual.md"
+type = "text"
+title = "LLM Training Manual"
