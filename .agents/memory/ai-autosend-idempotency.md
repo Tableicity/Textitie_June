@@ -24,6 +24,15 @@ Before sending, claim the inbound carrier MessageSid by INSERT into
   row becomes a permanent dead-letter and every webhook retry is silently
   suppressed forever. Deleting is safe because a failed send never reached the
   customer. (This was caught in architect review, not by tests.)
+- **A THROWN send is a failed send too.** Releasing the claim only on the
+  `{ok:false}` return path is not enough — if the sender (or any step between the
+  claim INSERT and recording `outboundMessageId`) THROWS, the same null claim
+  leaks. Wrap claim→send→record in try/catch and release on throw. Guard with a
+  `claimFinalized` flag set the instant `outboundMessageId` is written (or the
+  claim is deleted): a post-send bookkeeping throw must NOT re-release the claim
+  (that would re-open a reply that already went to the customer → double-text on
+  retry). A send failure (returned OR thrown) is a terminal Blue handback, NOT a
+  whole-burst requeue — do not re-throw it past the auto-send block.
 
 **Why:** Twilio re-POSTs the inbound webhook if it doesn't get a fast 2xx, and the
 Student runs fire-and-forget, so the same inbound can be processed more than once.

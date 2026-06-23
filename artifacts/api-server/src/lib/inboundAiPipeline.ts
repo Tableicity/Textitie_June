@@ -172,11 +172,7 @@ export async function runInboundAiPipeline(
     // (one inbound in flight per conversation) already prevents the same
     // conversation from fanning out concurrent escalations, and natural dedup
     // (once facts persist, the identical question is grounded) handles repeats.
-    if (
-      grokConfigured() &&
-      draft.status === "drafted" &&
-      !draft.kbMatched
-    ) {
+    if (grokConfigured() && draft.status === "drafted" && !draft.kbMatched) {
       try {
         const lib = await retrieveLibraryContext(tenant.id, messageBody);
         const libraryContext = lib
@@ -321,7 +317,9 @@ export async function runInboundAiPipeline(
       );
     } else {
       // ============ AUTO-PILOT ============
-      const groundingCategories = facts.map((f) => normalizeCategory(f.category));
+      const groundingCategories = facts.map((f) =>
+        normalizeCategory(f.category),
+      );
 
       if (draft.status !== "drafted" && !escalated) {
         // Grok produced no usable draft → Blue handback (failed).
@@ -420,168 +418,256 @@ export async function runInboundAiPipeline(
             .returning({ id: aiAutoRepliesTable.id });
 
           if (claimed.length > 0) {
-            const sent = await sendConversationReply({
-              tenantId: tenant.id,
-              tenantSlug,
-              conversationId,
-              contactPhone: fromNumber,
-              departmentId: null,
-              body: replyText,
-              senderName: "Textitie AI",
-              conductorAuthorized: true,
-            });
-            if (sent.ok && sent.status === "sent") {
-              autoSent = true;
-              await db
-                .update(aiAutoRepliesTable)
-                .set({ outboundMessageId: sent.messageRow.id })
-                .where(eq(aiAutoRepliesTable.id, claimed[0].id));
-              await db
-                .update(conversationsTable)
-                .set({ lastMessageAt: new Date() })
-                .where(eq(conversationsTable.id, conversationId));
+            // The claim row is non-terminal (outboundMessageId still null) until
+            // a confirmed send records the outbound id OR we explicitly release
+            // it. If the send THROWS before either happens, we MUST release the
+            // claim here: a leaked null-id row makes the existing-claim check
+            // below permanently suppress every retry of this inbound SID.
+            // claimFinalized guards a double-release and prevents a post-send
+            // bookkeeping throw from undoing a reply that already went out.
+            let claimFinalized = false;
+            try {
+              const sent = await sendConversationReply({
+                tenantId: tenant.id,
+                tenantSlug,
+                conversationId,
+                contactPhone: fromNumber,
+                departmentId: null,
+                body: replyText,
+                senderName: "Textitie AI",
+                conductorAuthorized: true,
+              });
+              if (sent.ok && sent.status === "sent") {
+                autoSent = true;
+                await db
+                  .update(aiAutoRepliesTable)
+                  .set({ outboundMessageId: sent.messageRow.id })
+                  .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+                // Claim now carries the outbound id → terminal. Any throw past
+                // this point is post-send bookkeeping only; the reply already went
+                // out, so the catch below must NOT release the claim.
+                claimFinalized = true;
+                await db
+                  .update(conversationsTable)
+                  .set({ lastMessageAt: new Date() })
+                  .where(eq(conversationsTable.id, conversationId));
 
-              // ---- LEARN (only here) ----
-              // The reply went out autonomously and verbatim, so persist the
-              // Professor's screened facts as Classroom truth (so we never ask
-              // twice). No human-touch path ever reaches this line.
-              let learnedFacts = 0;
-              if (escalated) {
-                try {
-                  const persistResult = await persistEscalatedFacts(
-                    tenant.id,
-                    escalation!.facts,
-                  );
-                  learnedFacts = persistResult.persisted;
-                  logger.info(
-                    {
-                      tenantSlug,
-                      conversationId,
-                      persisted: learnedFacts,
-                      versionId: persistResult.versionId,
-                      categories: escalatedCategories,
-                    },
-                    "SAMA Professor: learned facts after autonomous send",
-                  );
+                // ---- LEARN (only here) ----
+                // The reply went out autonomously and verbatim, so persist the
+                // Professor's screened facts as Classroom truth (so we never ask
+                // twice). No human-touch path ever reaches this line.
+                let learnedFacts = 0;
+                if (escalated) {
                   try {
-                    await db.insert(auditLogsTable).values({
-                      tenantId: tenant.id,
-                      actorUserId: null,
-                      actorEmail: "system:ai-professor",
-                      action: "ai.professor_escalation",
-                      entityType: "conversation",
-                      entityId: String(conversationId),
-                      afterJson: {
-                        inboundSid,
-                        confidence: escalation!.confidence,
-                        factsReturned: escalation!.facts.length,
+                    const persistResult = await persistEscalatedFacts(
+                      tenant.id,
+                      escalation!.facts,
+                    );
+                    learnedFacts = persistResult.persisted;
+                    logger.info(
+                      {
+                        tenantSlug,
+                        conversationId,
                         persisted: learnedFacts,
                         versionId: persistResult.versionId,
                         categories: escalatedCategories,
                       },
-                    });
-                  } catch (e) {
+                      "SAMA Professor: learned facts after autonomous send",
+                    );
+                    try {
+                      await db.insert(auditLogsTable).values({
+                        tenantId: tenant.id,
+                        actorUserId: null,
+                        actorEmail: "system:ai-professor",
+                        action: "ai.professor_escalation",
+                        entityType: "conversation",
+                        entityId: String(conversationId),
+                        afterJson: {
+                          inboundSid,
+                          confidence: escalation!.confidence,
+                          factsReturned: escalation!.facts.length,
+                          persisted: learnedFacts,
+                          versionId: persistResult.versionId,
+                          categories: escalatedCategories,
+                        },
+                      });
+                    } catch (e) {
+                      logger.warn(
+                        { err: e instanceof Error ? e.message : String(e) },
+                        "Professor escalation audit write failed (non-blocking)",
+                      );
+                    }
+                  } catch (err) {
                     logger.warn(
-                      { err: e instanceof Error ? e.message : String(e) },
-                      "Professor escalation audit write failed (non-blocking)",
+                      { err: err instanceof Error ? err.message : String(err) },
+                      "SAMA Professor: fact persistence after send failed (non-blocking)",
                     );
                   }
-                } catch (err) {
+                }
+
+                await upsertConversationAiState({
+                  tenantId: tenant.id,
+                  conversationId,
+                  status: "auto_sent",
+                  draftBody: null,
+                  draftSource,
+                  confidence: replyConfidence,
+                  queryCategory,
+                  latestInboundMessageId: inboundMessageId,
+                  inboundSid,
+                  outboundMessageId: sent.messageRow.id,
+                  autoSentAt: new Date(),
+                });
+
+                recordMessageUsage(tenant.id, tenantSlug).catch((e) =>
                   logger.warn(
-                    { err: err instanceof Error ? err.message : String(err) },
-                    "SAMA Professor: fact persistence after send failed (non-blocking)",
+                    { err: e, tenantId: tenant.id },
+                    "Usage tracking failed (non-blocking)",
+                  ),
+                );
+                eventBus.publish(tenant.id, {
+                  type: "message:new",
+                  conversationId,
+                  direction: "outbound",
+                });
+                try {
+                  await db.insert(auditLogsTable).values({
+                    tenantId: tenant.id,
+                    actorUserId: null,
+                    actorEmail: "system:ai-student",
+                    action: "ai.auto_replied",
+                    entityType: "conversation",
+                    entityId: String(conversationId),
+                    afterJson: {
+                      inboundSid,
+                      messageId: sent.messageRow.id,
+                      escalated,
+                      learnedFacts,
+                      confidence: replyConfidence,
+                      queryCategory,
+                      groundingCategories: escalated
+                        ? escalatedCategories
+                        : groundingCategories,
+                    },
+                  });
+                } catch (e) {
+                  logger.warn(
+                    { err: e instanceof Error ? e.message : String(e) },
+                    "AI auto-reply audit write failed (non-blocking)",
                   );
                 }
-              }
-
-              await upsertConversationAiState({
-                tenantId: tenant.id,
-                conversationId,
-                status: "auto_sent",
-                draftBody: null,
-                draftSource,
-                confidence: replyConfidence,
-                queryCategory,
-                latestInboundMessageId: inboundMessageId,
-                inboundSid,
-                outboundMessageId: sent.messageRow.id,
-                autoSentAt: new Date(),
-              });
-
-              recordMessageUsage(tenant.id, tenantSlug).catch((e) =>
-                logger.warn(
-                  { err: e, tenantId: tenant.id },
-                  "Usage tracking failed (non-blocking)",
-                ),
-              );
-              eventBus.publish(tenant.id, {
-                type: "message:new",
-                conversationId,
-                direction: "outbound",
-              });
-              try {
-                await db.insert(auditLogsTable).values({
-                  tenantId: tenant.id,
-                  actorUserId: null,
-                  actorEmail: "system:ai-student",
-                  action: "ai.auto_replied",
-                  entityType: "conversation",
-                  entityId: String(conversationId),
-                  afterJson: {
-                    inboundSid,
+                logger.info(
+                  {
+                    tenantSlug,
+                    conversationId,
                     messageId: sent.messageRow.id,
-                    escalated,
-                    learnedFacts,
-                    confidence: replyConfidence,
-                    queryCategory,
-                    groundingCategories: escalated
-                      ? escalatedCategories
-                      : groundingCategories,
                   },
+                  "SAMA Auto-Pilot: AUTO-SENT reply",
+                );
+              } else {
+                // Claimed but the send did not complete. The customer received
+                // nothing, so RELEASE the claim (delete) so a webhook retry can
+                // re-attempt. Blue handback (failed), no learn.
+                await db
+                  .delete(aiAutoRepliesTable)
+                  .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+                claimFinalized = true;
+                await upsertConversationAiState({
+                  tenantId: tenant.id,
+                  conversationId,
+                  status: "failed",
+                  draftBody: replyText.length > 0 ? replyText : null,
+                  draftSource,
+                  confidence: replyConfidence,
+                  queryCategory,
+                  reasonCode: "send_failed",
+                  reasonText: describeHandbackReason(["send_failed"]),
+                  latestInboundMessageId: inboundMessageId,
+                  inboundSid,
                 });
-              } catch (e) {
-                logger.warn(
-                  { err: e instanceof Error ? e.message : String(e) },
-                  "AI auto-reply audit write failed (non-blocking)",
+                eventBus.publish(tenant.id, {
+                  type: "ai:state",
+                  conversationId,
+                });
+                logger.error(
+                  {
+                    tenantSlug,
+                    conversationId,
+                    reason: sent.ok ? sent.status : sent.reason,
+                  },
+                  "SAMA Auto-Pilot: claimed but send failed; released claim, Blue handback",
                 );
               }
-              logger.info(
-                {
-                  tenantSlug,
-                  conversationId,
-                  messageId: sent.messageRow.id,
-                },
-                "SAMA Auto-Pilot: AUTO-SENT reply",
-              );
-            } else {
-              // Claimed but the send did not complete. The customer received
-              // nothing, so RELEASE the claim (delete) so a webhook retry can
-              // re-attempt. Blue handback (failed), no learn.
-              await db
-                .delete(aiAutoRepliesTable)
-                .where(eq(aiAutoRepliesTable.id, claimed[0].id));
-              await upsertConversationAiState({
-                tenantId: tenant.id,
-                conversationId,
-                status: "failed",
-                draftBody: replyText.length > 0 ? replyText : null,
-                draftSource,
-                confidence: replyConfidence,
-                queryCategory,
-                reasonCode: "send_failed",
-                reasonText: describeHandbackReason(["send_failed"]),
-                latestInboundMessageId: inboundMessageId,
-                inboundSid,
-              });
-              eventBus.publish(tenant.id, { type: "ai:state", conversationId });
-              logger.error(
-                {
-                  tenantSlug,
-                  conversationId,
-                  reason: sent.ok ? sent.status : sent.reason,
-                },
-                "SAMA Auto-Pilot: claimed but send failed; released claim, Blue handback",
-              );
+            } catch (sendErr) {
+              const sendErrMsg =
+                sendErr instanceof Error ? sendErr.message : String(sendErr);
+              if (!claimFinalized) {
+                // The send threw before recording an outbound id, so the customer
+                // received nothing. Release the (null) claim so a webhook/worker
+                // retry can re-attempt, and hand back Blue for this turn —
+                // consistent with the {ok:false} contract above. NOT re-thrown:
+                // a send failure is a terminal handback, not a whole-burst retry.
+                try {
+                  await db
+                    .delete(aiAutoRepliesTable)
+                    .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+                } catch (releaseErr) {
+                  logger.error(
+                    {
+                      tenantSlug,
+                      conversationId,
+                      err:
+                        releaseErr instanceof Error
+                          ? releaseErr.message
+                          : String(releaseErr),
+                    },
+                    "SAMA Auto-Pilot: failed to release auto-send claim after send error",
+                  );
+                }
+                try {
+                  await upsertConversationAiState({
+                    tenantId: tenant.id,
+                    conversationId,
+                    status: "failed",
+                    draftBody: replyText.length > 0 ? replyText : null,
+                    draftSource,
+                    confidence: replyConfidence,
+                    queryCategory,
+                    reasonCode: "send_failed",
+                    reasonText: describeHandbackReason(["send_failed"]),
+                    latestInboundMessageId: inboundMessageId,
+                    inboundSid,
+                  });
+                  eventBus.publish(tenant.id, {
+                    type: "ai:state",
+                    conversationId,
+                  });
+                } catch (stateErr) {
+                  logger.error(
+                    {
+                      tenantSlug,
+                      conversationId,
+                      err:
+                        stateErr instanceof Error
+                          ? stateErr.message
+                          : String(stateErr),
+                    },
+                    "SAMA Auto-Pilot: failed to write Blue handback after send error",
+                  );
+                }
+                logger.error(
+                  { tenantSlug, conversationId, err: sendErrMsg },
+                  "SAMA Auto-Pilot: auto-send threw; released claim, Blue handback",
+                );
+              } else {
+                // The reply already went out (claim is terminal); only post-send
+                // bookkeeping failed. Leave the claim intact so retries stay
+                // idempotent and the customer is never double-texted.
+                logger.warn(
+                  { tenantSlug, conversationId, err: sendErrMsg },
+                  "SAMA Auto-Pilot: post-send step failed (non-blocking); reply already sent",
+                );
+              }
             }
           } else {
             // Another invocation already owns this SID. Treat as auto-sent only
@@ -668,9 +754,15 @@ export async function runInboundAiPipeline(
       }
     }
   } catch (err) {
+    // Unexpected pipeline failure. Every EXPECTED outcome — stub fallback, gate
+    // refusal, send failure — is handled inline with a Blue handback above and
+    // returns normally. Reaching here means the inbound could not be processed
+    // at all, so RE-THROW: the inbound-AI worker's processOne requeues/dead-
+    // letters the WHOLE coalesced burst instead of silently marking it done.
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       "SAMA AI: engagement pipeline failed",
     );
+    throw err instanceof Error ? err : new Error(String(err));
   }
 }

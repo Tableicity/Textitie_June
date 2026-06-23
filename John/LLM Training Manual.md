@@ -210,7 +210,7 @@ This is what lets Textitie get smarter on its own without ever asking the same q
 
 **Trigger.** During an inbound (Section 6, Step 7), the Student produced a draft but **could not ground it** (`kbMatched` = false). Instead of guessing or refusing, the system escalates to the Professor — **in the background, off the customer-response path.**
 
-**Throttle.** `claimEscalationSlot` (a 5-minute, per-conversation lock) prevents the same question from spawning multiple concurrent Professor calls.
+**Serialization.** The inbound is first written to a durable staging queue (`conversation_inbound_ai_stages`), and a per-conversation FIFO worker processes at most **one inbound per conversation at a time** (partial unique index + `FOR UPDATE SKIP LOCKED`), with smart burst-coalescing of rapid-fire texts. Concurrent inbounds to the same conversation therefore never spawn overlapping Professor calls, and the work survives restarts. (This replaced the old in-process `claimEscalationSlot` 5-minute lock.)
 
 **The Professor answers.** `professorEscalate` gives the Professor the tenant's Library + the customer's question and asks for a single JSON object, with the **customer reply emitted first** (so Co-Pilot can stream it), followed by:
 - `customerReply` — the SMS to send,
