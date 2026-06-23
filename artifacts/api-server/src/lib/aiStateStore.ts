@@ -112,9 +112,9 @@ export async function finalizeCopilotDraftForInbound(opts: {
   confidence?: string | null;
   queryCategory?: string | null;
   inboundSid?: string | null;
-}): Promise<void> {
+}): Promise<boolean> {
   const now = new Date();
-  await db
+  const updated = await db
     .update(conversationAiStatesTable)
     .set({
       status: "drafted",
@@ -135,7 +135,12 @@ export async function finalizeCopilotDraftForInbound(opts: {
         ),
         ne(conversationAiStatesTable.status, "human_handled"),
       ),
-    );
+    )
+    .returning({ id: conversationAiStatesTable.id });
+  // True only when the guard matched (same turn, no human takeover). A no-op
+  // means a human took the wheel or a newer turn landed mid-stream — callers use
+  // this to avoid re-broadcasting an ai:state for an already-resolved turn.
+  return updated.length > 0;
 }
 
 /**
@@ -155,11 +160,10 @@ export async function finalizeCopilotDraftForInbound(opts: {
  * replace last turn's disposition.
  *
  * Returns true when a row was inserted or updated, false when the guard left an
- * existing row intact (the correct, safe no-op). NOTE: a brand-new conversation
- * with no AI-state row yet always INSERTs; if a human raced a reply in before
- * any row existed (markConversationAiStateHumanHandled had nothing to flip) the
- * early draft can still appear — a narrow, Co-Pilot-only edge (no auto-send) the
- * next inbound supersedes.
+ * existing row intact (the correct, safe no-op). The brand-new-conversation race
+ * (a human replies before any AI-state row exists) is now fenced:
+ * markConversationAiStateHumanHandled UPSERTs a human_handled row stamped at the
+ * current inbound, so this INSERT collides and the setWhere guard refuses.
  */
 export async function stageCopilotDraftForInbound(opts: {
   tenantId: number;
@@ -248,7 +252,20 @@ const HUMAN_TAKEABLE: AiStateStatus[] = ["idle", "drafted", "refused", "failed"]
  * This is the UI signal that a person took the wheel for this turn. It also
  * encodes the learning guarantee: any human touch means we never learned from
  * this exchange (learning only happens on an autonomous, unedited auto-send).
- * Returns true when a row was flipped.
+ *
+ * This is an UPSERT, not an update: when a human replies BEFORE the async AI
+ * pipeline ever wrote a row, a plain UPDATE would no-op and a late
+ * stageCopilotDraftForInbound could still surface a draft for this
+ * already-answered turn (the brand-new-conversation race). Inserting a
+ * human_handled fence row — stamped at the current latest inbound — makes
+ * stage/finalize's ON CONFLICT guard see the takeover and refuse. The ON
+ * CONFLICT update only flips HUMAN_TAKEABLE statuses, so an autonomous auto_sent
+ * row (already a fresh turn) and an existing human_handled are left intact, and
+ * a stale prior-turn human_handled is still overwritable by a genuinely newer
+ * inbound turn (it is re-stamped here to the latest inbound).
+ *
+ * Returns true when a fence row was inserted or a pending row was flipped;
+ * false only when an existing non-takeable row (e.g. auto_sent) was preserved.
  */
 export async function markConversationAiStateHumanHandled(opts: {
   tenantId: number;
@@ -256,35 +273,36 @@ export async function markConversationAiStateHumanHandled(opts: {
   humanHandledBy?: number | null;
 }): Promise<boolean> {
   const now = new Date();
-  const updated = await db
-    .update(conversationAiStatesTable)
-    .set({
-      status: "human_handled",
-      draftBody: null,
-      draftSource: null,
-      reasonCode: null,
-      reasonText: null,
-      // Stamp the inbound turn this human takeover answers (the conversation's
-      // latest inbound = the message the agent is replying to). This is what
-      // lets stageCopilotDraftForInbound / finalizeCopilotDraftForInbound tell a
-      // CURRENT-turn human takeover (must not be clobbered) apart from a stale
-      // prior-turn human_handled (a fresh turn may overwrite). Without it, a
-      // human who sends BEFORE the AI staged anything keeps the previous turn's
-      // (smaller) id and the early stream write would wrongly overwrite it.
-      latestInboundMessageId: sql`(select max(${messagesTable.id}) from ${messagesTable} where ${messagesTable.conversationId} = ${opts.conversationId} and ${messagesTable.direction} = 'inbound')`,
-      humanHandledBy: opts.humanHandledBy ?? null,
-      humanHandledAt: now,
-      updatedAt: now,
+  // The inbound turn this human takeover answers (the conversation's latest
+  // inbound = the message the agent is replying to). This is what lets
+  // stage/finalize tell a CURRENT-turn human takeover (must not be clobbered)
+  // apart from a stale prior-turn human_handled (a fresh turn may overwrite).
+  const latestInbound = sql`(select max(${messagesTable.id}) from ${messagesTable} where ${messagesTable.conversationId} = ${opts.conversationId} and ${messagesTable.direction} = 'inbound')`;
+  const handledFields = {
+    status: "human_handled" as const,
+    draftBody: null,
+    draftSource: null,
+    reasonCode: null,
+    reasonText: null,
+    latestInboundMessageId: latestInbound,
+    humanHandledBy: opts.humanHandledBy ?? null,
+    humanHandledAt: now,
+    updatedAt: now,
+  };
+  const written = await db
+    .insert(conversationAiStatesTable)
+    .values({
+      tenantId: opts.tenantId,
+      conversationId: opts.conversationId,
+      ...handledFields,
     })
-    .where(
-      and(
-        eq(conversationAiStatesTable.tenantId, opts.tenantId),
-        eq(conversationAiStatesTable.conversationId, opts.conversationId),
-        inArray(conversationAiStatesTable.status, HUMAN_TAKEABLE),
-      ),
-    )
+    .onConflictDoUpdate({
+      target: conversationAiStatesTable.conversationId,
+      set: handledFields,
+      setWhere: inArray(conversationAiStatesTable.status, HUMAN_TAKEABLE),
+    })
     .returning({ id: conversationAiStatesTable.id });
-  return updated.length > 0;
+  return written.length > 0;
 }
 
 /** Load the AI state for a single conversation (null when none exists). */

@@ -671,7 +671,7 @@ router.post(
       // a human touch means we never learn from this exchange (learning only
       // fires on an autonomous, unedited auto-send). Non-blocking: the message
       // already went out, so a bookkeeping failure must not 500 the send.
-      await markConversationAiStateHumanHandled({
+      const aiHandled = await markConversationAiStateHumanHandled({
         tenantId,
         conversationId,
         humanHandledBy: req.tenantUser!.tenantUserId,
@@ -680,6 +680,7 @@ router.post(
           { err: stateErr, conversationId },
           "Failed to mark AI state human_handled (non-blocking)",
         );
+        return false;
       });
 
       recordMessageUsage(tenantId, req.tenantUser!.tenantSlug).catch((usageErr) => {
@@ -691,6 +692,16 @@ router.post(
         conversationId,
         direction: "outbound",
       });
+
+      // Broadcast the takeover so every open inbox converges to human_handled —
+      // the send path is the ONLY place that flips a pending AI state when a
+      // human replies, and the async Co-Pilot pipeline can re-stage a draft for
+      // this turn a beat later. Without this event the inbox detail query would
+      // stay on the stale draft until the next manual refetch. Publishing the
+      // bare ai:state signal lets the client refetch the authoritative state.
+      if (aiHandled) {
+        eventBus.publish(tenantId, { type: "ai:state", conversationId });
+      }
 
       res.status(201).json(result.messageRow);
     } catch (err) {

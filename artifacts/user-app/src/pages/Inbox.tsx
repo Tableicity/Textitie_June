@@ -156,6 +156,22 @@ function contactCsvToTags(s: string): string[] | null {
   return arr.length ? arr : null;
 }
 
+// Identity of a Co-Pilot draft for de-dup, keyed on the inbound TURN it answers
+// (latestInboundMessageId) rather than updatedAt. A slow background AI write
+// (finalize/stage) for the SAME turn bumps updatedAt but not the turn, so a
+// turn key collapses those re-emits — and, critically, a key recorded when the
+// agent sends marks the turn consumed so a late draft can't re-fill the cleared
+// composer. Falls back to a timestamp key only when no turn is known.
+function aiTurnKey(
+  selectedId: number,
+  turn: number | null | undefined,
+  updatedAt?: string | null,
+): string {
+  return typeof turn === "number"
+    ? `${selectedId}:turn:${turn}`
+    : `${selectedId}:ts:${updatedAt ?? ""}`;
+}
+
 export default function Inbox() {
   const queryClient = useQueryClient();
   useRealtimeInbox();
@@ -283,6 +299,25 @@ export default function Inbox() {
       },
     },
   );
+
+  // The inbound TURN the agent is currently answering = the newest inbound
+  // message in the thread. Used to mark a turn consumed on send so a late
+  // Co-Pilot draft for that same turn can't re-fill the composer. Mirrored into
+  // a ref so the send mutation's onSuccess always sees the live value.
+  const latestInboundId = useMemo(() => {
+    if (!messages) return null;
+    let maxId: number | null = null;
+    for (const m of messages) {
+      if (m.direction === "inbound" && (maxId === null || m.id > maxId)) {
+        maxId = m.id;
+      }
+    }
+    return maxId;
+  }, [messages]);
+  const latestInboundIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    latestInboundIdRef.current = latestInboundId;
+  }, [latestInboundId]);
 
   const { data: events } = useListConversationEvents(selectedId as number, {
     query: {
@@ -435,6 +470,14 @@ export default function Inbox() {
       onSuccess: () => {
         setComposeText("");
         if (selectedId) {
+          // Mark the inbound turn we just answered as consumed. A slow Co-Pilot
+          // finalize/stage can land a draft for this same turn a beat after the
+          // send; recording its turn key here makes the prefill effect skip it
+          // so the cleared composer is never re-filled with the sent reply.
+          appliedDraftKeyRef.current = aiTurnKey(
+            selectedId,
+            latestInboundIdRef.current,
+          );
           queryClient.invalidateQueries({
             queryKey: getListMessagesQueryKey(selectedId),
           });
@@ -675,20 +718,46 @@ export default function Inbox() {
   const insertAiDraft = useCallback(() => {
     if (!aiState?.draftBody || !selectedId) return;
     setComposeText(aiState.draftBody.slice(0, COMPOSE_MAX_CHARS));
-    appliedDraftKeyRef.current = `${selectedId}:${aiState.updatedAt ?? ""}`;
+    appliedDraftKeyRef.current = aiTurnKey(
+      selectedId,
+      aiState.latestInboundMessageId,
+      aiState.updatedAt,
+    );
     inputRef.current?.focus();
-  }, [aiState?.draftBody, aiState?.updatedAt, selectedId, COMPOSE_MAX_CHARS]);
+  }, [
+    aiState?.draftBody,
+    aiState?.latestInboundMessageId,
+    aiState?.updatedAt,
+    selectedId,
+    COMPOSE_MAX_CHARS,
+  ]);
 
   // Auto-prefill the composer with a fresh Co-Pilot draft, but never overwrite
-  // text the agent has already typed and never re-apply the same draft twice.
+  // text the agent has already typed and never re-apply a draft for a turn the
+  // agent already answered. Keyed on the inbound turn (not updatedAt) so a slow
+  // background AI write for the same turn — including one that lands just after
+  // the agent sent — does not re-fill the cleared composer.
   useEffect(() => {
     if (!selectedId || !aiDraftReady || isWhisperMode) return;
-    const key = `${selectedId}:${aiState?.updatedAt ?? ""}`;
+    const key = aiTurnKey(
+      selectedId,
+      aiState?.latestInboundMessageId,
+      aiState?.updatedAt,
+    );
     if (appliedDraftKeyRef.current === key) return;
     if (composeText.trim().length > 0) return;
     setComposeText(aiDraftBody.slice(0, COMPOSE_MAX_CHARS));
     appliedDraftKeyRef.current = key;
-  }, [selectedId, aiDraftReady, aiDraftBody, aiState?.updatedAt, composeText, isWhisperMode, COMPOSE_MAX_CHARS]);
+  }, [
+    selectedId,
+    aiDraftReady,
+    aiDraftBody,
+    aiState?.latestInboundMessageId,
+    aiState?.updatedAt,
+    composeText,
+    isWhisperMode,
+    COMPOSE_MAX_CHARS,
+  ]);
 
   const statusColor = (s: string) => {
     if (s === "online") return "bg-emerald-500";

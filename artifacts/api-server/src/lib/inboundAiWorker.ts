@@ -1,0 +1,153 @@
+import { db, tenantsTable, conversationsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { logger } from "./logger";
+import {
+  claimNextInboundAiStage,
+  completeInboundAiStage,
+  failInboundAiStage,
+  skipInboundAiStage,
+  requeueStaleProcessingStages,
+  type ClaimedInboundAiStage,
+} from "./inboundStageStore";
+import { runInboundAiPipeline } from "./inboundAiPipeline";
+
+// ---------------------------------------------------------------------------
+// Durable FIFO worker for the inbound AI pipeline.
+//
+// It drains conversation_inbound_ai_stages: at most one inbound per conversation
+// is in flight at a time (the claim excludes conversations already processing),
+// while distinct conversations run concurrently. It is poked immediately after
+// an enqueue for low latency and also polls on an interval as a safety net /
+// for stages requeued after a crash. Correct across multiple deployed instances
+// because all claiming is done at the DB level (FOR UPDATE SKIP LOCKED + a
+// partial unique index), not via in-process state.
+// ---------------------------------------------------------------------------
+
+const POLL_INTERVAL_MS = 1_500;
+const VISIBILITY_TIMEOUT_MS = 2 * 60_000;
+// Max distinct conversations processed concurrently per drain pass.
+const MAX_BATCH = 8;
+
+let cycleRunning = false;
+let pokePending = false;
+let started = false;
+
+async function processOne(stage: ClaimedInboundAiStage): Promise<void> {
+  // Re-read the tenant + conversation FRESH so a mode flip or deletion between
+  // enqueue and processing is honored (the pipeline resolves the live effective
+  // mode from this tenant row + the per-conversation override).
+  const tenantRows = await db
+    .select()
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, stage.tenantId))
+    .limit(1);
+  const tenant = tenantRows[0];
+  if (!tenant) {
+    await skipInboundAiStage(stage.id, "tenant_not_found");
+    return;
+  }
+  const convRows = await db
+    .select({ id: conversationsTable.id })
+    .from(conversationsTable)
+    .where(eq(conversationsTable.id, stage.conversationId))
+    .limit(1);
+  if (convRows.length === 0) {
+    await skipInboundAiStage(stage.id, "conversation_not_found");
+    return;
+  }
+
+  await runInboundAiPipeline({
+    tenant,
+    tenantSlug: tenant.slug,
+    conversationId: stage.conversationId,
+    inboundMessageId: stage.inboundMessageId,
+    inboundSid: stage.inboundSid,
+    messageBody: stage.messageBody,
+    fromNumber: stage.fromNumber,
+    automationHandled: false,
+  });
+  await completeInboundAiStage(stage.id);
+}
+
+/**
+ * Claim up to MAX_BATCH distinct-conversation stages and process them
+ * concurrently. Each successive claim excludes conversations already in flight,
+ * so the batch is always distinct conversations — never two inbounds of the
+ * same conversation at once. Returns how many were claimed.
+ */
+async function drainBatch(): Promise<number> {
+  const claimed: ClaimedInboundAiStage[] = [];
+  for (let i = 0; i < MAX_BATCH; i++) {
+    const row = await claimNextInboundAiStage();
+    if (!row) break;
+    claimed.push(row);
+  }
+  if (claimed.length === 0) return 0;
+  await Promise.allSettled(
+    claimed.map(async (stage) => {
+      try {
+        await processOne(stage);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(
+          { err: msg, stageId: stage.id, conversationId: stage.conversationId },
+          "Inbound AI stage processing failed; backing off",
+        );
+        await failInboundAiStage(stage.id, stage.attempts, msg).catch((e) =>
+          logger.error(
+            { err: e, stageId: stage.id },
+            "Failed to record inbound AI stage failure",
+          ),
+        );
+      }
+    }),
+  );
+  return claimed.length;
+}
+
+async function runCycle(): Promise<void> {
+  // Single in-flight cycle per process; a poke that lands while busy is folded
+  // into one follow-up cycle so we never stack overlapping drains.
+  if (cycleRunning) {
+    pokePending = true;
+    return;
+  }
+  cycleRunning = true;
+  try {
+    await requeueStaleProcessingStages(VISIBILITY_TIMEOUT_MS).catch((e) =>
+      logger.warn({ err: e }, "Requeue stale inbound AI stages failed"),
+    );
+    // Drain until empty so an enqueue+poke is processed promptly. Each pass
+    // completes its batch before the next claim, so a conversation's next
+    // inbound is only picked up after the current one finishes (FIFO).
+    let processed = 0;
+    do {
+      processed = await drainBatch();
+    } while (processed > 0);
+  } finally {
+    cycleRunning = false;
+    if (pokePending) {
+      pokePending = false;
+      void runCycle();
+    }
+  }
+}
+
+/** Nudge the worker to drain now (called right after an enqueue). */
+export function pokeInboundAiWorker(): void {
+  void runCycle().catch((err) =>
+    logger.error({ err }, "Inbound AI worker poke failed"),
+  );
+}
+
+/** Start the polling loop. Idempotent. Call once at server boot. */
+export function startInboundAiWorker(): void {
+  if (started) return;
+  started = true;
+  logger.info("Inbound AI worker started (poll every 1.5s + poke)");
+  setInterval(() => {
+    runCycle().catch((err) =>
+      logger.error({ err }, "Inbound AI worker cycle error"),
+    );
+  }, POLL_INTERVAL_MS);
+}

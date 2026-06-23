@@ -270,7 +270,7 @@ describe("finalizeCopilotDraftForInbound — guarded finalize", () => {
       draftSource: "professor",
       confidence: null,
     });
-    await finalizeCopilotDraftForInbound({
+    const finalized = await finalizeCopilotDraftForInbound({
       tenantId,
       conversationId: conv,
       latestInboundMessageId: m1,
@@ -278,6 +278,7 @@ describe("finalizeCopilotDraftForInbound — guarded finalize", () => {
       draftSource: "professor",
       confidence: "high",
     });
+    expect(finalized).toBe(true);
     const row = await stateFor(conv);
     expect(row?.draftBody).toBe("final draft");
     expect(row?.confidence).toBe("high");
@@ -298,7 +299,7 @@ describe("finalizeCopilotDraftForInbound — guarded finalize", () => {
       conversationId: conv,
       humanHandledBy: 1,
     });
-    await finalizeCopilotDraftForInbound({
+    const finalized = await finalizeCopilotDraftForInbound({
       tenantId,
       conversationId: conv,
       latestInboundMessageId: m1,
@@ -306,6 +307,7 @@ describe("finalizeCopilotDraftForInbound — guarded finalize", () => {
       draftSource: "professor",
       confidence: "high",
     });
+    expect(finalized).toBe(false);
     const row = await stateFor(conv);
     expect(row?.status).toBe("human_handled");
   });
@@ -322,7 +324,7 @@ describe("finalizeCopilotDraftForInbound — guarded finalize", () => {
       draftSource: "professor",
     });
     // A late finalize from the OLD turn (m1) must not touch the newer row.
-    await finalizeCopilotDraftForInbound({
+    const finalized = await finalizeCopilotDraftForInbound({
       tenantId,
       conversationId: conv,
       latestInboundMessageId: m1,
@@ -330,8 +332,64 @@ describe("finalizeCopilotDraftForInbound — guarded finalize", () => {
       draftSource: "professor",
       confidence: "low",
     });
+    expect(finalized).toBe(false);
     const row = await stateFor(conv);
     expect(row?.draftBody).toBe("newer draft");
     expect(row?.latestInboundMessageId).toBe(m2);
+  });
+});
+
+describe("markConversationAiStateHumanHandled — brand-new-conversation fence", () => {
+  it("inserts a human_handled fence when no AI-state row exists yet", async () => {
+    const conv = await makeConversation();
+    const m1 = await addInbound(conv, "first contact, human grabs it");
+
+    // No AI-state row exists (the async pipeline never wrote one). A human
+    // replies first: this must INSERT a human_handled row, not no-op.
+    const flipped = await markConversationAiStateHumanHandled({
+      tenantId,
+      conversationId: conv,
+      humanHandledBy: 5,
+    });
+    expect(flipped).toBe(true);
+    const row = await stateFor(conv);
+    expect(row?.status).toBe("human_handled");
+    expect(row?.latestInboundMessageId).toBe(m1);
+
+    // A late Co-Pilot draft for that same turn must now be fenced out by the
+    // ON CONFLICT guard — the composer never re-surfaces a draft.
+    const late = await stageCopilotDraftForInbound({
+      tenantId,
+      conversationId: conv,
+      latestInboundMessageId: m1,
+      draftBody: "late draft for an answered turn",
+      draftSource: "professor",
+    });
+    expect(late).toBe(false);
+    const after = await stateFor(conv);
+    expect(after?.status).toBe("human_handled");
+  });
+
+  it("preserves an autonomous auto_sent row (a fresh turn, not takeable)", async () => {
+    const conv = await makeConversation();
+    const m1 = await addInbound(conv, "q");
+    // Simulate an Auto-Pilot autonomous send already recorded for this turn.
+    await db.insert(conversationAiStatesTable).values({
+      tenantId,
+      conversationId: conv,
+      status: "auto_sent",
+      draftBody: null,
+      latestInboundMessageId: m1,
+    });
+
+    const flipped = await markConversationAiStateHumanHandled({
+      tenantId,
+      conversationId: conv,
+      humanHandledBy: 8,
+    });
+    // auto_sent is NOT human-takeable: the upsert's setWhere leaves it intact.
+    expect(flipped).toBe(false);
+    const row = await stateFor(conv);
+    expect(row?.status).toBe("auto_sent");
   });
 });

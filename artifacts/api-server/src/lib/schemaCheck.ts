@@ -21,6 +21,7 @@ const REQUIRED_TABLES = [
   "campaigns",
   "campaign_messages",
   "phone_numbers",
+  "conversation_inbound_ai_stages",
 ];
 
 export async function checkSchema(): Promise<string[]> {

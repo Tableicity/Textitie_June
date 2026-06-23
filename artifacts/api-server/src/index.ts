@@ -5,6 +5,7 @@ import { seedSuperuser } from "./lib/seedSuperuser";
 import { seedTenantUsers } from "./lib/seedTenantUsers";
 import { seedDemoData } from "./lib/seedData";
 import { startTimerEngine } from "./lib/timerEngine";
+import { startInboundAiWorker } from "./lib/inboundAiWorker";
 import { bootstrapHipaaState } from "./lib/hipaaBootstrap";
 import {
   ensurePhoneNumbersSchema,
@@ -103,6 +104,10 @@ app.listen(port, (err) => {
 
       if (!missing.includes("automation_rules")) {
         startTimerEngine();
+      }
+
+      if (!missing.includes("conversation_inbound_ai_stages")) {
+        startInboundAiWorker();
       }
     });
 });
