@@ -17,7 +17,6 @@ import {
   retrieveLibraryContext,
   professorEscalate,
   persistEscalatedFacts,
-  claimEscalationSlot,
   type FactCategory,
   type ProfessorEscalation,
 } from "./knowledge";
@@ -169,11 +168,14 @@ export async function runInboundAiPipeline(
     // (reply surfaced before the fact-reasoning finished), so the finalize
     // below updates-in-place instead of re-upserting.
     let copilotEarlyDraftFired = false;
+    // No in-process throttle needed anymore: the durable per-conversation FIFO
+    // (one inbound in flight per conversation) already prevents the same
+    // conversation from fanning out concurrent escalations, and natural dedup
+    // (once facts persist, the identical question is grounded) handles repeats.
     if (
       grokConfigured() &&
       draft.status === "drafted" &&
-      !draft.kbMatched &&
-      claimEscalationSlot(tenant.id, messageBody)
+      !draft.kbMatched
     ) {
       try {
         const lib = await retrieveLibraryContext(tenant.id, messageBody);

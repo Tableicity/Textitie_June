@@ -1147,30 +1147,3 @@ export async function persistEscalatedFacts(
     return { persisted: toInsert.length, versionId: version.id };
   });
 }
-
-// In-process throttle so the same unanswered question doesn't fan out multiple
-// (slow, costly) Professor escalations before the first persists its facts. The
-// durable guard is natural dedup — once facts persist, the next identical
-// question is grounded and won't escalate — so this is only a best-effort,
-// per-process cost cap. Returns true to PROCEED, false if recently claimed.
-const escalationSlots = new Map<string, number>();
-const ESCALATION_TTL_MS = 5 * 60_000;
-
-export function claimEscalationSlot(
-  tenantId: number,
-  question: string,
-  now: number = Date.now(),
-): boolean {
-  const key = `${tenantId}:${question
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .slice(0, 200)}`;
-  const expiry = escalationSlots.get(key);
-  if (expiry && expiry > now) return false;
-  escalationSlots.set(key, now + ESCALATION_TTL_MS);
-  if (escalationSlots.size > 500) {
-    for (const [k, v] of escalationSlots) if (v <= now) escalationSlots.delete(k);
-  }
-  return true;
-}

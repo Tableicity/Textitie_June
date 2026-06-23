@@ -3,8 +3,9 @@ import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 import {
   claimNextInboundAiStage,
-  completeInboundAiStage,
-  failInboundAiStage,
+  gatherCoalescibleFollowups,
+  finalizeCoalescedBurst,
+  failCoalescedBurst,
   skipInboundAiStage,
   requeueStaleProcessingStages,
   type ClaimedInboundAiStage,
@@ -33,40 +34,84 @@ let pokePending = false;
 let started = false;
 
 async function processOne(stage: ClaimedInboundAiStage): Promise<void> {
-  // Re-read the tenant + conversation FRESH so a mode flip or deletion between
-  // enqueue and processing is honored (the pipeline resolves the live effective
-  // mode from this tenant row + the per-conversation override).
-  const tenantRows = await db
-    .select()
-    .from(tenantsTable)
-    .where(eq(tenantsTable.id, stage.tenantId))
-    .limit(1);
-  const tenant = tenantRows[0];
-  if (!tenant) {
-    await skipInboundAiStage(stage.id, "tenant_not_found");
-    return;
-  }
-  const convRows = await db
-    .select({ id: conversationsTable.id })
-    .from(conversationsTable)
-    .where(eq(conversationsTable.id, stage.conversationId))
-    .limit(1);
-  if (convRows.length === 0) {
-    await skipInboundAiStage(stage.id, "conversation_not_found");
-    return;
-  }
+  // followupIds is declared out here so a failure at ANY point below (including
+  // the gather itself) fails the WHOLE burst together — never leaving a
+  // follow-up behind to be re-claimed as a separate, re-anchored turn.
+  let followupIds: number[] = [];
+  try {
+    // Re-read the tenant + conversation FRESH so a mode flip or deletion between
+    // enqueue and processing is honored (the pipeline resolves the live
+    // effective mode from this tenant row + the per-conversation override).
+    const tenantRows = await db
+      .select()
+      .from(tenantsTable)
+      .where(eq(tenantsTable.id, stage.tenantId))
+      .limit(1);
+    const tenant = tenantRows[0];
+    if (!tenant) {
+      await skipInboundAiStage(stage.id, "tenant_not_found");
+      return;
+    }
+    const convRows = await db
+      .select({ id: conversationsTable.id })
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, stage.conversationId))
+      .limit(1);
+    if (convRows.length === 0) {
+      await skipInboundAiStage(stage.id, "conversation_not_found");
+      return;
+    }
 
-  await runInboundAiPipeline({
-    tenant,
-    tenantSlug: tenant.slug,
-    conversationId: stage.conversationId,
-    inboundMessageId: stage.inboundMessageId,
-    inboundSid: stage.inboundSid,
-    messageBody: stage.messageBody,
-    fromNumber: stage.fromNumber,
-    automationHandled: false,
-  });
-  await completeInboundAiStage(stage.id);
+    // Smart coalescing: pull the contiguous burst of follow-up texts that
+    // landed within the window and answer them as ONE turn. The anchor holds
+    // the per-conversation processing lock, so this read can't race a claim.
+    const followups = await gatherCoalescibleFollowups(
+      stage.conversationId,
+      stage.receivedAt,
+    );
+    followupIds = followups.map((f) => f.id);
+
+    // Active-turn authority: the reply, the AI-state/composer turn, AND the
+    // auto-send idempotency key all anchor on the NEWEST inbound in the burst
+    // (last-write-wins). The query the model answers is every burst message in
+    // arrival order so a "hi / are you open? / prices?" burst gets one coherent
+    // reply. The combined text stays QUERY-ONLY (never persisted as truth).
+    const newest =
+      followups.length > 0 ? followups[followups.length - 1] : stage;
+    const combinedBody = [stage.messageBody, ...followups.map((f) => f.messageBody)]
+      .map((b) => b.trim())
+      .filter((b) => b.length > 0)
+      .join("\n");
+
+    await runInboundAiPipeline({
+      tenant,
+      tenantSlug: tenant.slug,
+      conversationId: stage.conversationId,
+      inboundMessageId: newest.inboundMessageId,
+      inboundSid: newest.inboundSid,
+      messageBody: combinedBody.length > 0 ? combinedBody : stage.messageBody,
+      fromNumber: newest.fromNumber,
+      automationHandled: false,
+    });
+    await finalizeCoalescedBurst(stage.id, followupIds);
+    if (followupIds.length > 0) {
+      logger.info(
+        {
+          conversationId: stage.conversationId,
+          coalesced: followupIds.length + 1,
+          anchorMessageId: newest.inboundMessageId,
+        },
+        "SAMA AI: coalesced inbound burst into one reply",
+      );
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(
+      { err: msg, stageId: stage.id, conversationId: stage.conversationId },
+      "Inbound AI stage processing failed; backing off",
+    );
+    await failCoalescedBurst(stage.id, followupIds, stage.attempts, msg);
+  }
 }
 
 /**
@@ -83,21 +128,21 @@ async function drainBatch(): Promise<number> {
     claimed.push(row);
   }
   if (claimed.length === 0) return 0;
+  // processOne owns its own success/failure finalization (whole-burst). This
+  // catch is only a last resort if even failCoalescedBurst threw — the stage
+  // stays 'processing' and is reclaimed by the visibility timeout.
   await Promise.allSettled(
     claimed.map(async (stage) => {
       try {
         await processOne(stage);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.warn(
-          { err: msg, stageId: stage.id, conversationId: stage.conversationId },
-          "Inbound AI stage processing failed; backing off",
-        );
-        await failInboundAiStage(stage.id, stage.attempts, msg).catch((e) =>
-          logger.error(
-            { err: e, stageId: stage.id },
-            "Failed to record inbound AI stage failure",
-          ),
+        logger.error(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            stageId: stage.id,
+            conversationId: stage.conversationId,
+          },
+          "Inbound AI stage handler crashed after failure handling",
         );
       }
     }),

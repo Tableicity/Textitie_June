@@ -1,5 +1,5 @@
 import { db, conversationInboundAiStagesTable } from "@workspace/db";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 // ---------------------------------------------------------------------------
@@ -7,7 +7,7 @@ import { logger } from "./logger";
 //
 // Why: the AI engagement pipeline (Student draft / Co-Pilot / Auto-Pilot gate +
 // auto-send / Professor escalation) used to run inline in the webhook's
-// fire-and-forget block, throttled by an in-process Map (claimEscalationSlot).
+// fire-and-forget block, throttled only by a best-effort in-process Map.
 // Two rapid inbounds to the SAME conversation could interleave their pipelines
 // (racing drafts, double escalations) and nothing survived a restart. This
 // store backs a real table so:
@@ -22,6 +22,25 @@ import { logger } from "./logger";
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 2_000;
 const MAX_ERROR_LEN = 2_000;
+
+// Smart burst-coalescing window. An inbound is held back from the worker for
+// this long (available_at = received_at + window) so rapid follow-up texts to
+// the SAME conversation can land first and be collapsed into ONE reply. Texts
+// whose consecutive arrival gap exceeds the window are treated as separate
+// turns and answered separately. Tunable without a code change via
+// SAMA_AI_COALESCE_WINDOW_MS; defaults to 6s (long enough to absorb a human
+// "hi / are you open? / what are prices?" burst, short enough to feel prompt).
+const DEFAULT_COALESCE_WINDOW_MS = 6_000;
+
+function resolveCoalesceWindowMs(): number {
+  const raw = process.env.SAMA_AI_COALESCE_WINDOW_MS;
+  if (raw == null || raw.trim() === "") return DEFAULT_COALESCE_WINDOW_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_COALESCE_WINDOW_MS;
+  return Math.floor(parsed);
+}
+
+export const COALESCE_WINDOW_MS = resolveCoalesceWindowMs();
 
 export interface EnqueueInboundAiStageInput {
   tenantId: number;
@@ -41,6 +60,7 @@ export interface EnqueueInboundAiStageInput {
 export async function enqueueInboundAiStage(
   input: EnqueueInboundAiStageInput,
 ): Promise<boolean> {
+  const now = new Date();
   const written = await db
     .insert(conversationInboundAiStagesTable)
     .values({
@@ -51,6 +71,10 @@ export async function enqueueInboundAiStage(
       messageBody: input.messageBody,
       fromNumber: input.fromNumber,
       status: "queued",
+      receivedAt: now,
+      // Hold back briefly so a rapid follow-up text can land and coalesce into
+      // this turn instead of triggering a second reply (smart burst policy).
+      availableAt: new Date(now.getTime() + COALESCE_WINDOW_MS),
     })
     .onConflictDoNothing({
       target: conversationInboundAiStagesTable.inboundMessageId,
@@ -67,7 +91,21 @@ export interface ClaimedInboundAiStage {
   inboundSid: string | null;
   messageBody: string;
   fromNumber: string;
+  receivedAt: Date;
   attempts: number;
+}
+
+/**
+ * A queued follow-up that may be coalesced into the burst anchored by the
+ * currently-claimed stage. Same shape minus the claim-only `attempts`.
+ */
+export interface CoalescibleStage {
+  id: number;
+  inboundMessageId: number;
+  inboundSid: string | null;
+  messageBody: string;
+  fromNumber: string;
+  receivedAt: Date;
 }
 
 function isUniqueViolation(e: unknown): boolean {
@@ -117,7 +155,8 @@ export async function claimNextInboundAiStage(): Promise<ClaimedInboundAiStage |
         LIMIT 1
       )
       RETURNING s.id, s.tenant_id, s.conversation_id, s.inbound_message_id,
-                s.inbound_sid, s.message_body, s.from_number, s.attempts
+                s.inbound_sid, s.message_body, s.from_number, s.received_at,
+                s.attempts
     `);
     const row = (result.rows as Record<string, unknown>[])[0];
     if (!row) return null;
@@ -129,6 +168,7 @@ export async function claimNextInboundAiStage(): Promise<ClaimedInboundAiStage |
       inboundSid: (row.inbound_sid as string | null) ?? null,
       messageBody: String(row.message_body),
       fromNumber: String(row.from_number),
+      receivedAt: new Date(row.received_at as string),
       attempts: Number(row.attempts),
     };
   } catch (e) {
@@ -195,6 +235,130 @@ export async function failInboundAiStage(
       updatedAt: now,
     })
     .where(eq(conversationInboundAiStagesTable.id, id));
+}
+
+/**
+ * Gather the queued follow-ups that should coalesce into the burst anchored by
+ * the just-claimed stage. Safe to read without locking: the claimed anchor is
+ * already 'processing', so the partial unique index keeps every other worker
+ * off this conversation entirely until we finalize.
+ *
+ * Burst rule: starting from the anchor, include each next-newest queued stage
+ * whose arrival gap from the PREVIOUS member is within the window; stop at the
+ * first gap that exceeds it (that and everything after is a later, separate
+ * turn). This is what makes "rapid burst → one reply, far apart → separate"
+ * smart rather than a blunt time bucket.
+ */
+export async function gatherCoalescibleFollowups(
+  conversationId: number,
+  anchorReceivedAt: Date,
+): Promise<CoalescibleStage[]> {
+  const rows = await db
+    .select({
+      id: conversationInboundAiStagesTable.id,
+      inboundMessageId: conversationInboundAiStagesTable.inboundMessageId,
+      inboundSid: conversationInboundAiStagesTable.inboundSid,
+      messageBody: conversationInboundAiStagesTable.messageBody,
+      fromNumber: conversationInboundAiStagesTable.fromNumber,
+      receivedAt: conversationInboundAiStagesTable.receivedAt,
+    })
+    .from(conversationInboundAiStagesTable)
+    .where(
+      and(
+        eq(conversationInboundAiStagesTable.conversationId, conversationId),
+        eq(conversationInboundAiStagesTable.status, "queued"),
+        gt(conversationInboundAiStagesTable.receivedAt, anchorReceivedAt),
+      ),
+    )
+    .orderBy(
+      asc(conversationInboundAiStagesTable.receivedAt),
+      asc(conversationInboundAiStagesTable.id),
+    );
+
+  const burst: CoalescibleStage[] = [];
+  let prev = anchorReceivedAt.getTime();
+  for (const row of rows) {
+    const t = row.receivedAt.getTime();
+    if (t - prev > COALESCE_WINDOW_MS) break;
+    burst.push(row);
+    prev = t;
+  }
+  return burst;
+}
+
+/**
+ * Finalize a coalesced burst atomically: the anchor is marked done and every
+ * coalesced follow-up is marked skipped('coalesced'). One transaction so a
+ * crash never leaves the burst half-finalized (which could split it and, on a
+ * re-run with a different newest member, change the idempotency anchor).
+ */
+export async function finalizeCoalescedBurst(
+  anchorId: number,
+  followupIds: number[],
+): Promise<void> {
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    if (followupIds.length > 0) {
+      await tx
+        .update(conversationInboundAiStagesTable)
+        .set({
+          status: "skipped",
+          skipReason: "coalesced",
+          doneAt: now,
+          updatedAt: now,
+        })
+        .where(inArray(conversationInboundAiStagesTable.id, followupIds));
+    }
+    await tx
+      .update(conversationInboundAiStagesTable)
+      .set({ status: "done", doneAt: now, updatedAt: now })
+      .where(eq(conversationInboundAiStagesTable.id, anchorId));
+  });
+}
+
+/**
+ * Record a failure for a coalesced burst. The WHOLE burst is requeued (or
+ * dead-lettered at the attempt cap) together with the SAME available_at so the
+ * retry re-coalesces the identical set — never claiming a follow-up as a new,
+ * smaller burst that would split the turn and re-anchor idempotency. The
+ * anchor's attempts drives backoff/cap; follow-ups ride along.
+ */
+export async function failCoalescedBurst(
+  anchorId: number,
+  followupIds: number[],
+  attempts: number,
+  errMsg: string,
+): Promise<void> {
+  const now = new Date();
+  const lastError = errMsg.slice(0, MAX_ERROR_LEN);
+  const deadLetter = attempts >= MAX_ATTEMPTS;
+  await db.transaction(async (tx) => {
+    if (deadLetter) {
+      await tx
+        .update(conversationInboundAiStagesTable)
+        .set({ status: "failed", lastError, doneAt: now, updatedAt: now })
+        .where(eq(conversationInboundAiStagesTable.id, anchorId));
+      if (followupIds.length > 0) {
+        await tx
+          .update(conversationInboundAiStagesTable)
+          .set({ status: "failed", lastError, doneAt: now, updatedAt: now })
+          .where(inArray(conversationInboundAiStagesTable.id, followupIds));
+      }
+      return;
+    }
+    const backoffMs = BASE_BACKOFF_MS * 2 ** (attempts - 1);
+    const availableAt = new Date(now.getTime() + backoffMs);
+    await tx
+      .update(conversationInboundAiStagesTable)
+      .set({ status: "queued", lastError, availableAt, updatedAt: now })
+      .where(eq(conversationInboundAiStagesTable.id, anchorId));
+    if (followupIds.length > 0) {
+      await tx
+        .update(conversationInboundAiStagesTable)
+        .set({ status: "queued", availableAt, updatedAt: now })
+        .where(inArray(conversationInboundAiStagesTable.id, followupIds));
+    }
+  });
 }
 
 /**
