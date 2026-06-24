@@ -27,6 +27,8 @@ This is deliberately **not** "how much did we scrape." Volume is the enemy here 
 
 **Non-goals:** copying competitor features/pricing/certs into Textitie's mouth; building a vector DB; touching the live SMS hot path.
 
+**What this IS vs. is NOT (read this — it is the easy misread):** the Brain is a **vendor-neutral Library _bootstrapper_** — it uses competitor help-docs as raw *source material* to build *your own* industry-true Library faster. It is **NOT** a **competitor-intel _harvester_** — it does not store, surface, or act on "what competitor X offers." De-branding is the *feature*, not a loss: a competitor's de-identified capability statement, where your features are on par, becomes a true Textitie fact. Where they are *not* on par, that fact is a liability — see Gate 7.
+
 ---
 
 ## 2. The non-negotiable gates (the safety contract)
@@ -39,6 +41,7 @@ Everything the Brain does must respect these. They mirror invariants already enf
 4. **Trust tier ≠ safety category.** "Do I believe it?" (trust) is a different axis from "is it safe to auto-send?" (category). Never merge them.
 5. **The radioactive rule.** A competitor's *first-person claim* ("we are HIPAA compliant", "$15/user", "native Salesforce") must **never** be re-branded as Textitie's. The Brain extracts the *vendor-neutral concept* and **discards the claim**.
 6. **Litmus test for every candidate fact:** *If you delete the company name and the sentence becomes a claim about a specific company, it is NOT a Textitie fact.* It is, at most, labeled competitive intel (1.1) — never sendable.
+7. **The parity rule (Brain-sourced facts only) — neutralization ≠ truth.** Stripping the brand fixes the *branding* and *legal* posture; it does **not** make the claim *true for Textitie*. A de-branded capability ("SMS platforms support scheduled campaigns") can be accurate for a competitor yet **false for Textitie** — and a grounded Student would then promise a customer something the product can't do. **Therefore every Brain-sourced candidate must be human-verified to map to a real, current Textitie capability before promotion to Classroom.** Tag Brain candidates **`needs-parity-check`** so the reviewer's job is explicitly "verify against the real product," not "rubber-stamp." Never Auto-Pilot an un-curated Brain fact.
 
 ---
 
@@ -225,3 +228,4 @@ curl -u "$SAMA_CONDUCTOR_USER:$SAMA_CONDUCTOR_PASSWORD" \
 |---|---|---|
 | 1.0 | 2026-06-23 | Initial spec: external Brain, Library-only seam, 2-LLM roster, demo-tenant blast-radius rule, 1.1 backlog. |
 | 1.0.1 | 2026-06-24 | Locked hosting: Brain = its own Repl + `scheduled` (cron) deployment; added one-deployment-target-per-repl rationale and go-live de-risking (§3, §10). |
+| 1.0.2 | 2026-06-24 | Stated intent explicitly (vendor-neutral Library **bootstrapper**, NOT competitor-intel **harvester**) in §1; added Gate 7 parity rule + `needs-parity-check` tag in §2. |
