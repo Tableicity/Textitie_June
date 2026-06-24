@@ -18,3 +18,9 @@ id = "A4ranm84aGOSBlLB2lJaE"
 uri = "file://John/LLM Training Manual.md"
 type = "text"
 title = "LLM Training Manual"
+
+[[outputs]]
+id = "l30DmA442DGKKkkjy9bdZ"
+uri = "file://John/POC_Brain.md"
+type = "text"
+title = "POC Brain — Hand-off Spec (POC 1.0)"
