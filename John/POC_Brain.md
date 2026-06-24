@@ -112,6 +112,21 @@ Your existing Professor UI / endpoints do the promotion. Listed so engineers see
 ### 4.3 What the Brain must store on its own side (its tiny state DB)
 For idempotency/trickle (so cron re-runs don't duplicate): `(source_url, content_hash, last_seen_at, last_pushed_at, status)`. Re-scrape with an **unchanged hash = no-op**. Changed hash = re-process (the Librarian will catch the resulting conflict on the human's next push).
 
+### 4.4 How knowledge enters SAMA + the 6 safeguards (verified against `knowledge.ts` — give this to the engineer)
+
+**Ingress (one call):** the Brain's *only* write into SAMA is `POST /api/tenants/:tenantId/library/text` (Conductor Basic auth). It creates a raw `knowledge_documents` row (`source_type="paste"`, auto-chunked + FTS-indexed) — **raw candidate text, never a published fact.** The Brain never writes the DB, facts, or the Classroom directly. That containment is the foundation; the worst a buggy/compromised Brain can do is drop raw text into one tenant's Library.
+
+The contamination guards, defense-in-depth (**★ = enforced in SAMA code, not just convention**):
+
+1. **Candidate-only ingress.** Brain text is raw Library *source*, not truth — not a fact, not in the Classroom. Nothing the Student treats as authoritative changes when the Brain pushes.
+2. **★ Mandatory human accept.** `/classroom/push` publishes *only* facts a human set to `status="published"`; `draft` and `rejected` are never pushed. Brain content cannot become Classroom truth without a human clicking accept.
+3. **★ Librarian conflict adjudication.** On push, `adjudicateForPush` collapses near-duplicates and **flags contradictions against existing knowledge** as `conflict` (excluded from the published snapshot, held for human resolution). If everything conflicts, nothing publishes. A Brain fact can't silently overwrite your KB.
+4. **★ Category auto-send gate.** Even once published, only `general`/`features` facts can auto-send; `pricing`/`compliance`/`technical_setup` always route to a human.
+5. **Provenance tag.** Every Brain item carries `[BRAIN]` + source-hash + date (1.1: dedicated columns) → always distinguishable, auditable, reversible.
+6. **Parity check (Gate 7).** A human confirms the de-branded fact is true *for Textitie* before promotion (`needs-parity-check`). Neutralization ≠ truth.
+
+**The one caveat (see §7):** the Library is not fully inert — the Professor *escalation* loop reads **raw** Library text before promotion and can auto-send in Auto-Pilot via the fail-closed escalation gate. So while tuning, point the Brain at a **demo tenant in Co-Pilot/Manual** (blast radius = 0 real customers). 1.1 adds a "holding/unverified" flag that excludes un-promoted Brain rows from escalation retrieval.
+
 ---
 
 ## 5. HOW MANY LLMs — roster & roles
@@ -229,3 +244,4 @@ curl -u "$SAMA_CONDUCTOR_USER:$SAMA_CONDUCTOR_PASSWORD" \
 | 1.0 | 2026-06-23 | Initial spec: external Brain, Library-only seam, 2-LLM roster, demo-tenant blast-radius rule, 1.1 backlog. |
 | 1.0.1 | 2026-06-24 | Locked hosting: Brain = its own Repl + `scheduled` (cron) deployment; added one-deployment-target-per-repl rationale and go-live de-risking (§3, §10). |
 | 1.0.2 | 2026-06-24 | Stated intent explicitly (vendor-neutral Library **bootstrapper**, NOT competitor-intel **harvester**) in §1; added Gate 7 parity rule + `needs-parity-check` tag in §2. |
+| 1.0.3 | 2026-06-24 | Added §4.4 — "How knowledge enters SAMA + the 6 safeguards" (verified against `knowledge.ts`), incl. the escalation-loop caveat. |
