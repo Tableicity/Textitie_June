@@ -58,7 +58,10 @@ Everything the Brain does must respect these. They mirror invariants already enf
 └─────────────────────────────────────────┘         └─────────────────────────────────────────┘
 ```
 
-- **Runs externally.** Any host with a scheduler works: a Replit **Scheduled Deployment**, a small standalone Node service, or a cron box. It is *not* part of the SAMA monorepo and shares no database with it.
+- **Hosting decision (LOCKED): the Brain is its OWN Replit Repl with a `scheduled` (cron) deployment**, separate from the SAMA repl. It is *not* part of the SAMA monorepo and shares no database with it.
+  - **Why a separate repl:** a repl has exactly **one** `deploymentTarget`. The SAMA repl is already `autoscale` — a *single* deployment that path-routes `/` (user-app, static) + `/admin/` (Control Plane, static) + `/api` (the one Node server) on one domain. You **cannot** run a second, `scheduled` deployment from that same repl; the targets conflict. A dedicated Brain repl gives it its own deploy, schedule, secrets, and failure domain.
+  - **Why `scheduled`, not autoscale:** the Brain serves no public traffic and needs no URL — it's a cron job that calls SAMA's API. `scheduled` runs on the configured cadence (§8) and nothing more.
+  - **Why this de-risks go-live:** the core SMS product launches on the SAMA `autoscale` deployment. A separate Brain deployment means a Brain build error or crash can **never** take down `/`, `/admin`, or `/api`. The two launches succeed or fail independently.
 - **Only link to SAMA = HTTPS calls to `/api/...`.** If the Brain dies, SAMA is unaffected. If SAMA is down, the Brain retries next tick.
 - **Retrieval substrate in SAMA is Postgres full-text search (tsvector + GIN), not vectors.** Do not stand up a vector store. The Brain pushes plain text; SAMA's existing FTS indexes it on ingest.
 
@@ -179,6 +182,12 @@ For a vendor-neutral `general` fact that's fine. But while you're *tuning* the B
 
 ## 10. Engineer hand-off checklist
 
+**Hosting (LOCKED — see §3):**
+- Create a **NEW, separate Replit Repl** for the Brain. Do NOT add it to the SAMA monorepo.
+- Set that repl's deployment to **`scheduled`** (`deploymentTarget = "scheduled"`) and configure the cron cadence (§8).
+- Leave the **SAMA repl unchanged** (`autoscale`). One repl = one deployment target — that is *why* the Brain needs its own repl.
+- The Brain reaches SAMA only over HTTPS at `$SAMA_BASE_URL/api/...`; no shared DB, no shared deployment, independent failure domains.
+
 **Secrets the Brain needs (in the Brain's OWN env, not SAMA's):**
 - `SAMA_BASE_URL` — e.g. `https://<your-textitie-domain>`
 - `SAMA_CONDUCTOR_USER` / `SAMA_CONDUCTOR_PASSWORD` — Conductor Basic creds
@@ -215,3 +224,4 @@ curl -u "$SAMA_CONDUCTOR_USER:$SAMA_CONDUCTOR_PASSWORD" \
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-06-23 | Initial spec: external Brain, Library-only seam, 2-LLM roster, demo-tenant blast-radius rule, 1.1 backlog. |
+| 1.0.1 | 2026-06-24 | Locked hosting: Brain = its own Repl + `scheduled` (cron) deployment; added one-deployment-target-per-repl rationale and go-live de-risking (§3, §10). |
