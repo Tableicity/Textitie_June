@@ -224,7 +224,7 @@ A lightweight Student runs on every inbound SMS (`artifacts/api-server/src/route
 
 ### 5) Engagement mode & the auto-send gate
 
-Delivery is governed by **three canonical engagement modes** — `manual | copilot | autopilot` (DB default **`copilot`**) — set as a per-tenant default (`tenants.engagementMode`) with an optional **per-conversation override** (`conversations.engagementModeOverride`; `null` inherits the tenant default). The effective mode is `override ?? tenant` (`resolveEffectiveEngagementMode`). Legacy values are normalized on write (`assisted`→`copilot`, `gated_auto`→`autopilot`; unknown→`copilot`) — no data migration. The canonical list + normalization live in `artifacts/api-server/src/lib/engagementPolicy.ts`.
+Delivery is governed by **three canonical engagement modes** — `manual | copilot | autopilot` (DB default **`copilot`**) — set as a per-tenant default (`tenants.engagementMode`) with an optional **per-conversation override** (`conversations.engagementModeOverride`; `null` inherits the tenant default). The effective mode is `override ?? tenant` (`resolveEffectiveEngagementMode`). Legacy aliases are folded on write (`assisted`→`copilot`, `gated_auto`→`autopilot`); any other unrecognized value is rejected on write and falls back to `copilot` on read — no data migration. The canonical list + normalization live in `artifacts/api-server/src/lib/engagementPolicy.ts`.
 
 - **Manual** (🔵) — AI fully off: no Student draft, no auto-send, no learning. An inbound clears any pending AI state.
 - **Co-Pilot** (🟡) — the Student drafts (and may consult the Professor *just to draft*); the draft is saved to `conversation_ai_states` (status `drafted`) and pre-filled into the inbox composer for a human to edit and send. **Co-Pilot never learns.**

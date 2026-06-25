@@ -6,7 +6,7 @@ description: How ungrounded inbound SMS escalate to the autonomous Professor, au
 # Professor live-escalation / self-learning loop
 
 When an inbound Student draft is **ungrounded** (`!kbMatched`) the webhook escalates to an
-autonomous Professor (grok-4.3) that answers from the tenant Library + its own expertise and
+autonomous Professor (OpenRouter/Qwen, `qwen/qwen3-max`) that answers from the tenant Library + its own expertise and
 returns strict JSON (2-3 atomic categorized facts + a customer reply + 3 engagement questions +
 confidence). Facts are auto-persisted as **published truth** into the current Classroom version so
 the system never asks the same thing twice; under `autopilot` it may auto-send the reply, `copilot`
