@@ -28,9 +28,10 @@ const MAX_ERROR_LEN = 2_000;
 // the SAME conversation can land first and be collapsed into ONE reply. Texts
 // whose consecutive arrival gap exceeds the window are treated as separate
 // turns and answered separately. Tunable without a code change via
-// SAMA_AI_COALESCE_WINDOW_MS; defaults to 6s (long enough to absorb a human
-// "hi / are you open? / what are prices?" burst, short enough to feel prompt).
-const DEFAULT_COALESCE_WINDOW_MS = 6_000;
+// SAMA_AI_COALESCE_WINDOW_MS; defaults to 2s (still absorbs a fast human
+// "hi / are you open? / what are prices?" burst, but trims ~4s of dead wait off
+// every inbound vs. the old 6s — the single biggest latency win).
+const DEFAULT_COALESCE_WINDOW_MS = 2_000;
 
 function resolveCoalesceWindowMs(): number {
   const raw = process.env.SAMA_AI_COALESCE_WINDOW_MS;

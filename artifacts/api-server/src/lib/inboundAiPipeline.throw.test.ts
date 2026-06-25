@@ -22,7 +22,7 @@ import {
 import { runInboundAiPipeline } from "./inboundAiPipeline";
 import { studentWhisper, type StudentDraft } from "@workspace/ai-student";
 import {
-  retrieveClassroomFacts,
+  retrieveClassroomFactsWithMatch,
   classifyQueryCategory,
   hasUnresolvedConflicts,
   type FactCategory,
@@ -77,7 +77,7 @@ vi.mock("./knowledge", async () => {
     await vi.importActual<typeof import("./knowledge")>("./knowledge");
   return {
     ...actual,
-    retrieveClassroomFacts: vi.fn(),
+    retrieveClassroomFactsWithMatch: vi.fn(),
     classifyQueryCategory: vi.fn(),
     hasUnresolvedConflicts: vi.fn(),
   };
@@ -146,7 +146,11 @@ beforeEach(async () => {
 
   // Safe defaults so the pipeline reaches the auto-send block deterministically.
   vi.mocked(studentWhisper).mockResolvedValue(GOOD_DRAFT);
-  vi.mocked(retrieveClassroomFacts).mockResolvedValue(GROUNDING_FACTS);
+  vi.mocked(retrieveClassroomFactsWithMatch).mockResolvedValue({
+    facts: GROUNDING_FACTS,
+    matchType: "fts",
+    topRank: 0.5,
+  });
   vi.mocked(classifyQueryCategory).mockReturnValue("general" as FactCategory);
   vi.mocked(hasUnresolvedConflicts).mockResolvedValue(false);
   vi.mocked(checkOutboundCompliance).mockResolvedValue({

@@ -77,6 +77,15 @@ export type AutoSendInput = {
   confidence: StudentConfidence | null;
   kbMatched: boolean;
   groundedInClassroom: boolean;
+  /**
+   * True when retrieval found a real FTS lexical hit in the Classroom (every
+   * non-stopword term present in a fact). A deterministic grounding signal,
+   * stronger than the Student's brittle self-report, so when set it satisfies
+   * the grounding / confidence / kbMatch gates. It NEVER relaxes the safety
+   * floors (category, risky-intent, conflict, compliance). Optional; default
+   * false.
+   */
+  strongClassroomMatch?: boolean;
   /** The classified intent of the inbound message (null when unclassified). */
   queryCategory: FactCategory | null;
   /** Categories of the Classroom facts actually retrieved for grounding. */
@@ -98,12 +107,18 @@ export function evaluateAutoSend(input: AutoSendInput): AutoSendDecision {
 
   if (input.engagementMode !== "autopilot") reasons.push("mode_not_autopilot");
   if (input.draftStatus !== "drafted") reasons.push("draft_not_ready");
+  // A real FTS hit is a deterministic grounding signal — stronger than the
+  // Student's self-report — so it satisfies the three model-self-report gates
+  // below (grounding / confidence / kbMatch). It NEVER satisfies the safety
+  // floors that follow (category, risky-intent, conflict, compliance).
+  const fts = input.strongClassroomMatch === true;
   // Grounding must come from the curated Classroom — never the legacy blob/stub.
-  if (!input.groundedInClassroom) reasons.push("not_grounded_in_classroom");
+  if (!input.groundedInClassroom && !fts)
+    reasons.push("not_grounded_in_classroom");
   // Model confidence is advisory but required to be explicitly "high".
-  if (input.confidence !== "high") reasons.push("confidence_not_high");
+  if (input.confidence !== "high" && !fts) reasons.push("confidence_not_high");
   // The answer must actually quote the Classroom (not a freehand guess).
-  if (!input.kbMatched) reasons.push("no_kb_match");
+  if (!input.kbMatched && !fts) reasons.push("no_kb_match");
   // A risky inbound intent always blocks, regardless of grounding.
   if (input.queryCategory && RISKY_QUERY_CATEGORIES.has(input.queryCategory)) {
     reasons.push("risky_query_category");

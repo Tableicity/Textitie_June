@@ -181,6 +181,62 @@ describe("evaluateAutoSend", () => {
   });
 });
 
+describe("evaluateAutoSend — strongClassroomMatch (FTS trust)", () => {
+  // A real FTS hit is a deterministic grounding signal: it satisfies the three
+  // Student-self-report gates (grounding, confidence, kbMatch) that the model
+  // routinely under-reports — so Auto-Pilot can auto-answer grounded questions.
+  it("auto-sends a low-confidence, kbMatch=false draft when FTS matched", () => {
+    const d = evaluateAutoSend({
+      ...HAPPY,
+      confidence: "low",
+      kbMatched: false,
+      groundedInClassroom: false,
+      strongClassroomMatch: true,
+    });
+    expect(d.autoSend).toBe(true);
+    expect(d.reasons).toEqual([]);
+  });
+
+  it("does NOT relax the safe-category floor", () => {
+    const d = evaluateAutoSend({
+      ...HAPPY,
+      strongClassroomMatch: true,
+      groundingCategories: ["general", "pricing"],
+    });
+    expect(d.autoSend).toBe(false);
+    expect(d.reasons).toContain("unsafe_grounding_category");
+  });
+
+  it("does NOT relax the risky-inbound-intent floor", () => {
+    for (const q of ["pricing", "compliance", "technical_setup"] as const) {
+      const d = evaluateAutoSend({
+        ...HAPPY,
+        strongClassroomMatch: true,
+        queryCategory: q,
+      });
+      expect(d.autoSend).toBe(false);
+      expect(d.reasons).toContain("risky_query_category");
+    }
+  });
+
+  it("does NOT relax the conflict or compliance floors", () => {
+    expect(
+      evaluateAutoSend({
+        ...HAPPY,
+        strongClassroomMatch: true,
+        hasConflict: true,
+      }).reasons,
+    ).toContain("unresolved_conflict");
+    expect(
+      evaluateAutoSend({
+        ...HAPPY,
+        strongClassroomMatch: true,
+        complianceOk: false,
+      }).reasons,
+    ).toContain("compliance_block");
+  });
+});
+
 // A fully-passing Professor-escalation send input. Each gate test clones this
 // and flips ONE field to prove the gate independently blocks the send.
 const HAPPY_ESC: EscalationSendInput = {

@@ -10,7 +10,7 @@ import { eq, and } from "drizzle-orm";
 import { postChatwootMessage } from "./chatwoot";
 import { studentWhisper } from "@workspace/ai-student";
 import {
-  retrieveClassroomFacts,
+  retrieveClassroomFactsWithMatch,
   classifyQueryCategory,
   normalizeCategory,
   hasUnresolvedConflicts,
@@ -19,6 +19,7 @@ import {
   persistEscalatedFacts,
   type FactCategory,
   type ProfessorEscalation,
+  type ClassroomMatchType,
 } from "./knowledge";
 import {
   resolveEffectiveEngagementMode,
@@ -123,16 +124,28 @@ export async function runInboundAiPipeline(
     // CO-PILOT and AUTO-PILOT both draft. Retrieve Classroom grounding.
     const queryCategory = classifyQueryCategory(messageBody);
     let facts: ClassroomFact[] = [];
+    // A real FTS hit (every non-stopword term present in a Classroom fact) is a
+    // deterministic grounding signal we trust over the Student's brittle
+    // self-report: it suppresses needless slow Professor escalation (gate below)
+    // AND lets Auto-Pilot auto-answer grounded questions (evaluateAutoSend).
+    let classroomMatch: ClassroomMatchType = "none";
+    let classroomTopRank: number | null = null;
     try {
-      facts = await retrieveClassroomFacts(tenant.id, messageBody, {
-        category: queryCategory,
-      });
+      const retrieval = await retrieveClassroomFactsWithMatch(
+        tenant.id,
+        messageBody,
+        { category: queryCategory },
+      );
+      facts = retrieval.facts;
+      classroomMatch = retrieval.matchType;
+      classroomTopRank = retrieval.topRank;
     } catch (err) {
       logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
         "SAMA Student: classroom retrieval failed, falling back to legacy KB",
       );
     }
+    const strongClassroomMatch = classroomMatch === "fts";
     const classroomContext = facts
       .map((f) => `- ${f.statement} (source: ${f.sourceLabel})`)
       .join("\n");
@@ -150,6 +163,8 @@ export async function runInboundAiPipeline(
         status: draft.status,
         latencyMs: draft.latencyMs,
         detail: draft.detail,
+        classroomMatch,
+        classroomTopRank,
         whisperPreview: draft.whisperBody.slice(0, 500),
       },
       "SAMA Student: draft ready",
@@ -172,7 +187,16 @@ export async function runInboundAiPipeline(
     // (one inbound in flight per conversation) already prevents the same
     // conversation from fanning out concurrent escalations, and natural dedup
     // (once facts persist, the identical question is grounded) handles repeats.
-    if (grokConfigured() && draft.status === "drafted" && !draft.kbMatched) {
+    // Trust a real Classroom FTS hit over the Student's self-report: when the
+    // answer terms are literally in the Classroom, skip the slow Professor
+    // escalation entirely (the dominant latency source) and answer from the
+    // grounded Student draft.
+    if (
+      grokConfigured() &&
+      draft.status === "drafted" &&
+      !draft.kbMatched &&
+      !strongClassroomMatch
+    ) {
       try {
         const lib = await retrieveLibraryContext(tenant.id, messageBody);
         const libraryContext = lib
@@ -396,6 +420,7 @@ export async function runInboundAiPipeline(
               confidence: draft.confidence,
               kbMatched: draft.kbMatched,
               groundedInClassroom: draft.groundedInClassroom,
+              strongClassroomMatch,
               queryCategory,
               groundingCategories,
               hasConflict,

@@ -501,17 +501,37 @@ export async function getCurrentClassroomVersion(
   return v ?? null;
 }
 
-// Retrieval over the published Classroom, for the Student. Falls back to the
-// top facts of the current version when FTS finds no lexical match.
-export async function retrieveClassroomFacts(
+export type ClassroomMatchType = "fts" | "fallback" | "none";
+
+export interface ClassroomRetrieval {
+  /** Facts to ground the Student, ranked best-first. */
+  facts: ClassroomFact[];
+  /**
+   * How `facts` was obtained:
+   *  - "fts": a real lexical hit. websearch_to_tsquery ANDs every non-stopword
+   *    term, so an "fts" match means ALL of them appear in the fact — a
+   *    deterministic grounding signal, stronger than the Student's self-report.
+   *  - "fallback": no lexical hit; we returned the version's facts blind so the
+   *    Student still has context. NOT evidence the answer is grounded.
+   *  - "none": the tenant has no published Classroom version.
+   */
+  matchType: ClassroomMatchType;
+  /** ts_rank of the top FTS row (null unless matchType === "fts"). */
+  topRank: number | null;
+}
+
+// Retrieval over the published Classroom, for the Student. Returns the match
+// TYPE alongside the facts so callers can tell a real lexical hit from the
+// relevance-blind fallback dump (see ClassroomRetrieval).
+export async function retrieveClassroomFactsWithMatch(
   tenantId: number,
   query: string,
   opts: { limit?: number; category?: FactCategory | null } = {},
-): Promise<ClassroomFact[]> {
+): Promise<ClassroomRetrieval> {
   const limit = opts.limit ?? 12;
   const category = opts.category ?? null;
   const version = await getCurrentClassroomVersion(tenantId);
-  if (!version) return [];
+  if (!version) return { facts: [], matchType: "none", topRank: null };
   // Same-category facts float above equally-relevant off-category ones. This is
   // a BOOST, not a gate: every FTS match is still eligible and the fallback
   // still returns the whole version, so a misclassification can never make a
@@ -522,7 +542,10 @@ export async function retrieveClassroomFacts(
   const q = query.trim();
   if (q) {
     const rows = await db
-      .select()
+      .select({
+        fact: classroomFactsTable,
+        rank: sql<number>`ts_rank(to_tsvector('english', ${classroomFactsTable.statement}), websearch_to_tsquery('english', ${q}))`,
+      })
       .from(classroomFactsTable)
       .where(
         and(
@@ -534,12 +557,19 @@ export async function retrieveClassroomFacts(
         sql`${boost}ts_rank(to_tsvector('english', ${classroomFactsTable.statement}), websearch_to_tsquery('english', ${q})) DESC`,
       )
       .limit(limit);
-    if (rows.length > 0) return rows;
+    if (rows.length > 0) {
+      return {
+        facts: rows.map((r) => r.fact),
+        matchType: "fts",
+        topRank: rows[0]?.rank ?? null,
+      };
+    }
   }
   // No lexical match (or empty query): return the version's facts, still
-  // category-first when we have a classification.
+  // category-first when we have a classification. This is fallback CONTEXT, not
+  // a grounding signal — matchType stays "fallback".
   if (category) {
-    return await db
+    const rows = await db
       .select()
       .from(classroomFactsTable)
       .where(eq(classroomFactsTable.versionId, version.id))
@@ -547,12 +577,24 @@ export async function retrieveClassroomFacts(
         sql`(case when ${classroomFactsTable.category} = ${category} then 1 else 0 end) DESC`,
       )
       .limit(limit);
+    return { facts: rows, matchType: "fallback", topRank: null };
   }
-  return await db
+  const rows = await db
     .select()
     .from(classroomFactsTable)
     .where(eq(classroomFactsTable.versionId, version.id))
     .limit(limit);
+  return { facts: rows, matchType: "fallback", topRank: null };
+}
+
+// Back-compat thin wrapper: callers that only need the facts array keep working
+// unchanged. New callers should prefer retrieveClassroomFactsWithMatch.
+export async function retrieveClassroomFacts(
+  tenantId: number,
+  query: string,
+  opts: { limit?: number; category?: FactCategory | null } = {},
+): Promise<ClassroomFact[]> {
+  return (await retrieveClassroomFactsWithMatch(tenantId, query, opts)).facts;
 }
 
 /**
