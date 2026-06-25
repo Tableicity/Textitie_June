@@ -4,11 +4,11 @@
 
 **Live:** https://textitie.com
 **Internal codename:** SAMA (Simple but Advanced Messaging Alternative)
-**Status:** In production · Stripe Checkout live · Grok-powered knowledge pipeline live · awaiting first live Twilio number for full end-to-end SMS go-live
+**Status:** In production · Stripe Checkout live · AI knowledge pipeline live (Professor on OpenRouter/Qwen, Student on Grok) · awaiting first live Twilio number for full end-to-end SMS go-live
 
 Textitie is a multi-tenant, compliance-first conversational SMS platform. Each tenant gets a Textline-style agent inbox; the platform operator gets a **Master Conductor** (the SAMA Control Plane) for tenant management, message injection, phone-number provisioning, and webhook monitoring.
 
-The platform's intelligence is a per-tenant **knowledge pipeline powered by Grok (xAI)** — *Knowledge Base → Library → Professor → Classroom → Student*. A heavy-reasoning **Professor** helps the operator curate tenant knowledge; a fast **Student** runs on every inbound SMS to draft a grounded reply. Depending on the tenant's engagement mode, that reply is surfaced to an agent as a private whisper (**assisted**) or, when a strict fail-closed gate passes, sent automatically (**gated auto-send**).
+The platform's intelligence is a per-tenant **knowledge pipeline** — *Knowledge Base → Library → Professor → Classroom → Student*. A heavy-reasoning **Professor** (OpenRouter/Qwen) curates tenant knowledge and rescues ungrounded questions in real time; a fast **Student** (Grok) runs on every inbound SMS to draft a grounded reply. Each conversation runs in one of three **engagement modes** — **Manual** (AI off), **Co-Pilot** (the AI drafts, a human sends), or **Auto-Pilot** (the AI may send by itself when a strict fail-closed gate passes).
 
 ---
 
@@ -21,7 +21,7 @@ The platform's intelligence is a per-tenant **knowledge pipeline powered by Grok
   - [User app](#user-app-textitiecom)
   - [Admin Conductor](#admin-conductor-textitiecomadmin)
   - [API surface](#api-surface-api)
-- [LLM knowledge pipeline (Grok / xAI)](#llm-knowledge-pipeline-grok--xai)
+- [LLM knowledge pipeline](#llm-knowledge-pipeline)
   - [Models & fallback](#models--fallback)
   - [Library](#1-library--ingestion--indexing)
   - [Professor interactions](#2-professor--operator-curation)
@@ -45,7 +45,7 @@ The platform's intelligence is a per-tenant **knowledge pipeline powered by Grok
 - **API server** — Express.js + TypeScript (`artifacts/api-server`), one router mounted under `/api`
 - **User UI** — React + Vite + wouter + shadcn (`artifacts/user-app`, Textitie brand) — public landing at `/`, agent inbox at `/inbox`
 - **Admin UI** — React + Vite + wouter + shadcn (`artifacts/eng-architect`, SAMA brand) — served at `/admin/`
-- **LLM** — Grok (xAI) via the OpenAI-compatible API; Professor (reasoning) + Student (fast) roles, with a graceful stub fallback
+- **LLM** — split providers via OpenAI-compatible APIs: a reasoning **Professor** on OpenRouter (Qwen) and a fast **Student** on Grok (xAI), each with a graceful stub fallback
 - **Auth** — HTTP Basic for the Conductor; JWT for tenant agents (with an MFA verify step)
 - **Hosting** — Replit Deployments, custom domain `textitie.com`, shared reverse proxy routes by path
 
@@ -166,7 +166,7 @@ All routes are mounted under `/api` on a single Express router (`artifacts/api-s
 
 ---
 
-## LLM knowledge pipeline (Grok / xAI)
+## LLM knowledge pipeline
 
 A per-tenant knowledge flow turns raw documents and operator conversations into grounded SMS replies:
 
@@ -179,12 +179,12 @@ Knowledge Base ──▶ Library ──▶ Professor ──▶ Classroom ──�
 
 ### Models & fallback
 
-| Role | Model (default) | Override env | Purpose |
+| Role | Provider / model (default) | Override env | Purpose |
 |---|---|---|---|
-| **Professor** | `grok-4.3` | `SAMA_PROFESSOR_MODEL` | Fact extraction, Librarian adjudication, heavy reasoning |
-| **Student** | `grok-4.20-0309-non-reasoning` | `SAMA_STUDENT_MODEL` | Fast, cheap inbound reply drafting |
+| **Professor** | OpenRouter (Qwen) `qwen/qwen3-max` — a fast non-thinking tier | `SAMA_PROFESSOR_MODEL` | Fact extraction, Librarian adjudication, live escalation, heavy reasoning |
+| **Student** | Grok (xAI) `grok-4.20-0309-non-reasoning` | `SAMA_STUDENT_MODEL` | Fast, cheap inbound reply drafting |
 
-Both reach xAI through the `openai` SDK pointed at `https://api.x.ai/v1`; the key lives in the `GROK_KEYS` secret (client: `artifacts/api-server/src/lib/grokClient.ts`). **When `GROK_KEYS` is unset, both roles degrade to stubs** so the inbound SMS pipeline never breaks.
+The **Professor** reaches OpenRouter through the **Replit AI Integrations proxy** (no key of ours, billed to Replit credits; env `AI_INTEGRATIONS_OPENROUTER_BASE_URL` + `_API_KEY`). The **Student** reaches xAI through the `openai` SDK pointed at `https://api.x.ai/v1` (key in the `GROK_KEYS` secret). Both clients live in `artifacts/api-server/src/lib/grokClient.ts`. **Each role degrades to a stub when its own provider is unconfigured** so the inbound SMS pipeline never breaks.
 
 ### 1) Library — ingestion + indexing
 
@@ -204,7 +204,7 @@ The Conductor chats a per-tenant Professor at `/admin/tenants/:id/professor`:
 
 "Push to Classroom" snapshots the accepted facts into a new **versioned Classroom**. Before snapshotting, the **Librarian** (`artifacts/api-server/src/lib/librarian.ts`) runs inside the push transaction:
 
-- Cheap near-duplicate detection via `pg_trgm` similarity, then **Grok adjudication** on candidate pairs.
+- Cheap near-duplicate detection via `pg_trgm` similarity, then **Professor (Qwen) adjudication** on candidate pairs.
 - **Duplicates / refinements are auto-merged silently.**
 - **Contradictions are flagged as `conflict`, never silently merged** — especially for `pricing` and `compliance` — and surfaced for Conductor resolution.
 
@@ -218,7 +218,9 @@ A lightweight Student runs on every inbound SMS (`artifacts/api-server/src/route
 - **Category-scoped retrieval**: a cheap synchronous keyword classifier (`classifyQueryCategory`, no LLM) **boosts** the inbound message's likely category in the ranking — a boost, not a gate, so every full-text match stays eligible and a misclassification can only reshuffle ranking.
 - Emits a **structured draft** (`SUMMARY` / `DRAFT REPLY` / `KB MATCH` / `CONFIDENCE`, parsed by `parseStudentSections`) carrying `draftReply`, `kbMatched`, `confidence`, and `groundedInClassroom` (true only when curated-Classroom retrieval was non-empty).
 - The Student runs **off the inbound 200 response path**, inside a durable fire-and-forget pipeline that executes *after* the automation engine (only when no automation/opt-out already handled the message), so it never blocks the webhook ack and never replies over an automation.
-- Stub-on-failure keeps the pipeline alive even if Grok errors.
+- Stub-on-failure keeps the pipeline alive even if the model errors.
+
+**Live escalation (the self-learning loop).** When the Student drafts a reply but can't ground it in the Classroom (`kbMatched` is false), the inbound is written to a durable per-conversation FIFO queue (`conversation_inbound_ai_stages`) and a background worker escalates to the **Professor** — off the inbound 200 path. The Professor answers from the tenant Library + its own expertise and returns strict JSON (a customer reply, a confidence, 2–3 atomic categorized candidate facts, and follow-up questions). The flow is **injection-safe**: the customer's SMS is treated as **query-only and never persisted as truth** — two deterministic guards (`screenEscalatedFacts`) drop any candidate fact that merely echoes the customer or isn't actually supported by the retrieved Library. In **Auto-Pilot**, a dedicated fail-closed gate (`evaluateProfessorEscalationSend`) decides whether to auto-send; on a clean autonomous send the screened facts are persisted as **published Classroom truth** (under the same `CLASSROOM_PUSH_LOCK` advisory lock as human pushes), so the system never escalates that question again. **Co-Pilot** drafts/whispers the answer (no learning); **Manual** skips escalation. (`professorEscalate`, `screenEscalatedFacts`, `persistEscalatedFacts` in `artifacts/api-server/src/lib/knowledge.ts`.)
 
 ### 5) Engagement mode & the auto-send gate
 
