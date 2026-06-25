@@ -224,18 +224,23 @@ A lightweight Student runs on every inbound SMS (`artifacts/api-server/src/route
 
 ### 5) Engagement mode & the auto-send gate
 
-A per-tenant `tenants.engagementMode` (`assisted` default | `gated_auto`) governs delivery:
+Delivery is governed by **three canonical engagement modes** — `manual | copilot | autopilot` (DB default **`copilot`**) — set as a per-tenant default (`tenants.engagementMode`) with an optional **per-conversation override** (`conversations.engagementModeOverride`; `null` inherits the tenant default). The effective mode is `override ?? tenant` (`resolveEffectiveEngagementMode`). Legacy values are normalized on write (`assisted`→`copilot`, `gated_auto`→`autopilot`; unknown→`copilot`) — no data migration. The canonical list + normalization live in `artifacts/api-server/src/lib/engagementPolicy.ts`.
 
-- **assisted** — the draft is posted as a **private agent whisper** (`messages.direction='internal'`) and mirrored to Chatwoot as a private note.
-- **gated_auto** — the Student may **auto-send** the SMS, but only when the **fail-closed** gate `evaluateAutoSend` (`artifacts/api-server/src/lib/engagementPolicy.ts`) passes **every** condition: mode is `gated_auto`, draft ready, grounded in Classroom, `confidence=high`, KB matched, inbound intent **not** in `{pricing, compliance, technical_setup}`, grounding facts all in `{general, features}`, **no unresolved conflict**, and outbound compliance OK.
+- **Manual** (🔵) — AI fully off: no Student draft, no auto-send, no learning. An inbound clears any pending AI state.
+- **Co-Pilot** (🟡) — the Student drafts (and may consult the Professor *just to draft*); the draft is saved to `conversation_ai_states` (status `drafted`) and pre-filled into the inbox composer for a human to edit and send. **Co-Pilot never learns.**
+- **Auto-Pilot** (🟢) — the Student drafts, then the **fail-closed** gate `evaluateAutoSend` runs. **Pass** → the reply is sent **verbatim** and the facts are learned. **Refuse, or the model fails** → **Blue handback for that one message** (AI state `refused`/`failed` + a reason chip in the inbox), **no learning**; the conversation returns to green once a human handles it. A human can step in at any time.
+
+The auto-send gate (`artifacts/api-server/src/lib/engagementPolicy.ts`) passes only when **every** condition holds: mode is `autopilot`, draft ready, grounded in Classroom, `confidence=high`, KB matched, inbound intent **not** in `{pricing, compliance, technical_setup}`, grounding facts all in `{general, features}`, **no unresolved conflict**, and outbound compliance OK.
+
+**Learning rule:** facts are persisted to the Library/Classroom **if and only if** the AI reply was **sent autonomously and unedited** (a confirmed Auto-Pilot send). Any human touch — Co-Pilot, a handback, or a step-in — **never learns**.
 
 Safety properties:
 
 - **Compliance is re-checked at send time** (opt-out, quiet hours, frequency caps) inside the shared `sendConversationReply`, not just pre-checked.
 - **Idempotent**: auto-send claims the inbound carrier `MessageSid` in `ai_auto_replies` (unique `(tenant_id, inbound_sid)`) before sending, so a webhook retry can never double-send. Only a completed send is terminal; a failed send releases the claim so a retry can re-attempt.
-- On auto-send the reply is mirrored to Chatwoot as a public outgoing message; otherwise the private whisper is posted.
+- On auto-send the reply is mirrored to Chatwoot as a public outgoing message; otherwise a private whisper is posted.
 
-Tenants toggle the mode from **Settings → Compliance → "AI Auto-Reply"** (admin/owner only).
+Tenants toggle the mode from the **Settings** page's **"AI Auto-Reply"** card (admin/owner only).
 
 ---
 
@@ -267,7 +272,8 @@ Tenants toggle the mode from **Settings → Compliance → "AI Auto-Reply"** (ad
 ## External dependencies
 
 - **Twilio** — outbound SMS, inbound routing, status callbacks, 10DLC compliance, number provisioning.
-- **xAI (Grok)** — OpenAI-compatible LLM API (`https://api.x.ai/v1`, `GROK_KEYS` secret) powering the **Professor** (`grok-4.3`) and **Student** (`grok-4.20-0309-non-reasoning`) roles.
+- **xAI (Grok)** — OpenAI-compatible LLM API (`https://api.x.ai/v1`, `GROK_KEYS` secret) powering the **Student** (`grok-4.20-0309-non-reasoning`) inbound-drafting role.
+- **OpenRouter (Qwen)** — the **Professor** role (`qwen/qwen3-max`; curation, Librarian adjudication, and live escalation), via the Replit AI Integrations proxy (`AI_INTEGRATIONS_OPENROUTER_*`).
 - **Stripe** — subscription checkout, billing, and webhook sync.
 - **Chatwoot** — sovereign conversation bridging; private-note (whisper) and public-message mirroring.
 - **HubSpot** — CRM contact/activity sync (stub-first connector with a queue + worker).
