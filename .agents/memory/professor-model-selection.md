@@ -1,35 +1,30 @@
 ---
 name: Professor model selection (OpenRouter/Qwen)
-description: Why the Professor tier runs on qwen/qwen3-max (non-thinking) and not the newer qwen3.7 "max"/"plus" reasoning variants.
+description: Why the SAMA Professor tier runs on a non-thinking Qwen via OpenRouter, while the Student stays on Grok.
 ---
 
-# Professor LLM = OpenRouter (Qwen), Student stays on Grok
+# Professor = OpenRouter/Qwen, Student = Grok
 
-The two LLM roles are split across providers: the **Professor** (heavy curation,
-Library conflict adjudication, real-time escalation) runs on **OpenRouter via the
-Replit AI Integrations proxy**; the **Student** (fast inbound drafts) stays on
-**Grok (xAI)**. The OpenAI SDK call sites are identical across both — only the
-client (base URL + key) and model differ. Professor client/guard:
-`professorClient()` / `professorConfigured()` keyed on
-`AI_INTEGRATIONS_OPENROUTER_BASE_URL` + `_API_KEY`. Student keeps
-`grokClient()` / `grokConfigured()` keyed on `GROK_KEYS`.
+The two LLM roles are split across providers. The **Professor** (heavy curation,
+Library conflict adjudication, real-time escalation) runs on **OpenRouter (Qwen)**
+via the **Replit AI Integrations proxy** (no key of ours, billed to Replit
+credits). The **Student** (fast inbound draft replies) stays on **Grok (xAI)**.
+The OpenAI-compatible call sites are identical — only the client (base URL + key)
+and model differ.
 
-## Pinned model: `qwen/qwen3-max` (override `SAMA_PROFESSOR_MODEL`)
+## Default model: a NON-thinking Qwen tier (`qwen/qwen3-max`)
 
-**Why not the newer/higher-numbered Qwen "max"/"plus":** measured through the
-Replit OpenRouter proxy, `qwen/qwen3.7-max` (~18.8s) and `qwen/qwen3.7-plus`
-(~20.6s) are **reasoning models** — they emit hundreds of hidden reasoning
-tokens and are ~10x slower, which is exactly the slow-reasoning latency we moved
-off `grok-4.3` to escape. `qwen/qwen3-max` is the flagship **non-thinking** tier:
-~1.9s, clean compact JSON, 0 reasoning tokens, ~15x cheaper. "Higher version
-number" ≠ faster here; verify latency/reasoning-token behavior before pinning a
-Qwen model, don't assume.
+**Why not a higher-numbered Qwen "max"/"plus":** measured through the Replit
+OpenRouter proxy, the newer `qwen3.7` max/plus tiers are **reasoning models** —
+they emit hidden reasoning tokens and run ~10x slower (~18–20s vs ~2s). Slow
+reasoning latency is exactly what we moved off the old reasoning Professor to
+escape, so the default is the fast non-thinking flagship. **Why this matters:**
+"higher version number" ≠ faster here — always verify latency / reasoning-token
+behavior before pinning a Qwen model; don't assume. Override via
+`SAMA_PROFESSOR_MODEL` if a future task wants a reasoning tier and can absorb the
+latency.
 
-**How to apply:** if a future task wants max Professor capability and can absorb
-the latency, set `SAMA_PROFESSOR_MODEL=qwen/qwen3.7-max` (or `-plus`) — no code
-change. Keep the default non-thinking.
-
-## Test-harness note
-Tests that simulate "AI offline" by deleting `GROK_KEYS` must ALSO delete the
-OpenRouter env vars now, or the Professor stays live (and may make real proxy
-calls). See `webhooks.engagement.test.ts` setup.
+## Test-harness lesson
+Tests that simulate "AI offline" by clearing the Student's `GROK_KEYS` must now
+ALSO clear the Professor's OpenRouter integration env, or the Professor stays
+live and may make real (credit-billed) proxy calls.
