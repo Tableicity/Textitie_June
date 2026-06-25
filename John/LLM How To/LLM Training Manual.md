@@ -22,7 +22,7 @@ Every tenant (business) gets two AI workers. The **Student** is fast and cheap; 
 | **Conductor** | The platform operator (you, internal staff) using the SAMA Control Plane / admin app. |
 | **Agent** | A tenant's own staff member working their SMS inbox. |
 | **Customer / Contact** | The end consumer texting the tenant's number. |
-| **Professor** | The heavy reasoning model (`grok-4.3`). Curates knowledge and rescues ungrounded questions. |
+| **Professor** | The heavy reasoning model (OpenRouter/Qwen, `qwen/qwen3-max`). Curates knowledge and rescues ungrounded questions. |
 | **Student** | The fast model (`grok-4.20-0309-non-reasoning`). Drafts everyday replies from approved knowledge. |
 | **Knowledge Base** | Raw uploaded material (PDFs, text, URLs). The intake bin. |
 | **Library** | The Knowledge Base after it's been extracted and chunked for search. The Professor's reference shelf. |
@@ -37,18 +37,18 @@ Every tenant (business) gets two AI workers. The **Student** is fast and cheap; 
 
 ## 3. The cast: Professor vs. Student
 
-Both roles run on **Grok (xAI)** through its OpenAI-compatible API (`baseURL https://api.x.ai/v1`). The key lives in the `GROK_KEYS` secret.
+The two roles run on **different providers** (both speak the OpenAI-compatible chat API). The **Student** runs on **Grok (xAI)** (`baseURL https://api.x.ai/v1`, key in the `GROK_KEYS` secret). The **Professor** runs on **OpenRouter (Qwen)** through the **Replit AI Integrations proxy** — no key of ours, billed to Replit credits.
 
 | | **Student** | **Professor** |
 |---|---|---|
-| Model | `grok-4.20-0309-non-reasoning` (override: `SAMA_STUDENT_MODEL`) | `grok-4.3` (override: `SAMA_PROFESSOR_MODEL`) |
+| Model | Grok `grok-4.20-0309-non-reasoning` (override: `SAMA_STUDENT_MODEL`) | OpenRouter/Qwen `qwen/qwen3-max` (override: `SAMA_PROFESSOR_MODEL`) |
 | Personality | Fast, cheap, literal | Slow, reasoning-heavy, expensive |
 | Job 1 | Draft replies to inbound customer texts | Curate knowledge with a human (Professor sessions) |
 | Job 2 | — | Rescue the Student live when it's ungrounded |
 | Knowledge it can use | **Only the published Classroom** (+ legacy blob fallback) | The whole **Library** + its own general expertise |
 | Can it "learn"? | No — never persists facts | Yes — its rescue facts can be learned (under strict conditions) |
 
-> **Stub / offline behavior:** If `GROK_KEYS` is **unset**, both roles degrade to a harmless stub. Inbound SMS keeps working, messages still record, but the AI produces no draft and never auto-sends. This is intentional — **a missing key must never break message delivery.** If staff see "AI is offline" handbacks everywhere, the first thing to check is whether `GROK_KEYS` is set.
+> **Stub / offline behavior:** Each role degrades to a harmless stub when **its own provider** is unconfigured — the **Student** when `GROK_KEYS` is unset, the **Professor** when the **OpenRouter integration** isn't connected. Inbound SMS keeps working, messages still record, but the offline role produces no draft and never auto-sends. This is intentional — **a missing provider must never break message delivery.** If staff see "AI is offline" handbacks everywhere, check that the Student's `GROK_KEYS` secret is set and the Professor's OpenRouter integration is connected.
 
 ---
 
@@ -178,7 +178,7 @@ The Student drafts (and may consult the Professor *just to draft a better sugges
 ### Auto-Pilot (🟢)
 The Student drafts, then the **auto-send gate** runs:
 - **Gate passes** → the reply is sent **verbatim** (exactly as drafted), and the facts are learned.
-- **Gate refuses, OR Grok fails** → **Blue handback for that one message**: the AI state becomes `refused` / `failed`, a reason chip appears in the inbox, and **nothing is learned**. The conversation returns to green automatically after a human handles that message.
+- **Gate refuses, OR the model fails** → **Blue handback for that one message**: the AI state becomes `refused` / `failed`, a reason chip appears in the inbox, and **nothing is learned**. The conversation returns to green automatically after a human handles that message.
 
 A human can step into any Auto-Pilot conversation at any time. The moment a human sends, that pending message is marked human-handled and **is not learned**.
 
@@ -254,7 +254,7 @@ Auto-send is allowed only when ALL of these hold:
 The Professor produced fresh grounding, so this skips the Student's KB gate — but **never** the safety floors:
 - Mode is **Auto-Pilot** (else `mode_not_autopilot`)
 - Automation didn't already handle it (else `automation_handled`)
-- Grok is configured/online (else `grok_offline`)
+- The Professor provider is configured/online (else `professor_offline`)
 - The escalation actually got answered (else `escalation_not_answered`)
 - Confidence is **high** (else `confidence_not_high`)
 - At least one fact survived screening (else `no_screened_facts`)
@@ -279,7 +279,7 @@ Each conversation has exactly one AI-state row. Its status, combined with the ef
 | `drafted` | A draft is waiting (Co-Pilot, or a handback draft) | Review, edit, send |
 | `auto_sent` | Auto-Pilot sent it verbatim | Nothing — monitor |
 | `refused` | Gate declined to auto-send | Read the chip, send manually |
-| `failed` | Grok or the send failed | Read the chip, send manually |
+| `failed` | The model or the send failed | Read the chip, send manually |
 | `human_handled` | A human took over this turn | Done — returns to green next turn |
 | `superseded` | A newer inbound replaced this state | Ignore (historical) |
 
@@ -295,7 +295,7 @@ The most important reason wins. Common chips:
 ## 12. Staff playbooks (troubleshooting)
 
 **"The AI isn't replying at all (every conversation is Blue / 'AI is offline')."**
-→ Check that `GROK_KEYS` is set. With no key, both roles stub out by design.
+→ Check both providers: the **Student** needs the `GROK_KEYS` secret, and the **Professor** needs the **OpenRouter integration** connected. With a provider missing, that role stubs out by design (SMS still records).
 
 **"The AI keeps handing back pricing/compliance questions."**
 → This is correct behavior. Pricing, compliance, and technical_setup **always** require a human send. The AI will draft them but never send them.
@@ -323,7 +323,7 @@ The most important reason wins. Common chips:
 2. **Pricing / compliance / technical_setup are never auto-sent.** Drafted, yes; sent by AI alone, never.
 3. **Gates are fail-closed.** When in doubt, the system hands back to a human, it does not guess.
 4. **Learning requires a clean autonomous send.** Any human touch ⇒ no learning.
-5. **A missing `GROK_KEYS` must never break SMS.** Messages still record; the AI just goes quiet.
+5. **A missing AI provider must never break SMS.** Whether the Student's `GROK_KEYS` or the Professor's OpenRouter integration is absent, messages still record; the affected role just goes quiet.
 6. **Compliance is re-checked at send time**, not just at draft time.
 7. **One conversation = one AI state**, and a human can take the wheel at any moment without being overwritten by a slow background AI write.
 
