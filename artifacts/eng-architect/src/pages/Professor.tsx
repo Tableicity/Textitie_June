@@ -302,7 +302,7 @@ export default function Professor() {
             if (data.stubbed) {
               toast({
                 title: "Professor offline",
-                description: "Set the GROK_KEYS secret to enable live curation.",
+                description: "Connect the Professor AI provider to enable live curation.",
               });
             }
           }
@@ -448,7 +448,7 @@ export default function Professor() {
           toast({
             title: res.stubbed ? "Professor offline" : "Answer absorbed",
             description: res.stubbed
-              ? "Set the GROK_KEYS secret to extract facts from answers."
+              ? "Connect the Professor AI provider to extract facts from answers."
               : res.absorbedCount > 0
                 ? `${res.absorbedCount} fact${res.absorbedCount === 1 ? "" : "s"} added below — accept the ones you want, then Push to Classroom.`
                 : "No distinct facts were found in this answer.",

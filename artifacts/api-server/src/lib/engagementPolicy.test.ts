@@ -241,7 +241,7 @@ describe("evaluateAutoSend — strongClassroomMatch (FTS trust)", () => {
 // and flips ONE field to prove the gate independently blocks the send.
 const HAPPY_ESC: EscalationSendInput = {
   engagementMode: "autopilot",
-  grokConfigured: true,
+  professorConfigured: true,
   escalationStatus: "answered",
   confidence: "high",
   screenedFactCount: 2,
@@ -274,10 +274,10 @@ describe("evaluateProfessorEscalationSend", () => {
     ).toContain("automation_handled");
   });
 
-  it("blocks when Grok is offline", () => {
+  it("blocks when the Professor is offline", () => {
     expect(
-      evaluateProfessorEscalationSend({ ...HAPPY_ESC, grokConfigured: false }).reasons,
-    ).toContain("grok_offline");
+      evaluateProfessorEscalationSend({ ...HAPPY_ESC, professorConfigured: false }).reasons,
+    ).toContain("professor_offline");
   });
 
   it("blocks when the escalation did not answer", () => {

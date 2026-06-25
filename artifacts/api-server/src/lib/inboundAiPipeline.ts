@@ -33,7 +33,7 @@ import {
   finalizeCopilotDraftForInbound,
   stageCopilotDraftForInbound,
 } from "./aiStateStore";
-import { grokConfigured } from "./grokClient";
+import { professorConfigured } from "./grokClient";
 import { sendConversationReply } from "./outboundReply";
 import { checkOutboundCompliance } from "./compliance";
 import { recordMessageUsage } from "./stripe-stub";
@@ -192,7 +192,7 @@ export async function runInboundAiPipeline(
     // escalation entirely (the dominant latency source) and answer from the
     // grounded Student draft.
     if (
-      grokConfigured() &&
+      professorConfigured() &&
       draft.status === "drafted" &&
       !draft.kbMatched &&
       !strongClassroomMatch
@@ -403,7 +403,7 @@ export async function runInboundAiPipeline(
         const decision = escalated
           ? evaluateProfessorEscalationSend({
               engagementMode,
-              grokConfigured: true,
+              professorConfigured: professorConfigured(),
               escalationStatus: escalation!.status,
               confidence: escalation!.confidence,
               screenedFactCount: escalation!.facts.length,

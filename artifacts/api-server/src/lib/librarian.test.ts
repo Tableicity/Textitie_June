@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-// Make grokClient() truthy so adjudicateForPush runs its clustering path
-// regardless of whether GROK_KEYS is set in the test env. The real LLM is never
-// called — every test injects its own deterministic adjudicator.
+// Make professorClient() truthy so adjudicateForPush runs its clustering path
+// regardless of whether provider creds are set in the test env. The real LLM is
+// never called — every test injects its own deterministic adjudicator.
 vi.mock("./grokClient", () => ({
-  grokClient: () => ({}),
+  professorClient: () => ({}),
   PROFESSOR_MODEL: "test-model",
 }));
 

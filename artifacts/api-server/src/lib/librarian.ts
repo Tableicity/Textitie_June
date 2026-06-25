@@ -1,4 +1,4 @@
-import { grokClient, PROFESSOR_MODEL } from "./grokClient";
+import { professorClient, PROFESSOR_MODEL } from "./grokClient";
 import { normalizeCategory, type FactCategory } from "./knowledge";
 import { logger } from "./logger";
 import { trigrams, trigramSimilarity } from "./textSimilarity";
@@ -252,9 +252,9 @@ function parseDecision(raw: string): ClusterDecision {
   return { decision: "distinct" };
 }
 
-/** Default adjudicator backed by the Professor (Grok) model. */
+/** Default adjudicator backed by the Professor (OpenRouter/Qwen) model. */
 export const grokAdjudicateCluster: ClusterAdjudicator = async (facts) => {
-  const client = grokClient();
+  const client = professorClient();
   if (!client) return { decision: "distinct" };
   const category = normalizeCategory(facts[0]?.category);
   const list = facts
@@ -309,7 +309,7 @@ export async function adjudicateForPush(
     conflictCount: 0,
   });
 
-  if (facts.length <= 1 || !grokClient()) return passthrough();
+  if (facts.length <= 1 || !professorClient()) return passthrough();
 
   const opts = { ...DEFAULTS, ...options };
   const clusters = clusterFacts(facts, opts);

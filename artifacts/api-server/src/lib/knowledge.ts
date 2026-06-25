@@ -16,7 +16,7 @@ import type { LookupAddress, LookupOptions } from "node:dns";
 import * as net from "node:net";
 import * as http from "node:http";
 import * as https from "node:https";
-import { grokClient, PROFESSOR_MODEL } from "./grokClient";
+import { professorClient, PROFESSOR_MODEL } from "./grokClient";
 import { logger } from "./logger";
 import { trigrams, trigramSimilarity } from "./textSimilarity";
 import { createCustomerReplyExtractor } from "./professorStream";
@@ -661,7 +661,7 @@ export async function extractFacts(
   sourceText: string,
   sourceLabel: string,
 ): Promise<{ facts: ExtractedFact[]; tokensUsed: number }> {
-  const oai = grokClient();
+  const oai = professorClient();
   if (!oai) return { facts: [], tokensUsed: 0 };
   const trimmed = sourceText.slice(0, 12000);
   const resp = await oai.chat.completions.create({
@@ -691,11 +691,11 @@ export async function professorReply(opts: {
   libraryContext: string;
   history: { role: "user" | "assistant"; content: string }[];
 }): Promise<{ content: string; tokensUsed: number; stubbed: boolean }> {
-  const oai = grokClient();
+  const oai = professorClient();
   if (!oai) {
     return {
       content:
-        "[Professor offline — set the GROK_KEYS secret to enable live curation.]",
+        "[Professor offline — connect the Professor AI provider to enable live curation.]",
       tokensUsed: 0,
       stubbed: true,
     };
@@ -954,7 +954,7 @@ export async function professorEscalate(
   },
   onCustomerReply?: (reply: string) => void | Promise<void>,
 ): Promise<ProfessorEscalation> {
-  const oai = grokClient();
+  const oai = professorClient();
   if (!oai) {
     return {
       status: "stubbed",

@@ -15,13 +15,16 @@ import {
 import { eventBus, type RealtimeEvent } from "../lib/eventBus";
 
 // Disable the Twilio signature gate (see webhooks.blocked.test.ts) and force the
-// Grok stub path so every branch is deterministic without an LLM: the Student
-// returns status "stubbed" with an empty draft, so Co-Pilot stages an empty
-// draft and Auto-Pilot hands back (grok_error). The MODE BRANCHING is what these
-// tests assert; the gate/learning logic with a live model is covered by the
-// engagementPolicy unit tests.
+// AI stub path so every branch is deterministic without an LLM: the Student
+// (Grok) returns status "stubbed" with an empty draft, so Co-Pilot stages an
+// empty draft and Auto-Pilot hands back. Clear BOTH providers — the Student's
+// GROK_KEYS and the Professor's OpenRouter integration — so no live model is
+// reached. The MODE BRANCHING is what these tests assert; the gate/learning
+// logic with a live model is covered by the engagementPolicy unit tests.
 delete process.env["TWILIO_AUTH_TOKEN"];
 delete process.env["GROK_KEYS"];
+delete process.env["AI_INTEGRATIONS_OPENROUTER_BASE_URL"];
+delete process.env["AI_INTEGRATIONS_OPENROUTER_API_KEY"];
 
 const { default: app } = await import("../app");
 

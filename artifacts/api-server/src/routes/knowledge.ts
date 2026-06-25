@@ -39,7 +39,7 @@ import {
   type ExtractedFact,
 } from "../lib/knowledge";
 import { adjudicateForPush } from "../lib/librarian";
-import { grokClient, PROFESSOR_MODEL } from "../lib/grokClient";
+import { professorClient, PROFESSOR_MODEL } from "../lib/grokClient";
 
 /**
  * Professor / Library / Classroom routes — the Conductor-facing curation layer
@@ -621,13 +621,13 @@ router.post(
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-    const oai = grokClient();
+    const oai = professorClient();
     let replyText: string;
     let tokensUsed: number;
     let stubbed: boolean;
     if (!oai) {
       replyText =
-        "[Professor offline — set the GROK_KEYS secret to enable live curation.]";
+        "[Professor offline — connect the Professor AI provider to enable live curation.]";
       tokensUsed = 0;
       stubbed = true;
     } else {
@@ -745,14 +745,14 @@ router.post(
     };
     send("user", userMessage);
 
-    const oai = grokClient();
+    const oai = professorClient();
     let replyText = "";
     let usageTokens = 0;
     let stubbed = false;
 
     if (!oai) {
       replyText =
-        "[Professor offline — set the GROK_KEYS secret to enable live curation.]";
+        "[Professor offline — connect the Professor AI provider to enable live curation.]";
       stubbed = true;
       send("token", { delta: replyText });
     } else {
@@ -985,7 +985,7 @@ router.post(
       return;
     }
 
-    const online = grokClient() != null;
+    const online = professorClient() != null;
     let facts: ExtractedFact[];
     let tokensUsed: number;
     try {

@@ -156,7 +156,7 @@ const HANDBACK_REASON_TEXT: Array<[string, string]> = [
   ["no_escalated_categories", "No matching knowledge"],
   ["draft_not_ready", "AI couldn't draft a reply"],
   ["escalation_not_answered", "AI couldn't draft a reply"],
-  ["grok_offline", "AI is offline"],
+  ["professor_offline", "AI is offline"],
 ];
 
 /**
@@ -174,7 +174,7 @@ export function describeHandbackReason(reasons: string[]): string {
 
 export type EscalationSendInput = {
   engagementMode: EngagementMode;
-  grokConfigured: boolean;
+  professorConfigured: boolean;
   escalationStatus: "answered" | "stubbed" | "failed";
   confidence: "high" | "medium" | "low" | null;
   /**
@@ -211,7 +211,7 @@ export function evaluateProfessorEscalationSend(
 
   if (input.engagementMode !== "autopilot") reasons.push("mode_not_autopilot");
   if (input.automationHandled) reasons.push("automation_handled");
-  if (!input.grokConfigured) reasons.push("grok_offline");
+  if (!input.professorConfigured) reasons.push("professor_offline");
   if (input.escalationStatus !== "answered") reasons.push("escalation_not_answered");
   if (input.confidence !== "high") reasons.push("confidence_not_high");
   if (input.screenedFactCount < 1) reasons.push("no_screened_facts");

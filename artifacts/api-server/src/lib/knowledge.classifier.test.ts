@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-// classifyQueryCategory is pure, but knowledge.ts pulls in grokClient at import
-// time — stub it so the module loads without GROK_KEYS in the test env.
+// classifyQueryCategory is pure, but knowledge.ts pulls in professorClient at
+// import time — stub it so the module loads without provider creds in the test env.
 vi.mock("./grokClient", () => ({
-  grokClient: () => null,
+  professorClient: () => null,
   PROFESSOR_MODEL: "test-model",
 }));
 
