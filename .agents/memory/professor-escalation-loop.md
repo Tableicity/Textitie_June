@@ -71,6 +71,19 @@ conflict/supersede UPDATEs and widen them together; add a regression test that p
 `auto_published` fact forced into `verdict.conflicts` and asserts it ends up `conflict` + absent from
 the new published version.
 
+## The `conflict` status is SHARED by three producers — filter by provenance, not status
+`absorbed_facts.status='conflict'` is emitted by THREE independent flows: live escalation
+(`source='professor'` AND `sessionId IS NULL`), Brain pull (`source='brain'`), and human
+Professor-session curation (`sessionId` set). Only `auto_published` is unique to escalation.
+**Why:** the operator "Auto-Learned Review Queue" first selected `status in (auto_published,conflict)`
+with no provenance filter, which would have surfaced Brain candidates and human-session conflicts in
+a panel that claims "the Professor learned these autonomously" — and let the operator approve/reject
+them through the wrong surface.
+**How to apply:** any query meant for ONLY self-learned escalation facts must AND in the provenance
+predicate `source='professor' AND sessionId IS NULL` (helper `autoLearnedProvenance()` in
+`knowledge.ts`); enforce the IDENTICAL predicate on the list read AND on the approve/reject lookups
+so the queue and its actions can never disagree (a fact off-queue must 404, not mutate).
+
 ## Concurrency
 Live escalation persistence takes the **same advisory lock** as human Classroom pushes
 (`pg_advisory_xact_lock(tenantId, CLASSROOM_PUSH_LOCK=0)`), reads/creates the current published

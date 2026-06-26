@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray, type SQL } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, isNull, type SQL } from "drizzle-orm";
 import {
   db,
   knowledgeDocumentsTable,
@@ -1315,6 +1315,40 @@ export type AutoLearnedReviewOutcome =
 
 type ReviewTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+// Provenance of the facts the live Professor escalation persisted autonomously:
+// source='professor' with NO Professor session. This deliberately EXCLUDES Brain
+// candidates (source='brain') and human Professor-session conflicts (sessionId
+// set) — both of which also use the 'conflict' status but belong to other review
+// surfaces, not this autonomous-learning queue. Every reviewable read/mutation
+// shares this predicate so the queue and its actions can never disagree.
+function autoLearnedProvenance() {
+  return and(
+    eq(absorbedFactsTable.source, "professor"),
+    isNull(absorbedFactsTable.sessionId),
+  );
+}
+
+/**
+ * The operator review queue: self-learned facts (`auto_published` | `conflict`)
+ * the escalation loop persisted without a human. Scoped by tenant AND provenance
+ * so Brain / human-session conflicts never leak into the autonomous-learning UI.
+ */
+export async function listAutoLearnedFactsForReview(
+  tenantId: number,
+): Promise<AbsorbedFact[]> {
+  return db
+    .select()
+    .from(absorbedFactsTable)
+    .where(
+      and(
+        eq(absorbedFactsTable.tenantId, tenantId),
+        autoLearnedProvenance(),
+        inArray(absorbedFactsTable.status, [...AUTO_LEARNED_REVIEW_STATUSES]),
+      ),
+    )
+    .orderBy(desc(absorbedFactsTable.createdAt));
+}
+
 // Recompute a version's counts from its surviving classroom_facts rows (the
 // source of truth) so a delete/insert can never leave factCount/tokenCount
 // stale. Safe to call inside the locked transaction.
@@ -1380,6 +1414,7 @@ export async function approveAutoLearnedFact(
         and(
           eq(absorbedFactsTable.id, factId),
           eq(absorbedFactsTable.tenantId, tenantId),
+          autoLearnedProvenance(),
         ),
       );
     if (!fact) return { ok: false, reason: "not_found" };
@@ -1452,6 +1487,7 @@ export async function rejectAutoLearnedFact(
         and(
           eq(absorbedFactsTable.id, factId),
           eq(absorbedFactsTable.tenantId, tenantId),
+          autoLearnedProvenance(),
         ),
       );
     if (!fact) return { ok: false, reason: "not_found" };

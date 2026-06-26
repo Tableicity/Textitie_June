@@ -34,7 +34,7 @@ import {
   estimateTokens,
   normalizeCategory,
   FACT_CATEGORIES,
-  AUTO_LEARNED_REVIEW_STATUSES,
+  listAutoLearnedFactsForReview,
   approveAutoLearnedFact,
   rejectAutoLearnedFact,
   type ExtractedFact,
@@ -1186,16 +1186,7 @@ router.get(
       res.status(400).json({ error: "Invalid tenant id" });
       return;
     }
-    const rows = await db
-      .select()
-      .from(absorbedFactsTable)
-      .where(
-        and(
-          eq(absorbedFactsTable.tenantId, tenantId),
-          inArray(absorbedFactsTable.status, [...AUTO_LEARNED_REVIEW_STATUSES]),
-        ),
-      )
-      .orderBy(desc(absorbedFactsTable.createdAt));
+    const rows = await listAutoLearnedFactsForReview(tenantId);
     res.json(rows);
   },
 );

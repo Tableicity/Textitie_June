@@ -6,8 +6,13 @@ import {
   absorbedFactsTable,
   classroomVersionsTable,
   classroomFactsTable,
+  professorSessionsTable,
 } from "@workspace/db";
-import { approveAutoLearnedFact, rejectAutoLearnedFact } from "./knowledge";
+import {
+  approveAutoLearnedFact,
+  rejectAutoLearnedFact,
+  listAutoLearnedFactsForReview,
+} from "./knowledge";
 
 // DB-backed: these helpers run real deterministic SQL (no LLM seam to stub).
 // We assert classroom mutations + count recomputation against the real test DB,
@@ -24,17 +29,19 @@ async function seedAbsorbed(opts: {
   conflictReason?: string | null;
   tokenCount?: number;
   category?: string;
+  source?: "professor" | "brain";
+  sessionId?: number | null;
 }): Promise<number> {
   const [row] = await db
     .insert(absorbedFactsTable)
     .values({
       tenantId,
-      sessionId: null,
-      sourceLabel: opts.sourceLabel ?? "Professor escalation",
+      sessionId: opts.sessionId ?? null,
+      sourceLabel: opts.sourceLabel ?? "Professor (live escalation)",
       statement: opts.statement,
       status: opts.status,
       category: opts.category ?? "general",
-      source: "professor",
+      source: opts.source ?? "professor",
       conflictReason: opts.conflictReason ?? null,
       tokenCount: opts.tokenCount ?? 5,
     })
@@ -127,6 +134,9 @@ async function cleanTenant(id: number) {
     .delete(classroomVersionsTable)
     .where(eq(classroomVersionsTable.tenantId, id));
   await db.delete(absorbedFactsTable).where(eq(absorbedFactsTable.tenantId, id));
+  await db
+    .delete(professorSessionsTable)
+    .where(eq(professorSessionsTable.tenantId, id));
 }
 
 beforeAll(async () => {
@@ -386,5 +396,64 @@ describe("review guards", () => {
         reason: "not_reviewable",
       });
     }
+  });
+});
+
+describe("provenance scoping — only self-learned escalation facts are reviewable", () => {
+  it("lists self-learned auto_published + conflict facts", async () => {
+    const a = await seedAbsorbed({
+      status: "auto_published",
+      statement: "Self-learned live fact.",
+    });
+    const c = await seedAbsorbed({
+      status: "conflict",
+      statement: "Self-learned held fact.",
+      conflictReason: "overlap",
+    });
+    const ids = (await listAutoLearnedFactsForReview(tenantId)).map((r) => r.id);
+    expect(ids).toContain(a);
+    expect(ids).toContain(c);
+  });
+
+  it("excludes Brain-source conflict facts from the queue and review actions", async () => {
+    const brainId = await seedAbsorbed({
+      status: "conflict",
+      statement: "Brain candidate flagged as a conflict.",
+      conflictReason: "flagged",
+      source: "brain",
+      sourceLabel: "brain source",
+    });
+    const ids = (await listAutoLearnedFactsForReview(tenantId)).map((r) => r.id);
+    expect(ids).not.toContain(brainId);
+    expect(await approveAutoLearnedFact(tenantId, brainId)).toEqual({
+      ok: false,
+      reason: "not_found",
+    });
+    expect(await rejectAutoLearnedFact(tenantId, brainId)).toEqual({
+      ok: false,
+      reason: "not_found",
+    });
+    // The Brain candidate is left untouched for its own review surface.
+    expect((await absorbedStatus(brainId)).status).toBe("conflict");
+  });
+
+  it("excludes human Professor-session conflict facts", async () => {
+    const [session] = await db
+      .insert(professorSessionsTable)
+      .values({ tenantId, title: "Curation", model: "test-model" })
+      .returning({ id: professorSessionsTable.id });
+    const sessionFactId = await seedAbsorbed({
+      status: "conflict",
+      statement: "Human-session curation conflict.",
+      conflictReason: "contradiction",
+      sessionId: session.id,
+    });
+    const ids = (await listAutoLearnedFactsForReview(tenantId)).map((r) => r.id);
+    expect(ids).not.toContain(sessionFactId);
+    expect(await approveAutoLearnedFact(tenantId, sessionFactId)).toEqual({
+      ok: false,
+      reason: "not_found",
+    });
+    expect((await absorbedStatus(sessionFactId)).status).toBe("conflict");
   });
 });
