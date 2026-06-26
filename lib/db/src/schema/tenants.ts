@@ -16,6 +16,13 @@ export const tenantsTable = pgTable("tenants", {
   // nullable text (NO DB CHECK) + app-level handling; null = router fails open
   // to the existing Classroom/Professor draft path.
   brandScope: text("brand_scope"),
+  // Conductor-set Co-Pilot holding-phrase draft. When an inbound is
+  // tenant-specific but UNGROUNDED (no Classroom/KB match), the inbound pipeline
+  // drafts this verbatim into the composer instead of letting the
+  // Student/Professor guess at brand-specific pricing/policy/account facts. Plain
+  // nullable text (NO DB CHECK); null/empty = existing Student/Professor draft
+  // path (fail-open). Co-Pilot only — Manual/Auto-Pilot are untouched.
+  fallbackPhrase: text("fallback_phrase"),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").notNull().default("none"),

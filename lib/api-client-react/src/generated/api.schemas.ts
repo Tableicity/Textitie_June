@@ -68,6 +68,11 @@ export interface Tenant {
    * @nullable
    */
   brandScope: string | null;
+  /**
+   * Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom/KB match), the pipeline drafts this verbatim instead of letting the Student/Professor guess. null/empty = existing Student/Professor draft path.
+   * @nullable
+   */
+  fallbackPhrase: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled: boolean;
   createdAt: string;
@@ -118,6 +123,11 @@ export interface UpdateTenantInput {
    * @nullable
    */
   brandScope?: string | null;
+  /**
+   * Conductor-set Co-Pilot holding phrase for ungrounded tenant-specific inbounds. null/empty = existing Student/Professor draft path.
+   * @nullable
+   */
+  fallbackPhrase?: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled?: boolean;
 }
@@ -403,7 +413,7 @@ export type ConversationAiState = {
    */
   draftBody: string | null;
   /**
-   * Origin of the draft. "student" = grounded Classroom draft; "professor" = escalation draft; "student_flash" = Grok general knowledge (NOT Classroom-grounded); "router_decline" = off-scope decline. The latter two are Co-Pilot-only.
+   * Origin of the draft. "student" = grounded Classroom draft; "professor" = escalation draft; "student_flash" = Grok general knowledge (NOT Classroom-grounded); "router_decline" = off-scope decline; "fallback_phrase" = Conductor-set holding phrase for an ungrounded tenant-specific inbound. The latter three are Co-Pilot-only.
    * @nullable
    */
   draftSource:
@@ -411,6 +421,7 @@ export type ConversationAiState = {
     | "professor"
     | "student_flash"
     | "router_decline"
+    | "fallback_phrase"
     | null;
   /** @nullable */
   confidence?: string | null;

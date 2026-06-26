@@ -315,6 +315,48 @@ export async function runInboundAiPipeline(
       "SAMA Student: draft ready",
     );
 
+    // ---- CO-PILOT fallback holding phrase (tenant-specific + UNGROUNDED) ----
+    // When a Co-Pilot tenant has a fallback phrase configured AND this inbound is
+    // ungrounded (no Classroom FTS hit and the Student found no KB answer), draft
+    // the human-written holding phrase VERBATIM instead of letting the
+    // Student/Professor guess at brand-specific pricing/policy/account facts. This
+    // is a composer-only draft: a human edits + sends and can trigger the
+    // Professor + Human loop. NEVER auto-sends, NEVER learns. We early-return
+    // (mirroring the router branches) so the slow Professor escalation is skipped
+    // — the whole point is "do not guess". FAIL-OPEN: empty phrase falls through
+    // to the existing Professor/Student path. Auto-Pilot + Manual are untouched
+    // (Manual already returned above; Auto-Pilot is the else branch below and
+    // this gate is Co-Pilot-only).
+    const fallbackPhrase = (tenant.fallbackPhrase ?? "").trim();
+    const ungrounded = !draft.kbMatched && !strongClassroomMatch;
+    if (
+      engagementMode === "copilot" &&
+      fallbackPhrase.length > 0 &&
+      ungrounded
+    ) {
+      const written = await stageCopilotDraftForInbound({
+        tenantId: tenant.id,
+        conversationId,
+        latestInboundMessageId: inboundMessageId,
+        draftBody: fallbackPhrase,
+        draftSource: "fallback_phrase",
+        confidence: null,
+        queryCategory,
+        inboundSid,
+      });
+      if (written) {
+        eventBus.publish(tenant.id, { type: "ai:state", conversationId });
+      }
+      await postCopilotWhisper(
+        `[SAMA Fallback — ungrounded holding draft]\n${fallbackPhrase}\n(No Classroom/KB match for a tenant-specific question — edit/send this stall, then trigger the Professor + Human loop for the real answer.)`,
+      );
+      logger.info(
+        { tenantSlug, conversationId, draftWritten: written },
+        "SAMA Co-Pilot: fallback holding phrase drafted (ungrounded tenant-specific)",
+      );
+      return;
+    }
+
     // ---- Professor escalation (GENERATE + SCREEN ONLY here) ----
     // When the Student is ungrounded, the Professor answers from the Library +
     // its expertise: a better DRAFT now, and (Auto-Pilot only, AFTER a

@@ -100,6 +100,16 @@ export default function TenantDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id, tenant?.brandScope]);
 
+  const [fallbackPhraseText, setFallbackPhraseText] = useState("");
+  const [fallbackPhraseDirty, setFallbackPhraseDirty] = useState(false);
+  useEffect(() => {
+    if (tenant) {
+      setFallbackPhraseText(tenant.fallbackPhrase ?? "");
+      setFallbackPhraseDirty(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, tenant?.fallbackPhrase]);
+
   const onSavePhone = (values: z.infer<typeof phoneSchema>) => {
     if (!tenant) return;
     const next = values.phoneNumber.trim() || null;
@@ -184,6 +194,29 @@ export default function TenantDetail() {
             description: next
               ? "The inbound triage router will use this to decide if a text is in-scope."
               : "Brand scope cleared — the triage router falls open to the existing draft path.",
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const onSaveFallbackPhrase = () => {
+    if (!tenant) return;
+    const next = fallbackPhraseText.trim() || null;
+    updateTenant.mutate(
+      { id: tenant.id, data: { fallbackPhrase: next } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
+          setFallbackPhraseDirty(false);
+          toast({
+            title: "Fallback Phrase Saved",
+            description: next
+              ? "Co-Pilot will draft this verbatim when an inbound is tenant-specific but ungrounded."
+              : "Fallback phrase cleared — Co-Pilot falls back to the existing Student/Professor draft path.",
           });
         },
         onError: (err) => {
@@ -447,6 +480,42 @@ export default function TenantDetail() {
               disabled={updateTenant.isPending || !brandScopeDirty}
             >
               {updateTenant.isPending ? "Saving..." : "Save Brand Scope"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <MessageSquare size={16} /> Fallback Phrase (Co-Pilot)
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            A safe holding reply for {tenant.name} when a customer asks something
+            tenant-specific the AI can't ground in the Classroom or knowledge
+            base. In Co-Pilot, the pipeline drafts this verbatim into the composer
+            instead of guessing at brand-specific pricing, policy, or account
+            details — a human edits, sends, and escalates. Leave empty to keep the
+            existing Student/Professor draft path.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Textarea
+            value={fallbackPhraseText}
+            onChange={(e) => {
+              setFallbackPhraseText(e.target.value);
+              setFallbackPhraseDirty(true);
+            }}
+            rows={3}
+            maxLength={1000}
+            placeholder={'e.g. "Great question — let me pull up the exact details for your account and get right back to you."'}
+          />
+          <div className="flex justify-end">
+            <Button
+              onClick={onSaveFallbackPhrase}
+              disabled={updateTenant.isPending || !fallbackPhraseDirty}
+            >
+              {updateTenant.isPending ? "Saving..." : "Save Fallback Phrase"}
             </Button>
           </div>
         </CardContent>

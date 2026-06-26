@@ -705,7 +705,9 @@ export default function Inbox() {
       ? "Grok general draft — not Classroom grounded"
       : aiState?.draftSource === "router_decline"
         ? "Off-scope decline"
-        : null;
+        : aiState?.draftSource === "fallback_phrase"
+          ? "Fallback holding phrase — not grounded; escalate for the real answer"
+          : null;
 
   // Live send-button colour reflects the effective mode; an Auto-Pilot→Blue
   // handback overrides green for the one message that needs a human. Whisper

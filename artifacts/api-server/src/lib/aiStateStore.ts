@@ -33,11 +33,14 @@ export type AiStateStatus =
 // "professor"      → escalation draft
 // "student_flash"  → Grok general-knowledge draft (Co-Pilot router; NOT grounded)
 // "router_decline" → off-scope decline draft (Co-Pilot router)
+// "fallback_phrase"→ Conductor-set holding phrase for an ungrounded
+//                    tenant-specific inbound (Co-Pilot; verbatim, NOT grounded)
 export type AiDraftSource =
   | "student"
   | "professor"
   | "student_flash"
-  | "router_decline";
+  | "router_decline"
+  | "fallback_phrase";
 
 export interface UpsertAiStateInput {
   tenantId: number;

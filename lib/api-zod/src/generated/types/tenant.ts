@@ -36,6 +36,11 @@ export interface Tenant {
    * @nullable
    */
   brandScope: string | null;
+  /**
+   * Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom/KB match), the pipeline drafts this verbatim instead of letting the Student/Professor guess. null/empty = existing Student/Professor draft path.
+   * @nullable
+   */
+  fallbackPhrase: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled: boolean;
   createdAt: Date;

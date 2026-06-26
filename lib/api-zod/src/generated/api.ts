@@ -59,6 +59,12 @@ export const ListTenantsResponseItem = zod.object({
     .describe(
       'Conductor-set short brand\/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. \"B2B HVAC parts supplier; answer product\/ordering\/support questions only\"). null = router fails open to the Classroom\/Professor draft path.',
     ),
+  fallbackPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom\/KB match), the pipeline drafts this verbatim instead of letting the Student\/Professor guess. null\/empty = existing Student\/Professor draft path.",
+    ),
   unregisteredSurchargeEnabled: zod
     .boolean()
     .describe(
@@ -161,6 +167,12 @@ export const GetTenantResponse = zod.object({
     .describe(
       'Conductor-set short brand\/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. \"B2B HVAC parts supplier; answer product\/ordering\/support questions only\"). null = router fails open to the Classroom\/Professor draft path.',
     ),
+  fallbackPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom\/KB match), the pipeline drafts this verbatim instead of letting the Student\/Professor guess. null\/empty = existing Student\/Professor draft path.",
+    ),
   unregisteredSurchargeEnabled: zod
     .boolean()
     .describe(
@@ -194,6 +206,12 @@ export const UpdateTenantBody = zod
       .nullish()
       .describe(
         "Conductor-set short brand\/vertical blurb for the inbound triage router. null\/empty = router fails open to the existing path.",
+      ),
+    fallbackPhrase: zod
+      .string()
+      .nullish()
+      .describe(
+        "Conductor-set Co-Pilot holding phrase for ungrounded tenant-specific inbounds. null\/empty = existing Student\/Professor draft path.",
       ),
     unregisteredSurchargeEnabled: zod
       .boolean()
@@ -232,6 +250,12 @@ export const UpdateTenantResponse = zod.object({
     .nullable()
     .describe(
       'Conductor-set short brand\/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. \"B2B HVAC parts supplier; answer product\/ordering\/support questions only\"). null = router fails open to the Classroom\/Professor draft path.',
+    ),
+  fallbackPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom\/KB match), the pipeline drafts this verbatim instead of letting the Student\/Professor guess. null\/empty = existing Student\/Professor draft path.",
     ),
   unregisteredSurchargeEnabled: zod
     .boolean()
@@ -607,11 +631,12 @@ export const CreateConversationResponse = zod.object({
           zod.literal("professor"),
           zod.literal("student_flash"),
           zod.literal("router_decline"),
+          zod.literal("fallback_phrase"),
           zod.literal(null),
         ])
         .nullable()
         .describe(
-          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline. The latter two are Co-Pilot-only.',
+          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline; \"fallback_phrase\" = Conductor-set holding phrase for an ungrounded tenant-specific inbound. The latter three are Co-Pilot-only.',
         ),
       confidence: zod.string().nullish(),
       queryCategory: zod.string().nullish(),
@@ -716,11 +741,12 @@ export const ListConversationsResponseItem = zod.object({
           zod.literal("professor"),
           zod.literal("student_flash"),
           zod.literal("router_decline"),
+          zod.literal("fallback_phrase"),
           zod.literal(null),
         ])
         .nullable()
         .describe(
-          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline. The latter two are Co-Pilot-only.',
+          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline; \"fallback_phrase\" = Conductor-set holding phrase for an ungrounded tenant-specific inbound. The latter three are Co-Pilot-only.',
         ),
       confidence: zod.string().nullish(),
       queryCategory: zod.string().nullish(),
@@ -814,11 +840,12 @@ export const GetConversationResponse = zod.object({
           zod.literal("professor"),
           zod.literal("student_flash"),
           zod.literal("router_decline"),
+          zod.literal("fallback_phrase"),
           zod.literal(null),
         ])
         .nullable()
         .describe(
-          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline. The latter two are Co-Pilot-only.',
+          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline; \"fallback_phrase\" = Conductor-set holding phrase for an ungrounded tenant-specific inbound. The latter three are Co-Pilot-only.',
         ),
       confidence: zod.string().nullish(),
       queryCategory: zod.string().nullish(),
@@ -926,11 +953,12 @@ export const UpdateConversationResponse = zod.object({
           zod.literal("professor"),
           zod.literal("student_flash"),
           zod.literal("router_decline"),
+          zod.literal("fallback_phrase"),
           zod.literal(null),
         ])
         .nullable()
         .describe(
-          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline. The latter two are Co-Pilot-only.',
+          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline; \"fallback_phrase\" = Conductor-set holding phrase for an ungrounded tenant-specific inbound. The latter three are Co-Pilot-only.',
         ),
       confidence: zod.string().nullish(),
       queryCategory: zod.string().nullish(),

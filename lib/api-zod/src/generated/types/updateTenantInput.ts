@@ -29,6 +29,11 @@ export interface UpdateTenantInput {
    * @nullable
    */
   brandScope?: string | null;
+  /**
+   * Conductor-set Co-Pilot holding phrase for ungrounded tenant-specific inbounds. null/empty = existing Student/Professor draft path.
+   * @nullable
+   */
+  fallbackPhrase?: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled?: boolean;
 }
