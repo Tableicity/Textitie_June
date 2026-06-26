@@ -28,6 +28,7 @@ The platform's intelligence is a per-tenant **knowledge pipeline** — *Knowledg
   - [Classroom & the Librarian](#3-classroom--the-librarian-dedup--conflict)
   - [Student interactions](#4-student--inbound-drafting)
   - [Engagement mode & auto-send gate](#5-engagement-mode--the-auto-send-gate)
+  - [Brain knowledge pull](#brain-knowledge-pull-conductor-manual-sync)
 - [Key features](#key-features)
 - [Billing & phone numbers](#billing--phone-numbers)
 - [Compliance](#compliance)
@@ -64,6 +65,7 @@ lib/
   api-zod/           Generated Zod schemas
   api-client-react/  Generated React Query hooks
   ai-student/        Student role — prompt assembly + structured draft parsing
+  ai-router/         Co-Pilot triage router — brand-scope inbound classification
   db/                Drizzle schema + tenant-db helpers
 scripts/             Operational scripts (provisioning, backfills)
 John/                Operator notes, runbooks, backups, onboarding docs
@@ -143,8 +145,9 @@ pnpm --filter @workspace/db run push-force
 |---|---|---|
 | `/` | `Dashboard.tsx` | Platform health + tenant stats |
 | `/tenants` | `Tenants.tsx` | Master list of all tenants |
-| `/tenants/:id` | `TenantDetail.tsx` | Tenant config, users, carrier-billing controls, surcharge waiver |
+| `/tenants/:id` | `TenantDetail.tsx` | Tenant config, users, carrier-billing controls, surcharge waiver, **Brand Scope** + **Fallback Phrase** cards |
 | `/tenants/:id/professor` | `Professor.tsx` | **Professor chat UI** for knowledge curation |
+| `/brain` | `Brain.tsx` | **Brain knowledge pull** — harvest external Brain/Beast knowledge into a tenant's pipeline (Conductor manual sync) |
 | `/injections` | `Injections.tsx` | System message-injection log |
 | `/webhooks` | `Webhooks.tsx` | Inbound + delivery-status webhook log |
 | `/compliance` | `Compliance.tsx` | TCPA / 10DLC compliance + opt-out registry |
@@ -159,7 +162,7 @@ All routes are mounted under `/api` on a single Express router (`artifacts/api-s
 `health` · `tenant-auth` (login + MFA) · Twilio `webhooks` (inbound SMS + delivery status, signature-validated) · public survey responses (`/s/:token`)
 
 **Conductor — HTTP Basic auth**
-`auth` (admin login) · `tenants` · `injections` · `stats` · `tiers` · `phone-provisioning` · Professor/Classroom curation under `knowledge`
+`auth` (admin login) · `tenants` · `injections` · `stats` · `tiers` · `phone-provisioning` · Professor/Classroom curation under `knowledge` · external **`brain`** knowledge pull (`/tenants/:id/brain/pull` · `…/brain/candidates` · `…/brain/push`)
 
 **Tenant-scoped — JWT (`requireTenantAuth`)**
 `conversations` · `contacts` · `campaigns` · `automations` · `shortcuts` · `analytics` · `dispositions` · `reminders` · `billing` · `integrations` · `tenant-settings` · `surveys` · `opt-ins` · `departments` · `agents` · `phone-numbers` · `audit-logs` · `events` · tenant knowledge upload
@@ -240,7 +243,28 @@ Safety properties:
 - **Idempotent**: auto-send claims the inbound carrier `MessageSid` in `ai_auto_replies` (unique `(tenant_id, inbound_sid)`) before sending, so a webhook retry can never double-send. Only a completed send is terminal; a failed send releases the claim so a retry can re-attempt.
 - On auto-send the reply is mirrored to Chatwoot as a public outgoing message; otherwise a private whisper is posted.
 
+#### Co-Pilot routing & fallbacks
+
+Co-Pilot has two extra layers on top of plain drafting — both **Co-Pilot-only** (Auto-Pilot and Manual are byte-for-byte untouched) and both **fail-open** (any miss falls through to the normal grounded Student draft):
+
+- **Triage router** (`lib/ai-router`) — when the tenant has a **Brand Scope** set (`tenants.brandScope`) and the router is configured, every Co-Pilot inbound is classified *before* retrieval into one of three branches. **`out_of_scope`** → an LLM-authored short decline is drafted into the composer (`draftSource: router_decline`); **`general_in_scope`** → a Student "flash" draft from Grok's own parametric knowledge, with no Classroom retrieval or Professor hop (`draftSource: student_flash`); **`tenant_specific`** → falls through to the normal grounded pipeline. The customer's text stays query-only — nothing is learned or auto-sent.
+- **Fallback holding phrase** (`tenants.fallbackPhrase`) — if a Co-Pilot inbound reaches the grounded pipeline but the Student can't ground it (`!kbMatched` and no strong Classroom match), the tenant's configured fallback phrase is drafted **verbatim** into the composer as a holding reply (`draftSource: fallback_phrase`) and the pipeline returns *before* Professor escalation — "don't guess; stall, then run the Professor + Human loop for the real answer." An empty/whitespace phrase fails open to the existing escalation path.
+
+Both **Brand Scope** and **Fallback Phrase** are configured per-tenant by the Conductor on the tenant detail page (`/admin/tenants/:id`).
+
 Tenants toggle the mode from the **Settings** page's **"AI Auto-Reply"** card (admin/owner only).
+
+### Brain knowledge pull (Conductor manual sync)
+
+A Conductor-only avenue harvests knowledge from the external **Brain/Beast** service into a tenant's pipeline — **"Brain + Human" mirrors "Human + Professor."** Approved Brain content lands in the **same** `absorbed_facts` pool (`source='brain'`) and rides the **same** full-snapshot Classroom push (Librarian adjudication) as Professor facts, so it becomes Student-groundable with no separate Brain table or push path.
+
+Flow (`artifacts/api-server/src/routes/brain.ts`; admin UI `eng-architect/src/pages/Brain.tsx` at `/admin/brain`):
+
+1. `POST /tenants/:id/brain/pull` — synchronous harvest → staged as `draft`; near-duplicates deduped, contradictions staged `conflict` with a reason.
+2. `GET …/brain/candidates` — the Conductor reviews; flagged candidates render unchecked, category is editable.
+3. `POST …/brain/push` — validates every selected id is a tenant-scoped `source='brain'` candidate (400s if any isn't — no partial promote), then promotes to `published` and snapshots a new Classroom version (always a full union of every published absorbed fact, Professor + Brain).
+
+Degrades to **503** until `BRAIN_BASE_URL` + `BRAIN_API_KEY` are set; the wire contract in `brainClient.ts` is tolerant pending a real endpoint.
 
 ---
 
