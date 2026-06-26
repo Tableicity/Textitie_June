@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Activity, Webhook, Box, ShieldAlert, Zap, Users, ShieldCheck, UserCog, LogOut } from "lucide-react";
+import { Activity, Webhook, Box, ShieldAlert, Zap, Users, ShieldCheck, UserCog, LogOut, BrainCircuit } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { InjectComposerDialog } from "./InjectComposerDialog";
@@ -11,6 +11,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const links = [
     { href: "/", label: "Dashboard", icon: Activity },
     { href: "/tenants", label: "Tenants", icon: Users },
+    { href: "/brain", label: "Brain", icon: BrainCircuit },
     { href: "/injections", label: "Injections", icon: Zap },
     { href: "/webhooks", label: "Webhooks", icon: Webhook },
     { href: "/compliance", label: "10DLC Compliance", icon: ShieldCheck },

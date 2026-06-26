@@ -12,6 +12,7 @@ import Dashboard from "@/pages/Dashboard";
 import Tenants from "@/pages/Tenants";
 import TenantDetail from "@/pages/TenantDetail";
 import Professor from "@/pages/Professor";
+import Brain from "@/pages/Brain";
 import Injections from "@/pages/Injections";
 import Webhooks from "@/pages/Webhooks";
 import Compliance from "@/pages/Compliance";
@@ -38,6 +39,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/tenants" component={Tenants} />
       <Route path="/tenants/:id/professor" component={Professor} />
+      <Route path="/brain" component={Brain} />
       <Route path="/tenants/:id" component={TenantDetail} />
       <Route path="/injections" component={Injections} />
       <Route path="/webhooks" component={Webhooks} />
