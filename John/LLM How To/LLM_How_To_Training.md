@@ -14,8 +14,8 @@
 |---|---|
 | **Document** | `LLM_How_To_Training.md` |
 | **Location** | `John/LLM How To/` |
-| **Current version** | **v1.0** |
-| **Last updated** | 2026-06-23 |
+| **Current version** | **v2.0** |
+| **Last updated** | 2026-06-26 |
 | **Owner** | Platform / Conductor team |
 | **Companion docs** | `John/LLM Training Manual.md` (concepts), `John/Run_Book.md` (Twilio go-live & secrets), `replit.md` (architecture of record) |
 | **Review cadence** | Review every release that touches the LLM stack; minimum quarterly |
@@ -29,8 +29,10 @@
 3. [How to load a tenant's knowledge (Knowledge Base → Library)](#3-how-to-load-a-tenants-knowledge-knowledge-base--library)
 4. [How to run a Professor memory session](#4-how-to-run-a-professor-memory-session)
 5. [How to accept/reject facts and push to the Classroom](#5-how-to-acceptreject-facts-and-push-to-the-classroom)
+   - [5a. How to pull a tenant's knowledge from Brain (Conductor)](#5a-how-to-pull-a-tenants-knowledge-from-brain-conductor)
 6. [How to resolve a knowledge conflict](#6-how-to-resolve-a-knowledge-conflict)
 7. [How to set the engagement mode (tenant default + per-conversation)](#7-how-to-set-the-engagement-mode-tenant-default--per-conversation)
+   - [7a. How to set Brand Scope & the Fallback Phrase (Conductor)](#7a-how-to-set-brand-scope--the-fallback-phrase-conductor)
 8. [How to work the inbox (Co-Pilot, Auto-Pilot, stepping in)](#8-how-to-work-the-inbox-co-pilot-auto-pilot-stepping-in)
 9. [How to read inbox colors & AI-state chips](#9-how-to-read-inbox-colors--ai-state-chips)
 10. [How to handle every handback reason](#10-how-to-handle-every-handback-reason)
@@ -66,6 +68,8 @@ There are **two separate apps and two separate user systems**. Know which one yo
 - Every business (**tenant**) gets two AI workers: a fast **Student** that answers everyday texts from *approved* knowledge, and a slow, smart **Professor** that curates knowledge and rescues the Student when a customer asks something new.
 - Knowledge flows through five stages: **Knowledge Base → Library → Professor → Classroom → Student.** Only the **Classroom** (approved, published facts) is what the Student is allowed to use with customers.
 - Each conversation runs in one of three **engagement modes**: **Manual** (AI off), **Co-Pilot** (AI drafts, human sends), **Auto-Pilot** (AI may send by itself *if* every safety gate passes).
+- In **Co-Pilot**, two optional Conductor settings shape the draft (both only ever *draft*, never send/learn): a **Brand Scope** (off-topic questions get a polite decline, general questions get a quick general answer) and a **Fallback Phrase** (a holding reply drafted when a tenant-specific question can't be grounded). See §7a.
+- Besides Professor sessions, a Conductor can also **pull knowledge from the external Brain service** — same review-and-push, same Classroom (§5a).
 - A human can take over **any** conversation at **any** time.
 - The system only **learns** a new fact when the AI sent a reply **autonomously and unedited** (a clean Auto-Pilot send). Any human touch = no learning.
 
@@ -91,6 +95,8 @@ If you remember nothing else: **the Student only knows what's been pushed to the
 > **Note on URLs:** Internal/private URLs are **deliberately blocked** for security. If a URL is rejected, that is expected — host the content somewhere public or paste the text instead.
 
 > **⚠️ Important:** Uploading to the Library does **not** make the Student smarter yet. The Library is only the *Professor's* reference shelf. The Student learns only after facts are **absorbed, accepted, and pushed to the Classroom** (§4–§5).
+
+> **Alternative intake (Conductor):** Instead of — or in addition to — manual uploads, a Conductor can pull knowledge from the external **Brain** service. It lands in the same candidate pool and is pushed the same way. See §5a.
 
 ---
 
@@ -138,6 +144,30 @@ If you remember nothing else: **the Student only knows what's been pushed to the
 
 ---
 
+## 5a. How to pull a tenant's knowledge from Brain (Conductor)
+
+**Goal:** Load knowledge from the external **Brain** service into a tenant's pipeline without running a Professor session. **Conductor task, in the Control Plane Brain page (`/admin/brain`).** *"Brain + Human" mirrors "Human + Professor"* — the facts land in the same pool and ride the same Classroom push.
+
+> **Prerequisite:** The Brain service must be configured. If the page reports the service is unavailable, the connection isn't set up yet — tell a platform admin. The feature stays safely dormant until then.
+
+1. Open the **Brain** page in the Control Plane and select the tenant.
+2. Press **Pull** to harvest candidates from Brain. This is synchronous — wait for it to finish. The system:
+   - Stages each harvested statement as a **`draft`** candidate (the *same* pool Professor facts use).
+   - **De-duplicates** exact/normalized repeats on pull (deeper semantic de-duplication happens later, at the Classroom push).
+   - **Flags contradictions with a reason** — these render **unchecked** so you can't promote them by accident. (Deeper semantic conflict adjudication also happens at push.)
+3. Review the **candidates**. For each one:
+   - Confirm it is correct and on-topic.
+   - Fix the **category** if it is wrong (the category drives the safety gates — see §4).
+   - Leave flagged/contradictory candidates unchecked unless you have verified them.
+4. Select the candidates you want and press **Push.** This:
+   - Validates every selected item is a real Brain candidate **for this tenant** — it refuses the **whole** push if any isn't (no partial promote).
+   - Promotes them to **`published`** and snapshots a **new Classroom version** — always a full union of *every* published fact (Professor **and** Brain), so a Brain push never wipes Professor facts, and vice-versa.
+5. Verify exactly as you would after a Professor push (§5): the facts show **`published`**, and the Student can now ground that topic.
+
+> **⚠️ Safety:** Brain content is *candidate* knowledge, not auto-truth. A human (you) still accepts each fact and owns the truth decision — especially for `pricing` / `compliance` / `technical_setup`.
+
+---
+
 ## 6. How to resolve a knowledge conflict
 
 **Goal:** Clear a `conflict` flag so the AI stops going quiet on that topic.
@@ -182,6 +212,31 @@ There are two levels:
 
 ---
 
+## 7a. How to set Brand Scope & the Fallback Phrase (Conductor)
+
+**Goal:** Tune how **Co-Pilot** behaves for a tenant. Both settings are **Conductor-only**, live on the tenant's detail page, and affect **Co-Pilot only** — Auto-Pilot and Manual ignore them. Both **fail open**: leave either blank and Co-Pilot behaves exactly as before.
+
+**Where:** Control Plane → **Tenants** → open the tenant (`/admin/tenants/:id`) → the **Brand Scope** and **Fallback Phrase** cards.
+
+### Brand Scope (powers the triage Router)
+1. In the **Brand Scope** card, write 1–3 sentences describing what the business is and what it answers (e.g., *"We're an HVAC parts supplier. We help with part numbers, compatibility, stock, and orders."*).
+2. **Save.**
+3. What it does: in Co-Pilot, every inbound is first sorted against this blurb into:
+   - **Off-scope** (clearly unrelated) → Co-Pilot drafts a short, polite **decline** for a human to send.
+   - **General, in-domain** → Co-Pilot drafts a quick **general-knowledge** answer (no Classroom/Professor lookup).
+   - **Tenant-specific / unsure** → the **normal grounded pipeline** (the Router never blocks a real answer — when unsure it always picks this).
+
+> **Tip:** Keep the Brand Scope tight and accurate. Too narrow and in-domain questions get declined; too broad and off-topic spam gets a general answer. It only ever *drafts* — a human still sends — so mistakes are cheap to fix.
+
+### Fallback Phrase (the ungrounded holding reply)
+1. In the **Fallback Phrase** card, write one on-brand "holding" sentence for when Co-Pilot can't ground a tenant-specific question (e.g., *"Great question — let me check on that and get right back to you."*).
+2. **Save.**
+3. What it does: in Co-Pilot, when an inbound reaches the grounded pipeline but has **no Classroom/KB match** (typically a question that needs this business's specific facts), Co-Pilot drafts this phrase **verbatim** (instead of guessing) and **skips** the slow Professor rescue. A human sends the stall, then teaches the real answer (§4–§5) so it's grounded next time.
+
+> **⚠️ Safety:** The fallback is a *stall, not an answer.* It exists so the AI never guesses at brand-specific pricing/policy/account facts. Leaving it blank simply restores the default (Co-Pilot escalates ungrounded questions to the Professor for a drafted suggestion).
+
+---
+
 ## 8. How to work the inbox (Co-Pilot, Auto-Pilot, stepping in)
 
 **Working a Co-Pilot (🟡) conversation:**
@@ -189,6 +244,8 @@ There are two levels:
 2. Read the draft. Edit anything you want.
 3. Press **Send.** (Co-Pilot **never** learns — your edits and sends are never stored as truth.)
 4. *Streaming drafts:* when the Professor is rescuing an ungrounded question, the customer reply **streams into your composer as it's written** — you can start editing before it finishes.
+
+> **Heads-up — a Co-Pilot draft can come from different places.** Besides the Student's normal grounded draft, in Co-Pilot you may see: a **polite decline** (the Brand-Scope Router judged the message off-scope), a **quick general answer** (in-domain but answerable from general knowledge), or your tenant's **fallback holding phrase** (a tenant-specific question that couldn't be grounded). All of them are just drafts — review, edit, and send as normal; none ever sends itself or learns. See §7a to tune these.
 
 **Monitoring an Auto-Pilot (🟢) conversation:**
 1. If the gate passes, the AI **sends the reply verbatim** and you'll see status `auto_sent`. No action needed — just monitor.
@@ -222,6 +279,8 @@ There are two levels:
 | `human_handled` | A human took this turn | Done — returns to green next turn |
 | `superseded` | A newer inbound replaced this | Ignore (historical) |
 
+> **Note:** In Co-Pilot, a `drafted` suggestion may be the Student's grounded draft, a Professor rescue, a Brand-Scope Router decline/flash answer, or the fallback holding phrase (§7a). They all behave identically — review, edit, send.
+
 ---
 
 ## 10. How to handle every handback reason
@@ -243,7 +302,7 @@ When the AI hands back Blue, a **chip** tells you why. The most important reason
 
 ## 11. How the self-learning loop works (and how to verify it learned)
 
-**What it is:** When a customer asks something the Classroom doesn't cover, the Student can't ground its answer (`kbMatched = false`). Instead of guessing, the system escalates to the **Professor** in the background, off the customer-reply path.
+**What it is:** When a customer asks something the Classroom doesn't cover, the Student can't ground its answer — `kbMatched = false` **and** no strong Classroom search hit. Instead of guessing, the system escalates to the **Professor** in the background, off the customer-reply path. (A strong Classroom search hit suppresses escalation even when the Student self-reports no match, and the Professor must be configured.)
 
 **What happens, in order:**
 1. The inbound is written to a **durable staging queue** and a **per-conversation worker** processes one inbound at a time (rapid-fire texts are smartly **coalesced** into a single reply to the combined/latest message). This work **survives restarts**.
@@ -297,6 +356,12 @@ Opt-outs are handled **automatically before the AI ever runs** — but staff mus
 **"A customer got a duplicate text."**
 → The AI path is protected against this (one send per inbound). If it happened, check whether an automation rule **and** a campaign both fired, or whether a human also sent manually.
 
+**"A Co-Pilot draft is a polite 'we can't help with that,' or a generic answer that ignores our specifics."**
+→ That's the Brand-Scope triage Router (§7a): it judged the message off-scope (decline) or answerable from general knowledge (flash). It's Co-Pilot-only and never sends itself — edit/replace and send. If it misfires often, refine the tenant's **Brand Scope**.
+
+**"Every ungrounded Co-Pilot reply is just our canned holding sentence."**
+→ That's the **fallback phrase** (§7a) doing its job: the question was tenant-specific but nothing in the Classroom could ground it, so the system stalls instead of guessing. Send it, then teach the answer (§4–§5) so next time it grounds. To restore Professor-drafted suggestions for ungrounded questions, clear the tenant's **Fallback Phrase**.
+
 **"We taught the Professor something but the Student still doesn't know it."**
 → The Student only reads the **published Classroom** — not Professor chat or the Library. Accept and **push** the facts to create a new Classroom version.
 
@@ -340,6 +405,7 @@ This document is version-controlled by **two things working together**: the revi
 | Version | Date | Author | Summary of change |
 |---|---|---|---|
 | **v1.0** | 2026-06-23 | Platform team | Initial release. Full granular how-to: access/roles, knowledge loading, Professor sessions, fact acceptance & Classroom push, conflict resolution, engagement modes, inbox operation, colors/states, handback handling, self-learning loop, opt-outs, troubleshooting, safety rules, and this revision-control policy. |
+| **v2.0** | 2026-06-26 | Platform team | Added the Co-Pilot **Brand-Scope triage Router** and **fallback holding phrase** (new §7a; plus inbox §8, colors §9, and troubleshooting §13 updates) and the Conductor **Brain knowledge-pull** procedure (new §5a). 60-second mental model (§2) and knowledge-loading (§3) updated to match. |
 
 ---
 
