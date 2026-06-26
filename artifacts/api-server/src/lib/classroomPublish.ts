@@ -27,9 +27,18 @@ import { CLASSROOM_PUSH_LOCK } from "./knowledge";
  *   - Brain push (routes/brain.ts): markSessions "none" — it must not disturb a
  *     Conductor's in-progress Professor sessions.
  *
- * Both pushes snapshot the UNION of every published absorbed fact (Professor +
- * approved Brain), so the live Classroom is always the complete picture and one
- * source can never wipe the other.
+ * CALLER CONTRACT (not yet mechanically enforced here): every caller MUST pass
+ * `factsToPublish` = the FULL union of this tenant's `status='published'`
+ * absorbed facts (Professor + approved Brain). A subset would supersede the
+ * prior version and silently drop everything not in the subset, so one source
+ * could wipe the other. Both current callers (Professor push, Brain push) honor
+ * this and are covered by regression tests.
+ *
+ * TODO(brain): read the published union INSIDE the advisory-locked transaction
+ * here so the invariant can't be violated by a future caller and the
+ * read-before-lock stale-snapshot race (acceptable today only for a manual
+ * single-operator Conductor flow) is closed in one place. Blocked on the
+ * Librarian (LLM) adjudication, which must run outside the transaction.
  */
 
 export type MarkSessions =
