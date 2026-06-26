@@ -220,7 +220,7 @@ router.post(
       return;
     }
 
-    const factIds = parsed.data.factIds;
+    const factIds = [...new Set(parsed.data.factIds)];
     if (factIds.length === 0) {
       res.status(400).json({
         error: "Select at least one Brain candidate to approve before pushing.",
@@ -228,21 +228,37 @@ router.post(
       return;
     }
 
-    // Human-in-the-loop gate: promote ONLY the selected Brain candidates to
-    // "published". Scoped to this tenant + source="brain" + an actionable status
-    // so this can never promote a Professor fact or an arbitrary id, and
-    // accepting a flagged candidate clears its flag (a human adjudicated it).
+    // The scope every Brain candidate must satisfy to be promotable: this
+    // tenant, source="brain", and an actionable (draft/conflict) status.
+    const scoped = and(
+      eq(absorbedFactsTable.tenantId, tenantId),
+      eq(absorbedFactsTable.source, "brain"),
+      inArray(absorbedFactsTable.status, [...REVIEW_STATUSES]),
+    );
+
+    // Validate the selection BEFORE mutating anything. Without this, a stray
+    // Professor / arbitrary / already-published id silently updates zero rows
+    // and we'd still snapshot + 201 — reporting success while promoting nothing.
+    // Fail closed: every selected id must be a pending Brain candidate.
+    const matching = await db
+      .select({ id: absorbedFactsTable.id })
+      .from(absorbedFactsTable)
+      .where(and(scoped, inArray(absorbedFactsTable.id, factIds)));
+    if (matching.length !== factIds.length) {
+      res.status(400).json({
+        error:
+          "One or more selected candidates are not pending Brain candidates for this tenant.",
+      });
+      return;
+    }
+
+    // Human-in-the-loop gate: promote the validated Brain candidates to
+    // "published". Accepting a flagged candidate clears its flag (a human
+    // adjudicated it).
     await db
       .update(absorbedFactsTable)
       .set({ status: "published", conflictReason: null })
-      .where(
-        and(
-          eq(absorbedFactsTable.tenantId, tenantId),
-          eq(absorbedFactsTable.source, "brain"),
-          inArray(absorbedFactsTable.id, factIds),
-          inArray(absorbedFactsTable.status, [...REVIEW_STATUSES]),
-        ),
-      );
+      .where(and(scoped, inArray(absorbedFactsTable.id, factIds)));
 
     // Snapshot the UNION of every published absorbed fact (Professor + Brain) so
     // the Brain push never wipes Professor knowledge. markSessions "none" — a

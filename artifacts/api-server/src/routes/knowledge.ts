@@ -1109,19 +1109,22 @@ router.post(
     // Human-in-the-loop gate: only facts the Conductor explicitly ACCEPTED
     // (status "published") reach the Classroom. Unreviewed "draft" facts and
     // "rejected" facts are never pushed.
-    const baseWhere = and(
-      eq(absorbedFactsTable.tenantId, tenantId),
-      eq(absorbedFactsTable.status, "published"),
-    );
-    const factsToPublish: AbsorbedFact[] =
-      sessionIds.length > 0
-        ? await db
-            .select()
-            .from(absorbedFactsTable)
-            .where(
-              and(baseWhere, inArray(absorbedFactsTable.sessionId, sessionIds)),
-            )
-        : await db.select().from(absorbedFactsTable).where(baseWhere);
+    //
+    // A Classroom push is ALWAYS a FULL SNAPSHOT of this tenant's entire
+    // published absorbed-fact union (Professor + approved Brain), never a
+    // per-session subset — a per-session subset would silently drop Brain facts
+    // (and other sessions') from the live Classroom when it supersedes the prior
+    // version. sessionIds only selects which Professor sessions to mark "pushed"
+    // (a Professor-flow side effect); it is NOT a fact filter.
+    const factsToPublish: AbsorbedFact[] = await db
+      .select()
+      .from(absorbedFactsTable)
+      .where(
+        and(
+          eq(absorbedFactsTable.tenantId, tenantId),
+          eq(absorbedFactsTable.status, "published"),
+        ),
+      );
 
     if (factsToPublish.length === 0) {
       res.status(400).json({
