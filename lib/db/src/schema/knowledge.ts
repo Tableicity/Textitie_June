@@ -188,9 +188,18 @@ export const absorbedFactsTable = pgTable(
     // validation so a bad value can never 500 a list query; default "general".
     category: text("category").notNull().default("general"),
     // Human-readable explanation set alongside status "conflict" so the
-    // Conductor can see WHY two facts collide (e.g. differing prices). Null
-    // for every other status.
+    // Conductor can see WHY two facts collide (e.g. differing prices). Also
+    // reused to carry a Brain-import flag reason ("flagged" candidates render
+    // unchecked in the Brain review card). Null for clean / every other status.
     conflictReason: text("conflict_reason"),
+    // Provenance of the fact. "professor" = human/Professor curation (default,
+    // so existing rows + the Professor flow are untouched); "brain" = harvested
+    // by the external Brain pull. Plain text + app-level validation (no DB enum)
+    // so a bad value can never 500 a list query.
+    source: text("source").notNull().default("professor"),
+    // External source URL for Brain-harvested facts (audit provenance). Null for
+    // Professor-curated facts.
+    sourceUrl: text("source_url"),
     tokenCount: integer("token_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

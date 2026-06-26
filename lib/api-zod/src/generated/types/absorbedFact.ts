@@ -22,6 +22,9 @@ export interface AbsorbedFact {
   category: string;
   /** @nullable */
   conflictReason: string | null;
+  source: string;
+  /** @nullable */
+  sourceUrl: string | null;
   tokenCount: number;
   createdAt: Date;
 }

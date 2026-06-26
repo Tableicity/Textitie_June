@@ -2897,6 +2897,107 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/{tenantId}/brain/pull:
+    post:
+      operationId: pullBrainKnowledge
+      tags: [knowledge]
+      summary: Manually pull knowledge candidates from the external Brain (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrainPullInput"
+      responses:
+        "200":
+          description: Candidates harvested and staged for review (idempotent — duplicates skipped)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrainPullResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Brain unreachable or returned an unusable payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Brain not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/brain/candidates:
+    get:
+      operationId: listBrainCandidates
+      tags: [knowledge]
+      summary: List Brain-harvested knowledge candidates for review (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Brain candidates (absorbed facts with source=brain)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AbsorbedFact"
+
+  /tenants/{tenantId}/brain/push:
+    post:
+      operationId: pushBrainToClassroom
+      tags: [knowledge]
+      summary: Approve selected Brain candidates and publish the unified Classroom (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrainPushInput"
+      responses:
+        "201":
+          description: New Classroom version published (union of Professor + approved Brain facts)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassroomSnapshot"
+        "400":
+          description: Nothing to publish or invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -4833,6 +4934,8 @@ components:
           enum: [draft, published, rejected, conflict]
         category: { type: string }
         conflictReason: { type: ["string", "null"] }
+        source: { type: string }
+        sourceUrl: { type: ["string", "null"] }
         tokenCount: { type: integer }
         createdAt: { type: string, format: date-time }
       required:
@@ -4846,6 +4949,8 @@ components:
         - status
         - category
         - conflictReason
+        - source
+        - sourceUrl
         - tokenCount
         - createdAt
 
@@ -5001,3 +5106,35 @@ components:
           type: array
           items: { type: integer }
         summary: { type: string, maxLength: 1000 }
+
+    BrainPullInput:
+      type: object
+      properties:
+        limit: { type: integer, minimum: 1, maximum: 200 }
+
+    BrainPullResult:
+      type: object
+      properties:
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/AbsorbedFact"
+        pulledCount: { type: integer }
+        insertedCount: { type: integer }
+        skippedCount: { type: integer }
+        stubbed: { type: boolean }
+      required:
+        - candidates
+        - pulledCount
+        - insertedCount
+        - skippedCount
+        - stubbed
+
+    BrainPushInput:
+      type: object
+      properties:
+        factIds:
+          type: array
+          items: { type: integer }
+        summary: { type: string, maxLength: 1000 }
+      required: [factIds]

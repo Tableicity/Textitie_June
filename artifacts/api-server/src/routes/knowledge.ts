@@ -9,7 +9,6 @@ import {
   professorSessionsTable,
   professorMessagesTable,
   absorbedFactsTable,
-  classroomVersionsTable,
   classroomFactsTable,
   type KnowledgeDocument,
   type ProfessorSession,
@@ -35,10 +34,9 @@ import {
   estimateTokens,
   normalizeCategory,
   FACT_CATEGORIES,
-  CLASSROOM_PUSH_LOCK,
   type ExtractedFact,
 } from "../lib/knowledge";
-import { adjudicateForPush } from "../lib/librarian";
+import { publishClassroomSnapshot } from "../lib/classroomPublish";
 import { professorClient, PROFESSOR_MODEL } from "../lib/grokClient";
 
 /**
@@ -57,9 +55,10 @@ const upload = multer({
 const MAX_ACTIVE_SESSIONS = 5;
 const HISTORY_LIMIT = 20;
 
-// CLASSROOM_PUSH_LOCK (the second arg to pg_advisory_xact_lock for the
-// per-tenant Classroom push lock) is defined in ../lib/knowledge and imported
-// above, so the Professor live-escalation path serializes on the same lock.
+// Classroom publishing (versioning, advisory lock, supersede, snapshot insert,
+// conflict flagging) is centralized in ../lib/classroomPublish so the Professor
+// push here and the Brain push (routes/brain.ts) share one invariant. The same
+// CLASSROOM_PUSH_LOCK also serializes the live-escalation path in ../lib/knowledge.
 
 // --- shape mappers (strip internal-only columns from API payloads) -----------
 
@@ -1132,147 +1131,34 @@ router.post(
       return;
     }
 
-    // Librarian pass — collapse near-duplicate/refinement facts and FLAG
-    // contradictions before snapshotting. Runs the (slow, read-only) Grok
-    // adjudication BEFORE the transaction so we never hold the tx open across
-    // LLM calls; all resulting writes (conflict marking + version + facts) are
-    // applied atomically inside the tx below.
-    const verdict = await adjudicateForPush(
-      factsToPublish.map((f) => ({
-        id: f.id,
-        statement: f.statement,
-        category: f.category,
-        sourceLabel: f.sourceLabel,
-        tokenCount: f.tokenCount ?? 0,
-      })),
-    );
+    // Snapshot the accepted Professor facts into a new Classroom version via the
+    // shared publisher. markSessions preserves the existing behavior: free the
+    // explicitly-pushed sessions, or every active session on a full push.
+    const outcome = await publishClassroomSnapshot({
+      tenantId,
+      factsToPublish,
+      summary: parsed.data.summary ?? null,
+      markSessions:
+        sessionIds.length > 0
+          ? { mode: "ids", sessionIds }
+          : { mode: "active" },
+    });
 
-    const tokenCount = verdict.publish.reduce(
-      (sum, f) => sum + (f.tokenCount ?? 0),
-      0,
-    );
-
-    // Flag a contradiction onto its source absorbed facts. Guarded by tenantId
-    // and status="published" so a fact the Conductor concurrently rejected (in
-    // the window between adjudication and commit) is never clobbered.
-    type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-    const markConflicts = async (tx: Tx) => {
-      for (const c of verdict.conflicts) {
-        await tx
-          .update(absorbedFactsTable)
-          .set({ status: "conflict", conflictReason: c.reason })
-          .where(
-            and(
-              eq(absorbedFactsTable.id, c.id),
-              eq(absorbedFactsTable.tenantId, tenantId),
-              eq(absorbedFactsTable.status, "published"),
-            ),
-          );
-      }
-    };
-
-    // Everything collapsed into conflicts — there's nothing safe to publish.
-    // Still persist the conflict flags so the Conductor can resolve them, then
-    // tell the caller to fix the contradictions before re-pushing.
-    if (verdict.publish.length === 0) {
-      await db.transaction(async (tx) => {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(${tenantId}, ${CLASSROOM_PUSH_LOCK})`,
-        );
-        await markConflicts(tx);
-      });
+    if (!outcome.ok) {
       res.status(400).json({
         error:
           "All accepted facts are in conflict — resolve the flagged contradictions before publishing.",
-        conflictCount: verdict.conflictCount,
+        conflictCount: outcome.conflictCount,
       });
       return;
     }
 
-    const snapshot = await db.transaction(async (tx) => {
-      // Serialize pushes per tenant: with the lock held, concurrent pushes
-      // can't duplicate version numbers or interleave published/superseded
-      // rows. nextVersion is read INSIDE the lock so it reflects committed work.
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(${tenantId}, ${CLASSROOM_PUSH_LOCK})`,
-      );
-      // Flag contradictions: excluded from this snapshot, held for the
-      // Conductor to resolve (re-accept the right one / reject the wrong one).
-      await markConflicts(tx);
-      const [latest] = await tx
-        .select({ version: classroomVersionsTable.version })
-        .from(classroomVersionsTable)
-        .where(eq(classroomVersionsTable.tenantId, tenantId))
-        .orderBy(desc(classroomVersionsTable.version))
-        .limit(1);
-      const nextVersion = (latest?.version ?? 0) + 1;
-      await tx
-        .update(classroomVersionsTable)
-        .set({ status: "superseded" })
-        .where(
-          and(
-            eq(classroomVersionsTable.tenantId, tenantId),
-            eq(classroomVersionsTable.status, "published"),
-          ),
-        );
-      const [version] = await tx
-        .insert(classroomVersionsTable)
-        .values({
-          tenantId,
-          version: nextVersion,
-          status: "published",
-          summary: parsed.data.summary ?? null,
-          factCount: verdict.publish.length,
-          tokenCount,
-        })
-        .returning();
-      if (!version) throw new Error("Failed to create classroom version");
-      const facts = await tx
-        .insert(classroomFactsTable)
-        .values(
-          verdict.publish.map((f) => ({
-            tenantId,
-            versionId: version.id,
-            sourceLabel: f.sourceLabel,
-            statement: f.statement,
-            category: f.category,
-            tokenCount: f.tokenCount,
-          })),
-        )
-        .returning();
-      // Source absorbed facts stay "published" (they were already accepted and
-      // remain the curation history); only conflicts were re-flagged above.
-      // Free the active-session slots that fed this Classroom version.
-      if (sessionIds.length > 0) {
-        await tx
-          .update(professorSessionsTable)
-          .set({ status: "pushed" })
-          .where(
-            and(
-              eq(professorSessionsTable.tenantId, tenantId),
-              inArray(professorSessionsTable.id, sessionIds),
-            ),
-          );
-      } else {
-        await tx
-          .update(professorSessionsTable)
-          .set({ status: "pushed" })
-          .where(
-            and(
-              eq(professorSessionsTable.tenantId, tenantId),
-              eq(professorSessionsTable.status, "active"),
-            ),
-          );
-      }
-      return { version, facts };
-    });
-
     res.status(201).json({
-      version: toVersionApi(snapshot.version),
-      facts: snapshot.facts,
-      factCount: snapshot.facts.length,
-      mergedCount: verdict.mergedCount,
-      conflictCount: verdict.conflictCount,
+      version: toVersionApi(outcome.version),
+      facts: outcome.facts,
+      factCount: outcome.facts.length,
+      mergedCount: outcome.mergedCount,
+      conflictCount: outcome.conflictCount,
     });
   },
 );

@@ -2490,6 +2490,8 @@ export const ListAbsorbedFactsResponseItem = zod.object({
   status: zod.enum(["draft", "published", "rejected", "conflict"]),
   category: zod.string(),
   conflictReason: zod.string().nullable(),
+  source: zod.string(),
+  sourceUrl: zod.string().nullable(),
   tokenCount: zod.number(),
   createdAt: zod.coerce.date(),
 });
@@ -2520,6 +2522,8 @@ export const UpdateAbsorbedFactStatusResponse = zod.object({
   status: zod.enum(["draft", "published", "rejected", "conflict"]),
   category: zod.string(),
   conflictReason: zod.string().nullable(),
+  source: zod.string(),
+  sourceUrl: zod.string().nullable(),
   tokenCount: zod.number(),
   createdAt: zod.coerce.date(),
 });
@@ -2553,6 +2557,8 @@ export const UpdateAbsorbedFactCategoryResponse = zod.object({
   status: zod.enum(["draft", "published", "rejected", "conflict"]),
   category: zod.string(),
   conflictReason: zod.string().nullable(),
+  source: zod.string(),
+  sourceUrl: zod.string().nullable(),
   tokenCount: zod.number(),
   createdAt: zod.coerce.date(),
 });
@@ -2580,6 +2586,8 @@ export const AbsorbProfessorAnswerResponse = zod.object({
       status: zod.enum(["draft", "published", "rejected", "conflict"]),
       category: zod.string(),
       conflictReason: zod.string().nullable(),
+      source: zod.string(),
+      sourceUrl: zod.string().nullable(),
       tokenCount: zod.number(),
       createdAt: zod.coerce.date(),
     }),
@@ -2645,4 +2653,83 @@ export const pushToClassroomBodySummaryMax = 1000;
 export const PushToClassroomBody = zod.object({
   sessionIds: zod.array(zod.number()).optional(),
   summary: zod.string().max(pushToClassroomBodySummaryMax).optional(),
+});
+
+/**
+ * @summary Manually pull knowledge candidates from the external Brain (Conductor-only)
+ */
+export const PullBrainKnowledgeParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const pullBrainKnowledgeBodyLimitMax = 200;
+
+export const PullBrainKnowledgeBody = zod.object({
+  limit: zod.number().min(1).max(pullBrainKnowledgeBodyLimitMax).optional(),
+});
+
+export const PullBrainKnowledgeResponse = zod.object({
+  candidates: zod.array(
+    zod.object({
+      id: zod.number(),
+      tenantId: zod.number(),
+      sessionId: zod.number().nullable(),
+      documentId: zod.number().nullable(),
+      messageId: zod.number().nullable(),
+      sourceLabel: zod.string(),
+      statement: zod.string(),
+      status: zod.enum(["draft", "published", "rejected", "conflict"]),
+      category: zod.string(),
+      conflictReason: zod.string().nullable(),
+      source: zod.string(),
+      sourceUrl: zod.string().nullable(),
+      tokenCount: zod.number(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  pulledCount: zod.number(),
+  insertedCount: zod.number(),
+  skippedCount: zod.number(),
+  stubbed: zod.boolean(),
+});
+
+/**
+ * @summary List Brain-harvested knowledge candidates for review (Conductor-only)
+ */
+export const ListBrainCandidatesParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const ListBrainCandidatesResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  sessionId: zod.number().nullable(),
+  documentId: zod.number().nullable(),
+  messageId: zod.number().nullable(),
+  sourceLabel: zod.string(),
+  statement: zod.string(),
+  status: zod.enum(["draft", "published", "rejected", "conflict"]),
+  category: zod.string(),
+  conflictReason: zod.string().nullable(),
+  source: zod.string(),
+  sourceUrl: zod.string().nullable(),
+  tokenCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+export const ListBrainCandidatesResponse = zod.array(
+  ListBrainCandidatesResponseItem,
+);
+
+/**
+ * @summary Approve selected Brain candidates and publish the unified Classroom (Conductor-only)
+ */
+export const PushBrainToClassroomParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const pushBrainToClassroomBodySummaryMax = 1000;
+
+export const PushBrainToClassroomBody = zod.object({
+  factIds: zod.array(zod.number()),
+  summary: zod.string().max(pushBrainToClassroomBodySummaryMax).optional(),
 });

@@ -40,6 +40,9 @@ import type {
   BillingEventItem,
   BillingPlanItem,
   BlockedActivityItem,
+  BrainPullInput,
+  BrainPullResult,
+  BrainPushInput,
   CampaignItem,
   CampaignMessageItem,
   CampaignSendResult,
@@ -10240,4 +10243,267 @@ export const usePushToClassroom = <
   TContext
 > => {
   return useMutation(getPushToClassroomMutationOptions(options));
+};
+
+/**
+ * @summary Manually pull knowledge candidates from the external Brain (Conductor-only)
+ */
+export const getPullBrainKnowledgeUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/brain/pull`;
+};
+
+export const pullBrainKnowledge = async (
+  tenantId: number,
+  brainPullInput?: BrainPullInput,
+  options?: RequestInit,
+): Promise<BrainPullResult> => {
+  return customFetch<BrainPullResult>(getPullBrainKnowledgeUrl(tenantId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(brainPullInput),
+  });
+};
+
+export const getPullBrainKnowledgeMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pullBrainKnowledge>>,
+    TError,
+    { tenantId: number; data: BodyType<BrainPullInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pullBrainKnowledge>>,
+  TError,
+  { tenantId: number; data: BodyType<BrainPullInput> },
+  TContext
+> => {
+  const mutationKey = ["pullBrainKnowledge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pullBrainKnowledge>>,
+    { tenantId: number; data: BodyType<BrainPullInput> }
+  > = (props) => {
+    const { tenantId, data } = props ?? {};
+
+    return pullBrainKnowledge(tenantId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PullBrainKnowledgeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pullBrainKnowledge>>
+>;
+export type PullBrainKnowledgeMutationBody = BodyType<BrainPullInput>;
+export type PullBrainKnowledgeMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Manually pull knowledge candidates from the external Brain (Conductor-only)
+ */
+export const usePullBrainKnowledge = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pullBrainKnowledge>>,
+    TError,
+    { tenantId: number; data: BodyType<BrainPullInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pullBrainKnowledge>>,
+  TError,
+  { tenantId: number; data: BodyType<BrainPullInput> },
+  TContext
+> => {
+  return useMutation(getPullBrainKnowledgeMutationOptions(options));
+};
+
+/**
+ * @summary List Brain-harvested knowledge candidates for review (Conductor-only)
+ */
+export const getListBrainCandidatesUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/brain/candidates`;
+};
+
+export const listBrainCandidates = async (
+  tenantId: number,
+  options?: RequestInit,
+): Promise<AbsorbedFact[]> => {
+  return customFetch<AbsorbedFact[]>(getListBrainCandidatesUrl(tenantId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListBrainCandidatesQueryKey = (tenantId: number) => {
+  return [`/api/tenants/${tenantId}/brain/candidates`] as const;
+};
+
+export const getListBrainCandidatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listBrainCandidates>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBrainCandidates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListBrainCandidatesQueryKey(tenantId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listBrainCandidates>>
+  > = ({ signal }) =>
+    listBrainCandidates(tenantId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!tenantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listBrainCandidates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListBrainCandidatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listBrainCandidates>>
+>;
+export type ListBrainCandidatesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List Brain-harvested knowledge candidates for review (Conductor-only)
+ */
+
+export function useListBrainCandidates<
+  TData = Awaited<ReturnType<typeof listBrainCandidates>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBrainCandidates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListBrainCandidatesQueryOptions(tenantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Approve selected Brain candidates and publish the unified Classroom (Conductor-only)
+ */
+export const getPushBrainToClassroomUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/brain/push`;
+};
+
+export const pushBrainToClassroom = async (
+  tenantId: number,
+  brainPushInput: BrainPushInput,
+  options?: RequestInit,
+): Promise<ClassroomSnapshot> => {
+  return customFetch<ClassroomSnapshot>(getPushBrainToClassroomUrl(tenantId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(brainPushInput),
+  });
+};
+
+export const getPushBrainToClassroomMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushBrainToClassroom>>,
+    TError,
+    { tenantId: number; data: BodyType<BrainPushInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pushBrainToClassroom>>,
+  TError,
+  { tenantId: number; data: BodyType<BrainPushInput> },
+  TContext
+> => {
+  const mutationKey = ["pushBrainToClassroom"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pushBrainToClassroom>>,
+    { tenantId: number; data: BodyType<BrainPushInput> }
+  > = (props) => {
+    const { tenantId, data } = props ?? {};
+
+    return pushBrainToClassroom(tenantId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PushBrainToClassroomMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pushBrainToClassroom>>
+>;
+export type PushBrainToClassroomMutationBody = BodyType<BrainPushInput>;
+export type PushBrainToClassroomMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Approve selected Brain candidates and publish the unified Classroom (Conductor-only)
+ */
+export const usePushBrainToClassroom = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushBrainToClassroom>>,
+    TError,
+    { tenantId: number; data: BodyType<BrainPushInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pushBrainToClassroom>>,
+  TError,
+  { tenantId: number; data: BodyType<BrainPushInput> },
+  TContext
+> => {
+  return useMutation(getPushBrainToClassroomMutationOptions(options));
 };

@@ -1479,6 +1479,9 @@ export interface AbsorbedFact {
   category: string;
   /** @nullable */
   conflictReason: string | null;
+  source: string;
+  /** @nullable */
+  sourceUrl: string | null;
   tokenCount: number;
   createdAt: string;
 }
@@ -1601,6 +1604,28 @@ export interface AbsorbedFactCategoryInput {
 
 export interface ClassroomPushInput {
   sessionIds?: number[];
+  /** @maxLength 1000 */
+  summary?: string;
+}
+
+export interface BrainPullInput {
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+}
+
+export interface BrainPullResult {
+  candidates: AbsorbedFact[];
+  pulledCount: number;
+  insertedCount: number;
+  skippedCount: number;
+  stubbed: boolean;
+}
+
+export interface BrainPushInput {
+  factIds: number[];
   /** @maxLength 1000 */
   summary?: string;
 }
