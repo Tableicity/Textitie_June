@@ -6,6 +6,7 @@ import {
   classroomVersionsTable,
   classroomFactsTable,
   absorbedFactsTable,
+  type AbsorbedFact,
   type ClassroomFact,
   type ClassroomVersion,
   type KnowledgeDocument,
@@ -1285,5 +1286,201 @@ export async function persistEscalatedFacts(
       flagged: flagged.length,
       versionId: version.id,
     };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Auto-Learned review queue (operator-only / Conductor).
+//
+// Self-learned facts land as `auto_published` (live-provisional: groundable +
+// auto-sendable, but awaiting sign-off) or `conflict` (held, NOT groundable,
+// carries a conflictReason). The Conductor approves each (-> `published`) or
+// rejects it (-> `rejected`). Every Classroom mutation here holds the SAME
+// per-tenant advisory lock as the push path, and recomputes the version's
+// factCount/tokenCount from the SURVIVING classroom_facts rows (never
+// arithmetic decrement) so the counts can never drift.
+// ---------------------------------------------------------------------------
+
+// The statuses that appear in the review queue (settable targets are
+// `published` | `rejected`). Free-form text in the DB (no CHECK) per project
+// rule; this is the app-level allow-list of what is reviewable.
+export const AUTO_LEARNED_REVIEW_STATUSES = [
+  "auto_published",
+  "conflict",
+] as const;
+
+export type AutoLearnedReviewOutcome =
+  | { ok: true; fact: AbsorbedFact }
+  | { ok: false; reason: "not_found" | "not_reviewable" };
+
+type ReviewTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+// Recompute a version's counts from its surviving classroom_facts rows (the
+// source of truth) so a delete/insert can never leave factCount/tokenCount
+// stale. Safe to call inside the locked transaction.
+async function recomputeClassroomVersionCounts(
+  tx: ReviewTx,
+  versionId: number,
+): Promise<void> {
+  const rows = await tx
+    .select({ tokenCount: classroomFactsTable.tokenCount })
+    .from(classroomFactsTable)
+    .where(eq(classroomFactsTable.versionId, versionId));
+  const factCount = rows.length;
+  const tokenCount = rows.reduce((s, r) => s + (r.tokenCount ?? 0), 0);
+  await tx
+    .update(classroomVersionsTable)
+    .set({ factCount, tokenCount })
+    .where(eq(classroomVersionsTable.id, versionId));
+}
+
+// Current published Classroom version, read INSIDE the locked tx so it shares
+// the transaction/lock scope (the db-bound getCurrentClassroomVersion would
+// not).
+async function currentPublishedVersionTx(
+  tx: ReviewTx,
+  tenantId: number,
+): Promise<ClassroomVersion | null> {
+  const [v] = await tx
+    .select()
+    .from(classroomVersionsTable)
+    .where(
+      and(
+        eq(classroomVersionsTable.tenantId, tenantId),
+        eq(classroomVersionsTable.status, "published"),
+      ),
+    )
+    .orderBy(desc(classroomVersionsTable.version))
+    .limit(1);
+  return v ?? null;
+}
+
+/**
+ * Approve a self-learned fact.
+ *  - `auto_published`: already in the Classroom (groundable) — just promote it
+ *    to `published`.
+ *  - `conflict`: NOT in the Classroom; approving is the operator's explicit
+ *    override, so we insert it into the current published version (creating v1
+ *    if none, mirroring the escalation bootstrap), recompute counts, then
+ *    promote + clear its conflict flag. No Librarian re-adjudication — the
+ *    operator decision is final (and this feature runs no LLM).
+ */
+export async function approveAutoLearnedFact(
+  tenantId: number,
+  factId: number,
+): Promise<AutoLearnedReviewOutcome> {
+  return await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(${tenantId}, ${CLASSROOM_PUSH_LOCK})`,
+    );
+    const [fact] = await tx
+      .select()
+      .from(absorbedFactsTable)
+      .where(
+        and(
+          eq(absorbedFactsTable.id, factId),
+          eq(absorbedFactsTable.tenantId, tenantId),
+        ),
+      );
+    if (!fact) return { ok: false, reason: "not_found" };
+    if (fact.status !== "auto_published" && fact.status !== "conflict") {
+      return { ok: false, reason: "not_reviewable" };
+    }
+
+    if (fact.status === "conflict") {
+      let version = await currentPublishedVersionTx(tx, tenantId);
+      if (!version) {
+        const [created] = await tx
+          .insert(classroomVersionsTable)
+          .values({
+            tenantId,
+            version: 1,
+            status: "published",
+            summary: "Auto-created by Auto-Learned review",
+            factCount: 0,
+            tokenCount: 0,
+          })
+          .returning();
+        if (!created) throw new Error("Failed to create classroom version");
+        version = created;
+      }
+      await tx.insert(classroomFactsTable).values({
+        tenantId,
+        versionId: version.id,
+        sourceLabel: fact.sourceLabel,
+        statement: fact.statement,
+        category: fact.category,
+        tokenCount: fact.tokenCount ?? estimateTokens(fact.statement),
+      });
+      await recomputeClassroomVersionCounts(tx, version.id);
+    }
+
+    const [row] = await tx
+      .update(absorbedFactsTable)
+      .set({ status: "published", conflictReason: null })
+      .where(eq(absorbedFactsTable.id, factId))
+      .returning();
+    return { ok: true, fact: row ?? fact };
+  });
+}
+
+/**
+ * Reject a self-learned fact.
+ *  - `auto_published`: groundable, so remove its row from the current published
+ *    version — matched EXACTLY by (versionId, tenantId, statement, sourceLabel),
+ *    never a fuzzy match (which could delete unrelated tenant truth) — then
+ *    recompute counts.
+ *  - `conflict`: no Classroom row exists, so only its status changes.
+ *
+ * MVP limitation: if a prior human/Brain push MERGED this statement via the
+ * Librarian, the exact match can miss and the row lingers groundable until the
+ * next push self-heals it (the push union excludes `rejected`). A fuzzy delete
+ * is deliberately avoided as unsafe.
+ */
+export async function rejectAutoLearnedFact(
+  tenantId: number,
+  factId: number,
+): Promise<AutoLearnedReviewOutcome> {
+  return await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(${tenantId}, ${CLASSROOM_PUSH_LOCK})`,
+    );
+    const [fact] = await tx
+      .select()
+      .from(absorbedFactsTable)
+      .where(
+        and(
+          eq(absorbedFactsTable.id, factId),
+          eq(absorbedFactsTable.tenantId, tenantId),
+        ),
+      );
+    if (!fact) return { ok: false, reason: "not_found" };
+    if (fact.status !== "auto_published" && fact.status !== "conflict") {
+      return { ok: false, reason: "not_reviewable" };
+    }
+
+    if (fact.status === "auto_published") {
+      const version = await currentPublishedVersionTx(tx, tenantId);
+      if (version) {
+        await tx
+          .delete(classroomFactsTable)
+          .where(
+            and(
+              eq(classroomFactsTable.versionId, version.id),
+              eq(classroomFactsTable.tenantId, tenantId),
+              eq(classroomFactsTable.statement, fact.statement),
+              eq(classroomFactsTable.sourceLabel, fact.sourceLabel),
+            ),
+          );
+        await recomputeClassroomVersionCounts(tx, version.id);
+      }
+    }
+
+    const [row] = await tx
+      .update(absorbedFactsTable)
+      .set({ status: "rejected", conflictReason: null })
+      .where(eq(absorbedFactsTable.id, factId))
+      .returning();
+    return { ok: true, fact: row ?? fact };
   });
 }

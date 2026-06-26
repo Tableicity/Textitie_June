@@ -2559,7 +2559,13 @@ export const ListAbsorbedFactsResponseItem = zod.object({
   messageId: zod.number().nullable(),
   sourceLabel: zod.string(),
   statement: zod.string(),
-  status: zod.enum(["draft", "published", "rejected", "conflict"]),
+  status: zod.enum([
+    "draft",
+    "published",
+    "rejected",
+    "conflict",
+    "auto_published",
+  ]),
   category: zod.string(),
   conflictReason: zod.string().nullable(),
   source: zod.string(),
@@ -2591,7 +2597,13 @@ export const UpdateAbsorbedFactStatusResponse = zod.object({
   messageId: zod.number().nullable(),
   sourceLabel: zod.string(),
   statement: zod.string(),
-  status: zod.enum(["draft", "published", "rejected", "conflict"]),
+  status: zod.enum([
+    "draft",
+    "published",
+    "rejected",
+    "conflict",
+    "auto_published",
+  ]),
   category: zod.string(),
   conflictReason: zod.string().nullable(),
   source: zod.string(),
@@ -2626,7 +2638,13 @@ export const UpdateAbsorbedFactCategoryResponse = zod.object({
   messageId: zod.number().nullable(),
   sourceLabel: zod.string(),
   statement: zod.string(),
-  status: zod.enum(["draft", "published", "rejected", "conflict"]),
+  status: zod.enum([
+    "draft",
+    "published",
+    "rejected",
+    "conflict",
+    "auto_published",
+  ]),
   category: zod.string(),
   conflictReason: zod.string().nullable(),
   source: zod.string(),
@@ -2655,7 +2673,13 @@ export const AbsorbProfessorAnswerResponse = zod.object({
       messageId: zod.number().nullable(),
       sourceLabel: zod.string(),
       statement: zod.string(),
-      status: zod.enum(["draft", "published", "rejected", "conflict"]),
+      status: zod.enum([
+        "draft",
+        "published",
+        "rejected",
+        "conflict",
+        "auto_published",
+      ]),
       category: zod.string(),
       conflictReason: zod.string().nullable(),
       source: zod.string(),
@@ -2728,6 +2752,101 @@ export const PushToClassroomBody = zod.object({
 });
 
 /**
+ * @summary List self-learned facts pending operator review (Conductor-only)
+ */
+export const ListAutoLearnedFactsParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const ListAutoLearnedFactsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  sessionId: zod.number().nullable(),
+  documentId: zod.number().nullable(),
+  messageId: zod.number().nullable(),
+  sourceLabel: zod.string(),
+  statement: zod.string(),
+  status: zod.enum([
+    "draft",
+    "published",
+    "rejected",
+    "conflict",
+    "auto_published",
+  ]),
+  category: zod.string(),
+  conflictReason: zod.string().nullable(),
+  source: zod.string(),
+  sourceUrl: zod.string().nullable(),
+  tokenCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+export const ListAutoLearnedFactsResponse = zod.array(
+  ListAutoLearnedFactsResponseItem,
+);
+
+/**
+ * @summary Approve a self-learned fact into published truth (Conductor-only)
+ */
+export const ApproveAutoLearnedFactParams = zod.object({
+  tenantId: zod.coerce.number(),
+  factId: zod.coerce.number(),
+});
+
+export const ApproveAutoLearnedFactResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  sessionId: zod.number().nullable(),
+  documentId: zod.number().nullable(),
+  messageId: zod.number().nullable(),
+  sourceLabel: zod.string(),
+  statement: zod.string(),
+  status: zod.enum([
+    "draft",
+    "published",
+    "rejected",
+    "conflict",
+    "auto_published",
+  ]),
+  category: zod.string(),
+  conflictReason: zod.string().nullable(),
+  source: zod.string(),
+  sourceUrl: zod.string().nullable(),
+  tokenCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Reject a self-learned fact and remove it from the Classroom (Conductor-only)
+ */
+export const RejectAutoLearnedFactParams = zod.object({
+  tenantId: zod.coerce.number(),
+  factId: zod.coerce.number(),
+});
+
+export const RejectAutoLearnedFactResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  sessionId: zod.number().nullable(),
+  documentId: zod.number().nullable(),
+  messageId: zod.number().nullable(),
+  sourceLabel: zod.string(),
+  statement: zod.string(),
+  status: zod.enum([
+    "draft",
+    "published",
+    "rejected",
+    "conflict",
+    "auto_published",
+  ]),
+  category: zod.string(),
+  conflictReason: zod.string().nullable(),
+  source: zod.string(),
+  sourceUrl: zod.string().nullable(),
+  tokenCount: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
  * @summary Manually pull knowledge candidates from the external Brain (Conductor-only)
  */
 export const PullBrainKnowledgeParams = zod.object({
@@ -2750,7 +2869,13 @@ export const PullBrainKnowledgeResponse = zod.object({
       messageId: zod.number().nullable(),
       sourceLabel: zod.string(),
       statement: zod.string(),
-      status: zod.enum(["draft", "published", "rejected", "conflict"]),
+      status: zod.enum([
+        "draft",
+        "published",
+        "rejected",
+        "conflict",
+        "auto_published",
+      ]),
       category: zod.string(),
       conflictReason: zod.string().nullable(),
       source: zod.string(),
@@ -2780,7 +2905,13 @@ export const ListBrainCandidatesResponseItem = zod.object({
   messageId: zod.number().nullable(),
   sourceLabel: zod.string(),
   statement: zod.string(),
-  status: zod.enum(["draft", "published", "rejected", "conflict"]),
+  status: zod.enum([
+    "draft",
+    "published",
+    "rejected",
+    "conflict",
+    "auto_published",
+  ]),
   category: zod.string(),
   conflictReason: zod.string().nullable(),
   source: zod.string(),

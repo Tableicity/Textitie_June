@@ -34,6 +34,9 @@ import {
   estimateTokens,
   normalizeCategory,
   FACT_CATEGORIES,
+  AUTO_LEARNED_REVIEW_STATUSES,
+  approveAutoLearnedFact,
+  rejectAutoLearnedFact,
   type ExtractedFact,
 } from "../lib/knowledge";
 import { publishClassroomSnapshot } from "../lib/classroomPublish";
@@ -1166,6 +1169,82 @@ router.post(
       mergedCount: outcome.mergedCount,
       conflictCount: outcome.conflictCount,
     });
+  },
+);
+
+// Auto-Learned review queue (Conductor-only). Surfaces self-learned facts that
+// the Professor live-escalation persisted without a human in the loop:
+// `auto_published` (live-provisional, groundable now) and `conflict` (held,
+// NOT groundable). The operator approves each into `published` truth or rejects
+// it (which also removes a groundable row from the live Classroom). The
+// classroom mutations + counts live in the lib helpers under the push lock.
+router.get(
+  "/tenants/:tenantId/knowledge/auto-learned",
+  async (req: Request, res: Response): Promise<void> => {
+    const tenantId = parseId(req.params.tenantId);
+    if (tenantId == null) {
+      res.status(400).json({ error: "Invalid tenant id" });
+      return;
+    }
+    const rows = await db
+      .select()
+      .from(absorbedFactsTable)
+      .where(
+        and(
+          eq(absorbedFactsTable.tenantId, tenantId),
+          inArray(absorbedFactsTable.status, [...AUTO_LEARNED_REVIEW_STATUSES]),
+        ),
+      )
+      .orderBy(desc(absorbedFactsTable.createdAt));
+    res.json(rows);
+  },
+);
+
+router.post(
+  "/tenants/:tenantId/knowledge/auto-learned/:factId/approve",
+  async (req: Request, res: Response): Promise<void> => {
+    const tenantId = parseId(req.params.tenantId);
+    const factId = parseId(req.params.factId);
+    if (tenantId == null || factId == null) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+    const outcome = await approveAutoLearnedFact(tenantId, factId);
+    if (!outcome.ok) {
+      if (outcome.reason === "not_found") {
+        res.status(404).json({ error: "Fact not found" });
+        return;
+      }
+      res.status(409).json({
+        error: "Fact is not awaiting review (already approved or rejected).",
+      });
+      return;
+    }
+    res.json(outcome.fact);
+  },
+);
+
+router.post(
+  "/tenants/:tenantId/knowledge/auto-learned/:factId/reject",
+  async (req: Request, res: Response): Promise<void> => {
+    const tenantId = parseId(req.params.tenantId);
+    const factId = parseId(req.params.factId);
+    if (tenantId == null || factId == null) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+    const outcome = await rejectAutoLearnedFact(tenantId, factId);
+    if (!outcome.ok) {
+      if (outcome.reason === "not_found") {
+        res.status(404).json({ error: "Fact not found" });
+        return;
+      }
+      res.status(409).json({
+        error: "Fact is not awaiting review (already approved or rejected).",
+      });
+      return;
+    }
+    res.json(outcome.fact);
   },
 );
 

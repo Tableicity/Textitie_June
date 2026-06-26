@@ -23,6 +23,7 @@ import {
   useAddLibraryText,
 } from "@workspace/api-client-react";
 import { getStoredAuthHeader } from "@/lib/auth";
+import { AutoLearnedReviewPanel } from "@/components/AutoLearnedReviewPanel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -627,6 +628,11 @@ export default function Professor() {
             </TooltipContent>
           </Tooltip>
         </div>
+      </div>
+
+      {/* Auto-Learned review queue (tenant-scoped, operator-only) */}
+      <div className="mb-3 shrink-0">
+        <AutoLearnedReviewPanel tenantId={tenantId} />
       </div>
 
       {/* Main two-pane */}

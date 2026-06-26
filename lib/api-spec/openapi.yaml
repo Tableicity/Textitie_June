@@ -2897,6 +2897,99 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/{tenantId}/knowledge/auto-learned:
+    get:
+      operationId: listAutoLearnedFacts
+      tags: [knowledge]
+      summary: List self-learned facts pending operator review (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Self-learned facts awaiting review (auto_published or conflict)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AbsorbedFact"
+
+  /tenants/{tenantId}/knowledge/auto-learned/{factId}/approve:
+    post:
+      operationId: approveAutoLearnedFact
+      tags: [knowledge]
+      summary: Approve a self-learned fact into published truth (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: factId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Approved fact (now published)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AbsorbedFact"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Fact is not in a reviewable state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/knowledge/auto-learned/{factId}/reject:
+    post:
+      operationId: rejectAutoLearnedFact
+      tags: [knowledge]
+      summary: Reject a self-learned fact and remove it from the Classroom (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: factId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Rejected fact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AbsorbedFact"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Fact is not in a reviewable state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /tenants/{tenantId}/brain/pull:
     post:
       operationId: pullBrainKnowledge
@@ -4964,7 +5057,7 @@ components:
         statement: { type: string }
         status:
           type: string
-          enum: [draft, published, rejected, conflict]
+          enum: [draft, published, rejected, conflict, auto_published]
         category: { type: string }
         conflictReason: { type: ["string", "null"] }
         source: { type: string }

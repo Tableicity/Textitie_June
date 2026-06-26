@@ -10246,6 +10246,277 @@ export const usePushToClassroom = <
 };
 
 /**
+ * @summary List self-learned facts pending operator review (Conductor-only)
+ */
+export const getListAutoLearnedFactsUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/knowledge/auto-learned`;
+};
+
+export const listAutoLearnedFacts = async (
+  tenantId: number,
+  options?: RequestInit,
+): Promise<AbsorbedFact[]> => {
+  return customFetch<AbsorbedFact[]>(getListAutoLearnedFactsUrl(tenantId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAutoLearnedFactsQueryKey = (tenantId: number) => {
+  return [`/api/tenants/${tenantId}/knowledge/auto-learned`] as const;
+};
+
+export const getListAutoLearnedFactsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAutoLearnedFacts>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAutoLearnedFacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAutoLearnedFactsQueryKey(tenantId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAutoLearnedFacts>>
+  > = ({ signal }) =>
+    listAutoLearnedFacts(tenantId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!tenantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAutoLearnedFacts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAutoLearnedFactsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAutoLearnedFacts>>
+>;
+export type ListAutoLearnedFactsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List self-learned facts pending operator review (Conductor-only)
+ */
+
+export function useListAutoLearnedFacts<
+  TData = Awaited<ReturnType<typeof listAutoLearnedFacts>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAutoLearnedFacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAutoLearnedFactsQueryOptions(tenantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Approve a self-learned fact into published truth (Conductor-only)
+ */
+export const getApproveAutoLearnedFactUrl = (
+  tenantId: number,
+  factId: number,
+) => {
+  return `/api/tenants/${tenantId}/knowledge/auto-learned/${factId}/approve`;
+};
+
+export const approveAutoLearnedFact = async (
+  tenantId: number,
+  factId: number,
+  options?: RequestInit,
+): Promise<AbsorbedFact> => {
+  return customFetch<AbsorbedFact>(
+    getApproveAutoLearnedFactUrl(tenantId, factId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getApproveAutoLearnedFactMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveAutoLearnedFact>>,
+    TError,
+    { tenantId: number; factId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveAutoLearnedFact>>,
+  TError,
+  { tenantId: number; factId: number },
+  TContext
+> => {
+  const mutationKey = ["approveAutoLearnedFact"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveAutoLearnedFact>>,
+    { tenantId: number; factId: number }
+  > = (props) => {
+    const { tenantId, factId } = props ?? {};
+
+    return approveAutoLearnedFact(tenantId, factId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApproveAutoLearnedFactMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveAutoLearnedFact>>
+>;
+
+export type ApproveAutoLearnedFactMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Approve a self-learned fact into published truth (Conductor-only)
+ */
+export const useApproveAutoLearnedFact = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveAutoLearnedFact>>,
+    TError,
+    { tenantId: number; factId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof approveAutoLearnedFact>>,
+  TError,
+  { tenantId: number; factId: number },
+  TContext
+> => {
+  return useMutation(getApproveAutoLearnedFactMutationOptions(options));
+};
+
+/**
+ * @summary Reject a self-learned fact and remove it from the Classroom (Conductor-only)
+ */
+export const getRejectAutoLearnedFactUrl = (
+  tenantId: number,
+  factId: number,
+) => {
+  return `/api/tenants/${tenantId}/knowledge/auto-learned/${factId}/reject`;
+};
+
+export const rejectAutoLearnedFact = async (
+  tenantId: number,
+  factId: number,
+  options?: RequestInit,
+): Promise<AbsorbedFact> => {
+  return customFetch<AbsorbedFact>(
+    getRejectAutoLearnedFactUrl(tenantId, factId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRejectAutoLearnedFactMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectAutoLearnedFact>>,
+    TError,
+    { tenantId: number; factId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectAutoLearnedFact>>,
+  TError,
+  { tenantId: number; factId: number },
+  TContext
+> => {
+  const mutationKey = ["rejectAutoLearnedFact"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectAutoLearnedFact>>,
+    { tenantId: number; factId: number }
+  > = (props) => {
+    const { tenantId, factId } = props ?? {};
+
+    return rejectAutoLearnedFact(tenantId, factId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectAutoLearnedFactMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectAutoLearnedFact>>
+>;
+
+export type RejectAutoLearnedFactMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Reject a self-learned fact and remove it from the Classroom (Conductor-only)
+ */
+export const useRejectAutoLearnedFact = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectAutoLearnedFact>>,
+    TError,
+    { tenantId: number; factId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectAutoLearnedFact>>,
+  TError,
+  { tenantId: number; factId: number },
+  TContext
+> => {
+  return useMutation(getRejectAutoLearnedFactMutationOptions(options));
+};
+
+/**
  * @summary Manually pull knowledge candidates from the external Brain (Conductor-only)
  */
 export const getPullBrainKnowledgeUrl = (tenantId: number) => {
