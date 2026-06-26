@@ -56,6 +56,12 @@ export interface UpsertAiStateInput {
   inboundSid?: string | null;
   outboundMessageId?: number | null;
   autoSentAt?: Date | null;
+  // Auto-Pilot graceful-handback ack throttle marker (see schema). Set ONLY when
+  // the holding-phrase ack was actually auto-sent (or carried forward within the
+  // same waiting episode); left null on every other path so the marker naturally
+  // clears whenever a non-ack disposition is written for this conversation.
+  handbackAckMessageId?: number | null;
+  handbackAckSentAt?: Date | null;
 }
 
 /**
@@ -80,6 +86,8 @@ export async function upsertConversationAiState(
     inboundSid: input.inboundSid ?? null,
     outboundMessageId: input.outboundMessageId ?? null,
     autoSentAt: input.autoSentAt ?? null,
+    handbackAckMessageId: input.handbackAckMessageId ?? null,
+    handbackAckSentAt: input.handbackAckSentAt ?? null,
     updatedAt: now,
   };
   await db
@@ -99,6 +107,8 @@ export async function upsertConversationAiState(
         inboundSid: values.inboundSid,
         outboundMessageId: values.outboundMessageId,
         autoSentAt: values.autoSentAt,
+        handbackAckMessageId: values.handbackAckMessageId,
+        handbackAckSentAt: values.handbackAckSentAt,
         updatedAt: now,
       },
     });
@@ -241,6 +251,8 @@ export async function supersedeConversationAiState(opts: {
       draftSource: null,
       reasonCode: null,
       reasonText: null,
+      handbackAckMessageId: null,
+      handbackAckSentAt: null,
       latestInboundMessageId: opts.latestInboundMessageId ?? null,
       updatedAt: now,
     })
@@ -295,6 +307,8 @@ export async function markConversationAiStateHumanHandled(opts: {
     draftSource: null,
     reasonCode: null,
     reasonText: null,
+    handbackAckMessageId: null,
+    handbackAckSentAt: null,
     latestInboundMessageId: latestInbound,
     humanHandledBy: opts.humanHandledBy ?? null,
     humanHandledAt: now,

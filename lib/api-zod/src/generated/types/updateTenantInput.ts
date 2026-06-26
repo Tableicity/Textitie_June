@@ -34,6 +34,11 @@ export interface UpdateTenantInput {
    * @nullable
    */
   fallbackPhrase?: string | null;
+  /**
+   * Conductor-set Auto-Pilot graceful-handback holding phrase, auto-sent verbatim when Auto-Pilot refuses or its draft fails. null/empty = today's silent handback.
+   * @nullable
+   */
+  autopilotHoldingPhrase?: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled?: boolean;
 }

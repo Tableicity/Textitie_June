@@ -270,6 +270,7 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
     "knowledgeBase",
     "brandScope",
     "fallbackPhrase",
+    "autopilotHoldingPhrase",
     "unregisteredSurchargeEnabled",
   ] as const) {
     if (k in body.data) patch[k] = body.data[k];

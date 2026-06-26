@@ -65,6 +65,12 @@ export const ListTenantsResponseItem = zod.object({
     .describe(
       "Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom\/KB match), the pipeline drafts this verbatim instead of letting the Student\/Professor guess. null\/empty = existing Student\/Professor draft path.",
     ),
+  autopilotHoldingPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set Auto-Pilot \"graceful handback\" holding phrase. When Auto-Pilot refuses to auto-send (fail-closed gate) or its AI draft fails, the pipeline auto-sends THIS verbatim as a content-free acknowledgment and KEEPS the Blue handback for a human. Sent verbatim (unlike fallbackPhrase, which is a Co-Pilot draft a human edits). null\/empty = today\'s silent handback (fail-safe).',
+    ),
   unregisteredSurchargeEnabled: zod
     .boolean()
     .describe(
@@ -173,6 +179,12 @@ export const GetTenantResponse = zod.object({
     .describe(
       "Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom\/KB match), the pipeline drafts this verbatim instead of letting the Student\/Professor guess. null\/empty = existing Student\/Professor draft path.",
     ),
+  autopilotHoldingPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set Auto-Pilot \"graceful handback\" holding phrase. When Auto-Pilot refuses to auto-send (fail-closed gate) or its AI draft fails, the pipeline auto-sends THIS verbatim as a content-free acknowledgment and KEEPS the Blue handback for a human. Sent verbatim (unlike fallbackPhrase, which is a Co-Pilot draft a human edits). null\/empty = today\'s silent handback (fail-safe).',
+    ),
   unregisteredSurchargeEnabled: zod
     .boolean()
     .describe(
@@ -212,6 +224,12 @@ export const UpdateTenantBody = zod
       .nullish()
       .describe(
         "Conductor-set Co-Pilot holding phrase for ungrounded tenant-specific inbounds. null\/empty = existing Student\/Professor draft path.",
+      ),
+    autopilotHoldingPhrase: zod
+      .string()
+      .nullish()
+      .describe(
+        "Conductor-set Auto-Pilot graceful-handback holding phrase, auto-sent verbatim when Auto-Pilot refuses or its draft fails. null\/empty = today's silent handback.",
       ),
     unregisteredSurchargeEnabled: zod
       .boolean()
@@ -256,6 +274,12 @@ export const UpdateTenantResponse = zod.object({
     .nullable()
     .describe(
       "Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom\/KB match), the pipeline drafts this verbatim instead of letting the Student\/Professor guess. null\/empty = existing Student\/Professor draft path.",
+    ),
+  autopilotHoldingPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set Auto-Pilot \"graceful handback\" holding phrase. When Auto-Pilot refuses to auto-send (fail-closed gate) or its AI draft fails, the pipeline auto-sends THIS verbatim as a content-free acknowledgment and KEEPS the Blue handback for a human. Sent verbatim (unlike fallbackPhrase, which is a Co-Pilot draft a human edits). null\/empty = today\'s silent handback (fail-safe).',
     ),
   unregisteredSurchargeEnabled: zod
     .boolean()

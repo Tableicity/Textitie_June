@@ -30,3 +30,4 @@
 - [DB-backed test pattern](testing-db-backed-pattern.md) — api-server tests use the real test DB + mock only external seams; NEVER vi.mock(@workspace/db) (makes assertions hollow); run per-file to dodge the env reaper.
 - [Co-Pilot fallback phrase](fallback-phrase-copilot.md) — per-tenant holding phrase; copilot-only, ungrounded inbound → verbatim draft + early-return that deliberately skips Professor escalation ("do not guess"); fail-open.
 - [Co-Pilot triage router](copilot-triage-router.md) — router runs ONLY in copilot+brandScope+routerConfigured; fail-open via resolveRouteBranch; flash/decline drafts MUST stay kbMatched/grounded=false for the deferred Auto-Pilot gate.
+- [Auto-Pilot holding ack](autopilot-holding-ack.md) — refuse/fail may auto-send a verbatim tenant stall phrase but NEVER clears Blue; throttle (state marker) is primary dedup, claim is secondary; empty phrase = silent fail-safe; never learns.

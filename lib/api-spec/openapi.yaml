@@ -3174,6 +3174,15 @@ components:
             tenant-specific but ungrounded (no Classroom/KB match), the pipeline
             drafts this verbatim instead of letting the Student/Professor guess.
             null/empty = existing Student/Professor draft path.
+        autopilotHoldingPhrase:
+          type: ["string", "null"]
+          description: >-
+            Conductor-set Auto-Pilot "graceful handback" holding phrase. When
+            Auto-Pilot refuses to auto-send (fail-closed gate) or its AI draft
+            fails, the pipeline auto-sends THIS verbatim as a content-free
+            acknowledgment and KEEPS the Blue handback for a human. Sent verbatim
+            (unlike fallbackPhrase, which is a Co-Pilot draft a human edits).
+            null/empty = today's silent handback (fail-safe).
         unregisteredSurchargeEnabled:
           type: boolean
           description: >-
@@ -3195,6 +3204,7 @@ components:
         - knowledgeBase
         - brandScope
         - fallbackPhrase
+        - autopilotHoldingPhrase
         - unregisteredSurchargeEnabled
         - createdAt
 
@@ -3256,6 +3266,12 @@ components:
           description: >-
             Conductor-set Co-Pilot holding phrase for ungrounded tenant-specific
             inbounds. null/empty = existing Student/Professor draft path.
+        autopilotHoldingPhrase:
+          type: ["string", "null"]
+          description: >-
+            Conductor-set Auto-Pilot graceful-handback holding phrase, auto-sent
+            verbatim when Auto-Pilot refuses or its draft fails. null/empty =
+            today's silent handback.
         unregisteredSurchargeEnabled:
           type: boolean
           description: >-

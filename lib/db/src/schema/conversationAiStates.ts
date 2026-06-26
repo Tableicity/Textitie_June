@@ -46,6 +46,14 @@ export const conversationAiStatesTable = pgTable(
     latestInboundMessageId: integer("latest_inbound_message_id"),
     inboundSid: text("inbound_sid"),
     outboundMessageId: integer("outbound_message_id"),
+    // Auto-Pilot "graceful handback" throttle marker. When Auto-Pilot refuses
+    // (or its draft fails) and a tenant holding phrase is configured, the pipeline
+    // auto-sends the phrase ONCE per waiting episode and records the ack here so a
+    // burst of further ungrounded inbounds (status still refused/failed, no human
+    // reply yet) does not re-ack. A human send flips status → human_handled which
+    // clears these, ending the episode; a later inbound may ack a fresh episode.
+    handbackAckMessageId: integer("handback_ack_message_id"),
+    handbackAckSentAt: timestamp("handback_ack_sent_at", { withTimezone: true }),
     humanHandledBy: integer("human_handled_by"),
     humanHandledAt: timestamp("human_handled_at", { withTimezone: true }),
     autoSentAt: timestamp("auto_sent_at", { withTimezone: true }),

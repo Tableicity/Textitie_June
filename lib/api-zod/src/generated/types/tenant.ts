@@ -41,6 +41,11 @@ export interface Tenant {
    * @nullable
    */
   fallbackPhrase: string | null;
+  /**
+   * Conductor-set Auto-Pilot "graceful handback" holding phrase. When Auto-Pilot refuses to auto-send (fail-closed gate) or its AI draft fails, the pipeline auto-sends THIS verbatim as a content-free acknowledgment and KEEPS the Blue handback for a human. Sent verbatim (unlike fallbackPhrase, which is a Co-Pilot draft a human edits). null/empty = today's silent handback (fail-safe).
+   * @nullable
+   */
+  autopilotHoldingPhrase: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled: boolean;
   createdAt: Date;

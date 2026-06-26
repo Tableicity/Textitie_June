@@ -110,6 +110,16 @@ export default function TenantDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id, tenant?.fallbackPhrase]);
 
+  const [holdingPhraseText, setHoldingPhraseText] = useState("");
+  const [holdingPhraseDirty, setHoldingPhraseDirty] = useState(false);
+  useEffect(() => {
+    if (tenant) {
+      setHoldingPhraseText(tenant.autopilotHoldingPhrase ?? "");
+      setHoldingPhraseDirty(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, tenant?.autopilotHoldingPhrase]);
+
   const onSavePhone = (values: z.infer<typeof phoneSchema>) => {
     if (!tenant) return;
     const next = values.phoneNumber.trim() || null;
@@ -217,6 +227,29 @@ export default function TenantDetail() {
             description: next
               ? "Co-Pilot will draft this verbatim when an inbound is tenant-specific but ungrounded."
               : "Fallback phrase cleared — Co-Pilot falls back to the existing Student/Professor draft path.",
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const onSaveHoldingPhrase = () => {
+    if (!tenant) return;
+    const next = holdingPhraseText.trim() || null;
+    updateTenant.mutate(
+      { id: tenant.id, data: { autopilotHoldingPhrase: next } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
+          setHoldingPhraseDirty(false);
+          toast({
+            title: "Holding Phrase Saved",
+            description: next
+              ? "Auto-Pilot will text this verbatim as an acknowledgment when it hands a message back to a human."
+              : "Holding phrase cleared — Auto-Pilot handbacks stay silent (today's behavior).",
           });
         },
         onError: (err) => {
@@ -516,6 +549,43 @@ export default function TenantDetail() {
               disabled={updateTenant.isPending || !fallbackPhraseDirty}
             >
               {updateTenant.isPending ? "Saving..." : "Save Fallback Phrase"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <MessageSquare size={16} /> Holding Phrase (Auto-Pilot)
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            A short acknowledgment Auto-Pilot texts {tenant.name}'s customers
+            verbatim when it can't safely auto-answer and hands the message back
+            to a human (the gate refused, or the AI draft failed). It is an
+            acknowledgment, NOT an answer — the conversation stays Blue so a human
+            still owns the real reply, and the customer is texted at most once per
+            wait. Leave empty to keep Auto-Pilot handbacks silent (today's
+            behavior).
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Textarea
+            value={holdingPhraseText}
+            onChange={(e) => {
+              setHoldingPhraseText(e.target.value);
+              setHoldingPhraseDirty(true);
+            }}
+            rows={3}
+            maxLength={1000}
+            placeholder={'e.g. "Thanks for reaching out! A team member will get back to you shortly."'}
+          />
+          <div className="flex justify-end">
+            <Button
+              onClick={onSaveHoldingPhrase}
+              disabled={updateTenant.isPending || !holdingPhraseDirty}
+            >
+              {updateTenant.isPending ? "Saving..." : "Save Holding Phrase"}
             </Button>
           </div>
         </CardContent>

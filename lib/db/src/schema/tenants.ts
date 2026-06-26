@@ -23,6 +23,14 @@ export const tenantsTable = pgTable("tenants", {
   // nullable text (NO DB CHECK); null/empty = existing Student/Professor draft
   // path (fail-open). Co-Pilot only — Manual/Auto-Pilot are untouched.
   fallbackPhrase: text("fallback_phrase"),
+  // Conductor-set Auto-Pilot "graceful handback" holding phrase. When Auto-Pilot
+  // REFUSES to auto-send (fail-closed gate) or its AI draft FAILS, the inbound
+  // pipeline auto-sends THIS verbatim as a content-free acknowledgment (NOT an
+  // answer) and KEEPS the Blue handback so a human still owns the real reply.
+  // Distinct from fallbackPhrase: the Co-Pilot phrase is drafted for a human to
+  // EDIT, whereas this is sent VERBATIM. Plain nullable text (NO DB CHECK);
+  // null/empty = today's silent handback (fail-safe). Auto-Pilot only.
+  autopilotHoldingPhrase: text("autopilot_holding_phrase"),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").notNull().default("none"),
