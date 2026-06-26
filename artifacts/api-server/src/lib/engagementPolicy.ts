@@ -87,6 +87,15 @@ export type AutoSendInput = {
    * false.
    */
   strongClassroomMatch?: boolean;
+  /**
+   * True when retrieval found a COVERAGE match: a fact contains a strong
+   * majority (>= 2/3) of the query's content lexemes but not necessarily all of
+   * them. Weaker than `strongClassroomMatch`: it satisfies the grounding and
+   * kb-match gates (the relevant fact is provably present) but does NOT bypass
+   * the confidence floor — only a full FTS hit may auto-send without a "high"
+   * self-report. Optional; default false.
+   */
+  coverageClassroomMatch?: boolean;
   /** The classified intent of the inbound message (null when unclassified). */
   queryCategory: FactCategory | null;
   /** Categories of the Classroom facts actually retrieved for grounding. */
@@ -113,13 +122,18 @@ export function evaluateAutoSend(input: AutoSendInput): AutoSendDecision {
   // below (grounding / confidence / kbMatch). It NEVER satisfies the safety
   // floors that follow (category, risky-intent, conflict, compliance).
   const fts = input.strongClassroomMatch === true;
+  // A coverage hit also grounds the answer (the relevant fact is provably
+  // present), so it relaxes the grounding + kb-match self-report gates — but it
+  // is weaker than a full FTS hit and must NOT bypass the confidence floor.
+  const lexicalGrounded = fts || input.coverageClassroomMatch === true;
   // Grounding must come from the curated Classroom — never the legacy blob/stub.
-  if (!input.groundedInClassroom && !fts)
+  if (!input.groundedInClassroom && !lexicalGrounded)
     reasons.push("not_grounded_in_classroom");
-  // Model confidence is advisory but required to be explicitly "high".
+  // Model confidence is advisory but required to be explicitly "high". Only a
+  // full FTS hit (every term present) is strong enough to stand in for it.
   if (input.confidence !== "high" && !fts) reasons.push("confidence_not_high");
   // The answer must actually quote the Classroom (not a freehand guess).
-  if (!input.kbMatched && !fts) reasons.push("no_kb_match");
+  if (!input.kbMatched && !lexicalGrounded) reasons.push("no_kb_match");
   // A risky inbound intent always blocks, regardless of grounding.
   if (input.queryCategory && RISKY_QUERY_CATEGORIES.has(input.queryCategory)) {
     reasons.push("risky_query_category");

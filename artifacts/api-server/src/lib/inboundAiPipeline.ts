@@ -618,6 +618,13 @@ export async function runInboundAiPipeline(
       );
     }
     const strongClassroomMatch = classroomMatch === "fts";
+    // Coverage is a weaker-but-real grounding signal: the relevant fact is
+    // present, so we treat the turn as grounded (skip the slow Professor
+    // escalation and suppress the Co-Pilot holding fallback). Auto-Pilot's gate
+    // still demands a "high" confidence self-report before sending — only a full
+    // FTS hit bypasses that (see evaluateAutoSend).
+    const coverageClassroomMatch = classroomMatch === "coverage";
+    const classroomGrounded = strongClassroomMatch || coverageClassroomMatch;
     const classroomContext = facts
       .map((f) => `- ${f.statement} (source: ${f.sourceLabel})`)
       .join("\n");
@@ -655,7 +662,7 @@ export async function runInboundAiPipeline(
     // (Manual already returned above; Auto-Pilot is the else branch below and
     // this gate is Co-Pilot-only).
     const fallbackPhrase = (tenant.fallbackPhrase ?? "").trim();
-    const ungrounded = !draft.kbMatched && !strongClassroomMatch;
+    const ungrounded = !draft.kbMatched && !classroomGrounded;
     if (
       engagementMode === "copilot" &&
       fallbackPhrase.length > 0 &&
@@ -709,7 +716,7 @@ export async function runInboundAiPipeline(
       professorConfigured() &&
       draft.status === "drafted" &&
       !draft.kbMatched &&
-      !strongClassroomMatch
+      !classroomGrounded
     ) {
       try {
         const lib = await retrieveLibraryContext(tenant.id, messageBody);
@@ -938,6 +945,7 @@ export async function runInboundAiPipeline(
               kbMatched: draft.kbMatched,
               groundedInClassroom: draft.groundedInClassroom,
               strongClassroomMatch,
+              coverageClassroomMatch,
               queryCategory,
               groundingCategories,
               hasConflict,

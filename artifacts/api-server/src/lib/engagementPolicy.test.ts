@@ -237,6 +237,65 @@ describe("evaluateAutoSend — strongClassroomMatch (FTS trust)", () => {
   });
 });
 
+describe("evaluateAutoSend — coverageClassroomMatch (paraphrase grounding)", () => {
+  // A coverage hit means the relevant fact is provably present (>= 2/3 of the
+  // query's content lexemes) but NOT every term — weaker than a full FTS hit.
+  // It grounds the answer (relaxes grounding + kbMatch) but must STILL require
+  // the Student's "high" confidence self-report before an autonomous send.
+  it("auto-sends a not-grounded, kbMatch=false draft when coverage matched AND confidence is high", () => {
+    const d = evaluateAutoSend({
+      ...HAPPY,
+      kbMatched: false,
+      groundedInClassroom: false,
+      coverageClassroomMatch: true,
+    });
+    expect(d.autoSend).toBe(true);
+    expect(d.reasons).toEqual([]);
+  });
+
+  it("does NOT bypass the confidence floor (unlike a full FTS hit)", () => {
+    for (const c of ["medium", "low", null] as const) {
+      const d = evaluateAutoSend({
+        ...HAPPY,
+        confidence: c,
+        kbMatched: false,
+        groundedInClassroom: false,
+        coverageClassroomMatch: true,
+      });
+      expect(d.autoSend).toBe(false);
+      expect(d.reasons).toContain("confidence_not_high");
+      // …but the grounding/kbMatch gates ARE satisfied by coverage.
+      expect(d.reasons).not.toContain("not_grounded_in_classroom");
+      expect(d.reasons).not.toContain("no_kb_match");
+    }
+  });
+
+  it("does NOT relax the safety floors (category, risky intent, conflict, compliance)", () => {
+    expect(
+      evaluateAutoSend({
+        ...HAPPY,
+        coverageClassroomMatch: true,
+        groundingCategories: ["general", "pricing"],
+      }).reasons,
+    ).toContain("unsafe_grounding_category");
+    expect(
+      evaluateAutoSend({
+        ...HAPPY,
+        coverageClassroomMatch: true,
+        queryCategory: "compliance",
+      }).reasons,
+    ).toContain("risky_query_category");
+    expect(
+      evaluateAutoSend({ ...HAPPY, coverageClassroomMatch: true, hasConflict: true })
+        .reasons,
+    ).toContain("unresolved_conflict");
+    expect(
+      evaluateAutoSend({ ...HAPPY, coverageClassroomMatch: true, complianceOk: false })
+        .reasons,
+    ).toContain("compliance_block");
+  });
+});
+
 // A fully-passing Professor-escalation send input. Each gate test clones this
 // and flips ONE field to prove the gate independently blocks the send.
 const HAPPY_ESC: EscalationSendInput = {

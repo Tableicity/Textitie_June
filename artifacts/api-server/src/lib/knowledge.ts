@@ -516,7 +516,7 @@ export async function getCurrentClassroomVersion(
   return v ?? null;
 }
 
-export type ClassroomMatchType = "fts" | "fallback" | "none";
+export type ClassroomMatchType = "fts" | "coverage" | "fallback" | "none";
 
 export interface ClassroomRetrieval {
   /** Facts to ground the Student, ranked best-first. */
@@ -526,12 +526,17 @@ export interface ClassroomRetrieval {
    *  - "fts": a real lexical hit. websearch_to_tsquery ANDs every non-stopword
    *    term, so an "fts" match means ALL of them appear in the fact — a
    *    deterministic grounding signal, stronger than the Student's self-report.
+   *  - "coverage": no full AND hit, but a fact contains a strong majority
+   *    (>= 2/3, and at least 2) of the query's content lexemes. A real grounding
+   *    signal for a paraphrase — weaker than "fts" (not EVERY term present), so
+   *    callers must still require the Student's "high" confidence before an
+   *    autonomous send.
    *  - "fallback": no lexical hit; we returned the version's facts blind so the
    *    Student still has context. NOT evidence the answer is grounded.
    *  - "none": the tenant has no published Classroom version.
    */
   matchType: ClassroomMatchType;
-  /** ts_rank of the top FTS row (null unless matchType === "fts"). */
+  /** ts_rank of the top row (null unless matchType is "fts" or "coverage"). */
   topRank: number | null;
 }
 
@@ -577,6 +582,54 @@ export async function retrieveClassroomFactsWithMatch(
         facts: rows.map((r) => r.fact),
         matchType: "fts",
         topRank: rows[0]?.rank ?? null,
+      };
+    }
+    // Coverage tier: the strict AND query missed, but a paraphrase often shares
+    // MOST of its content words with the right fact while adding a few the fact
+    // never uses ("how LONG do carriers store...", "what KIND of multimedia...").
+    // Tolerate those misses: keep facts that contain >= 2/3 of the query's
+    // content lexemes (and at least 2 of them), so a strong paraphrase grounds
+    // while an incidental single-topic-word overlap ("SMS") does not. This is a
+    // WEAKER signal than "fts" (not every term present): callers may use it to
+    // ground the answer, but it must NOT bypass the Student's confidence floor.
+    const orQuery = sql`replace(websearch_to_tsquery('english', ${q})::text, '&', '|')::tsquery`;
+    const qTerms = sql`tsvector_to_array(to_tsvector('english', ${q}))`;
+    const factTerms = sql`tsvector_to_array(to_tsvector('english', ${classroomFactsTable.statement}))`;
+    const matchedExpr = sql<number>`cardinality(array(select unnest(${qTerms}) intersect select unnest(${factTerms})))`;
+    const totalExpr = sql<number>`cardinality(${qTerms})`;
+    const rankExpr = sql<number>`ts_rank(to_tsvector('english', ${classroomFactsTable.statement}), ${orQuery})`;
+    const candidates = await db
+      .select({
+        fact: classroomFactsTable,
+        matched: matchedExpr,
+        total: totalExpr,
+        rank: rankExpr,
+      })
+      .from(classroomFactsTable)
+      .where(
+        and(
+          eq(classroomFactsTable.versionId, version.id),
+          sql`to_tsvector('english', ${classroomFactsTable.statement}) @@ ${orQuery}`,
+        ),
+      )
+      // Order by OVERLAP first so the highest-coverage facts always survive the
+      // candidate cap — the category boost is only a tie-breaker among equally
+      // overlapping facts, never a gate. (If boost led, a misclassified category
+      // could pack the window with low-overlap same-category rows and push a
+      // genuinely-qualifying off-category fact out before JS qualification.)
+      .orderBy(sql`${matchedExpr} DESC, ${boost}${rankExpr} DESC`)
+      .limit(Math.max(limit, 24));
+    const qualifying = candidates.filter((c) => {
+      const total = Number(c.total);
+      const matched = Number(c.matched);
+      // >= 2 content lexemes from a >= 2-lexeme query, >= 2/3 coverage.
+      return total >= 2 && matched >= 2 && matched * 3 >= total * 2;
+    });
+    if (qualifying.length > 0) {
+      return {
+        facts: qualifying.slice(0, limit).map((c) => c.fact),
+        matchType: "coverage",
+        topRank: Number(qualifying[0]!.rank) || null,
       };
     }
   }
