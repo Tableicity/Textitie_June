@@ -5,8 +5,10 @@ import {
   factDerivedFromCustomer,
   factGroundedInLibrary,
   screenEscalatedFacts,
+  flagEscalationConflict,
   type EscalatedFact,
 } from "./knowledge";
+import { trigrams } from "./textSimilarity";
 
 // A well-formed Professor escalation payload. Tests clone + mutate this to prove
 // each validation rule independently.
@@ -273,5 +275,51 @@ describe("screenEscalatedFacts (pre-persistence safety screen)", () => {
       { customerText: "Is my data safe?", libraryContext: library },
     );
     expect(kept).toHaveLength(1);
+  });
+});
+
+describe("flagEscalationConflict (conflict-band review trigger)", () => {
+  const f = (statement: string, category: EscalatedFact["category"]): EscalatedFact => ({
+    statement,
+    category,
+    provenance: "general_expertise",
+  });
+  const existing = (statement: string, category: string) => ({
+    statement,
+    category,
+    tris: trigrams(statement),
+  });
+
+  it("does not flag a fact with no meaningful overlap (sim < 0.3)", () => {
+    const reason = flagEscalationConflict(
+      f("Two-factor authentication is recommended for all accounts.", "technical_setup"),
+      [existing("Refunds are processed within five business days.", "general")],
+    );
+    expect(reason).toBeNull();
+  });
+
+  it("does not flag a near-duplicate (sim >= 0.5) — dedupe owns that case", () => {
+    const reason = flagEscalationConflict(
+      f("Refunds are handled within five business days of approval.", "general"),
+      [existing("Refunds are processed within five business days.", "general")],
+    );
+    expect(reason).toBeNull();
+  });
+
+  it("flags a same-category fact in the [0.3, 0.5) overlap band", () => {
+    const reason = flagEscalationConflict(
+      f("Onboarding takes roughly three working days to finish.", "features"),
+      [existing("Onboarding takes about three business days.", "features")],
+    );
+    expect(reason).toContain("Lexically overlaps");
+  });
+
+  it("flags a band-overlap fact tagged a different category than the existing one", () => {
+    const reason = flagEscalationConflict(
+      f("Onboarding takes roughly three working days to finish.", "features"),
+      [existing("Onboarding takes about three business days.", "pricing")],
+    );
+    expect(reason).toContain("pricing");
+    expect(reason).toContain("features");
   });
 });

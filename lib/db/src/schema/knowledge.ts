@@ -179,9 +179,17 @@ export const absorbedFactsTable = pgTable(
     messageId: integer("message_id"),
     sourceLabel: text("source_label").notNull(),
     statement: text("statement").notNull(),
-    // "draft" | "published" | "rejected" | "conflict". "conflict" is set by the
-    // Librarian at push time when a fact contradicts another accepted fact; the
-    // Conductor resolves it by re-accepting (published) or rejecting one side.
+    // "draft" | "published" | "auto_published" | "rejected" | "conflict".
+    //  - "auto_published": a fact LEARNED autonomously by the live Professor
+    //    escalation flywheel. Groundable + auto-sendable immediately (mirrored
+    //    into classroom_facts, which has no status), but provisional: it shows in
+    //    the Conductor review queue until a human approves (-> "published") or
+    //    rejects (-> "rejected").
+    //  - "conflict": set by the Librarian at push time when a fact contradicts
+    //    another accepted fact, OR by the escalation persist path's deterministic
+    //    lexical/category check; the Conductor resolves it by re-accepting
+    //    (published) or rejecting one side. Carries conflictReason.
+    // Plain text (no DB enum/check) so a bad value can never 500 a list query.
     status: text("status").notNull().default("draft"),
     // Routing category — "pricing" | "compliance" | "features" |
     // "technical_setup" | "general". Plain text (no DB enum/check) + app-level

@@ -13,6 +13,11 @@ import {
 // The Classroom push runs the Librarian (Grok) adjudication before snapshotting.
 // That is an external LLM seam; stub it to a deterministic pass-through so these
 // tests assert the snapshot/union + promotion-gate behavior, not LLM output.
+// `conflictStatements` lets a test force the adjudicator to flag specific
+// statements as contradictions; empty (the default) keeps the pass-through.
+const librarianControl = vi.hoisted(() => ({
+  conflictStatements: new Set<string>(),
+}));
 vi.mock("../lib/librarian", async (importActual) => {
   const actual = await importActual<typeof import("../lib/librarian")>();
   return {
@@ -25,12 +30,23 @@ vi.mock("../lib/librarian", async (importActual) => {
         sourceLabel: string;
         tokenCount: number;
       }>,
-    ) => ({
-      publish: facts.map((f) => ({ ...f })),
-      conflicts: [],
-      mergedCount: 0,
-      conflictCount: 0,
-    }),
+    ) => {
+      const publish: typeof facts = [];
+      const conflicts: Array<{ id: number; reason: string }> = [];
+      for (const f of facts) {
+        if (librarianControl.conflictStatements.has(f.statement)) {
+          conflicts.push({ id: f.id, reason: "stubbed contradiction" });
+        } else {
+          publish.push({ ...f });
+        }
+      }
+      return {
+        publish,
+        conflicts,
+        mergedCount: 0,
+        conflictCount: conflicts.length,
+      };
+    },
   };
 });
 
@@ -114,6 +130,8 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  // Reset the forced-conflict set so it can't leak across cases.
+  librarianControl.conflictStatements.clear();
   // Reset the knowledge state between cases so version counts are deterministic.
   await db
     .delete(classroomFactsTable)
@@ -226,6 +244,54 @@ describe("Brain push — shared-pool snapshot invariant", () => {
       .where(eq(absorbedFactsTable.id, professorDraftId));
     expect(row.status).toBe("draft");
     expect(await versionCount()).toBe(0);
+  });
+});
+
+describe("Self-learned (auto_published) facts in a human re-snapshot", () => {
+  it("demotes an auto_published fact to conflict when the Librarian flags it on a push", async () => {
+    // A clean published fact so the push has something safe to publish
+    // (exercises the main snapshot branch, not the all_conflict branch).
+    await seedFact({
+      source: "professor",
+      status: "published",
+      statement: "Clean published fact that should survive",
+    });
+    // A self-learned provisional fact the Librarian will adjudicate as a
+    // contradiction during this human push.
+    const autoId = await seedFact({
+      source: "professor",
+      status: "auto_published",
+      statement: "Self-learned provisional fact that contradicts",
+    });
+    librarianControl.conflictStatements.add(
+      "Self-learned provisional fact that contradicts",
+    );
+
+    const res = await asConductor(
+      request(app).post(`/api/tenants/${tenantId}/classroom/push`),
+    ).send({});
+
+    expect(res.status).toBe(201);
+
+    // The auto_published row must be demoted to conflict (with a reason) — not
+    // left as auto_published, where it would stay groundable and silently
+    // re-enter future push unions.
+    const [row] = await db
+      .select({
+        status: absorbedFactsTable.status,
+        conflictReason: absorbedFactsTable.conflictReason,
+      })
+      .from(absorbedFactsTable)
+      .where(eq(absorbedFactsTable.id, autoId));
+    expect(row.status).toBe("conflict");
+    expect(row.conflictReason).toBeTruthy();
+
+    // ...and it must not appear in the new published Classroom version.
+    const statements = await latestPublishedFacts();
+    expect(statements).toContain("Clean published fact that should survive");
+    expect(statements).not.toContain(
+      "Self-learned provisional fact that contradicts",
+    );
   });
 });
 

@@ -86,8 +86,11 @@ export async function publishClassroomSnapshot(opts: {
   );
 
   // Flag a contradiction onto its source absorbed facts. Guarded by tenantId
-  // and status="published" so a fact the Conductor concurrently rejected (in
-  // the window between adjudication and commit) is never clobbered.
+  // and an "active truth" status (published OR auto_published) so a fact the
+  // Conductor concurrently rejected (in the window between adjudication and
+  // commit) is never clobbered, while a self-learned `auto_published` fact that
+  // turns out to contradict is still correctly demoted to `conflict` (otherwise
+  // it would stay groundable and re-enter future push unions).
   type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
   const markConflicts = async (tx: Tx) => {
     for (const c of verdict.conflicts) {
@@ -98,7 +101,7 @@ export async function publishClassroomSnapshot(opts: {
           and(
             eq(absorbedFactsTable.id, c.id),
             eq(absorbedFactsTable.tenantId, tenantId),
-            eq(absorbedFactsTable.status, "published"),
+            inArray(absorbedFactsTable.status, ["published", "auto_published"]),
           ),
         );
     }

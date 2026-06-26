@@ -681,6 +681,7 @@ export async function runInboundAiPipeline(
                         tenantSlug,
                         conversationId,
                         persisted: learnedFacts,
+                        flagged: persistResult.flagged,
                         versionId: persistResult.versionId,
                         categories: escalatedCategories,
                       },

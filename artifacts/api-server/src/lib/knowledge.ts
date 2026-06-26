@@ -55,6 +55,20 @@ export const FACT_CATEGORIES = [
 ] as const;
 export type FactCategory = (typeof FACT_CATEGORIES)[number];
 
+// Canonical absorbed-fact lifecycle. Free-form text in the DB (no CHECK), so
+// validation is app-level. "auto_published" = provisional truth learned
+// autonomously by the live Professor escalation flywheel: groundable +
+// auto-sendable like "published", but surfaced in the Conductor review queue
+// until a human approves (-> "published") or rejects (-> "rejected").
+export const ABSORBED_FACT_STATUSES = [
+  "draft",
+  "published",
+  "auto_published",
+  "rejected",
+  "conflict",
+] as const;
+export type AbsorbedFactStatus = (typeof ABSORBED_FACT_STATUSES)[number];
+
 export function normalizeCategory(raw: unknown): FactCategory {
   const v = String(raw ?? "")
     .trim()
@@ -1091,6 +1105,34 @@ export function dedupeEscalatedFacts(
   return kept;
 }
 
+// Lexical-overlap / category-conflict floor. Facts at or above DEDUPE_SIM are
+// already removed by dedupeEscalatedFacts as duplicates; a fact landing in the
+// [CONFLICT_SIM, DEDUPE_SIM) band is "close but not identical" to existing
+// truth — a deterministic contradiction smell. Tunable.
+const ESCALATION_CONFLICT_SIM = 0.3;
+const ESCALATION_DEDUPE_SIM = 0.5; // same threshold dedupeEscalatedFacts uses
+
+/**
+ * Returns a human-readable reason when a surviving (non-duplicate) escalated
+ * fact lexically overlaps an existing Classroom fact without duplicating it, or
+ * overlaps one tagged a different category (same topic, conflicting bucket).
+ * Null when the fact is clean. Pure; exported for unit testing.
+ */
+export function flagEscalationConflict(
+  fact: EscalatedFact,
+  existing: { statement: string; category: string; tris: Set<string> }[],
+): string | null {
+  const t = trigrams(fact.statement);
+  for (const e of existing) {
+    const sim = trigramSimilarity(t, e.tris);
+    if (sim < ESCALATION_CONFLICT_SIM || sim >= ESCALATION_DEDUPE_SIM) continue;
+    return e.category !== fact.category
+      ? `Overlaps an existing "${e.category}" fact but is tagged "${fact.category}" (possible contradiction)`
+      : `Lexically overlaps an existing fact without duplicating it (possible contradiction)`;
+  }
+  return null;
+}
+
 /**
  * Persist Professor-vetted escalation facts as live Classroom truth. Inside a
  * transaction holding the per-tenant push advisory lock (serializing against
@@ -1102,8 +1144,8 @@ export function dedupeEscalatedFacts(
 export async function persistEscalatedFacts(
   tenantId: number,
   facts: EscalatedFact[],
-): Promise<{ persisted: number; versionId: number | null }> {
-  if (facts.length === 0) return { persisted: 0, versionId: null };
+): Promise<{ persisted: number; flagged: number; versionId: number | null }> {
+  if (facts.length === 0) return { persisted: 0, flagged: 0, versionId: null };
 
   return await db.transaction(async (tx) => {
     await tx.execute(
@@ -1142,29 +1184,62 @@ export async function persistEscalatedFacts(
         return created;
       })());
 
-    // Re-check duplicates INSIDE the lock against the live version.
+    // Re-check duplicates INSIDE the lock against the live version. Pull category
+    // too so we can flag same-topic / different-category contradictions.
     const existingRows = await tx
-      .select({ statement: classroomFactsTable.statement })
+      .select({
+        statement: classroomFactsTable.statement,
+        category: classroomFactsTable.category,
+      })
       .from(classroomFactsTable)
       .where(eq(classroomFactsTable.versionId, version.id));
     const toInsert = dedupeEscalatedFacts(
       existingRows.map((r) => r.statement),
       facts,
     );
-    if (toInsert.length === 0) return { persisted: 0, versionId: version.id };
+    if (toInsert.length === 0) {
+      return { persisted: 0, flagged: 0, versionId: version.id };
+    }
+
+    const existingForConflict = existingRows.map((r) => ({
+      statement: r.statement,
+      category: r.category,
+      tris: trigrams(r.statement),
+    }));
+
+    // Split survivors: clean -> provisional groundable truth; flagged -> held
+    // for human review, fail-closed (NOT groundable).
+    const clean: EscalatedFact[] = [];
+    const flagged: { fact: EscalatedFact; reason: string }[] = [];
+    for (const f of toInsert) {
+      const reason = flagEscalationConflict(f, existingForConflict);
+      if (reason) flagged.push({ fact: f, reason });
+      else clean.push(f);
+    }
 
     const sourceLabel = "Professor (live escalation)";
-    const classroomValues = toInsert.map((f) => ({
-      tenantId,
-      versionId: version.id,
-      sourceLabel,
-      statement: f.statement,
-      category: f.category,
-      tokenCount: estimateTokens(f.statement),
-    }));
-    await tx.insert(classroomFactsTable).values(classroomValues);
-    await tx.insert(absorbedFactsTable).values(
-      toInsert.map((f) => ({
+
+    // Clean facts -> live Classroom (groundable now). Flagged facts are NEVER
+    // written to classroom_facts, so they can never ground the Student.
+    if (clean.length > 0) {
+      await tx.insert(classroomFactsTable).values(
+        clean.map((f) => ({
+          tenantId,
+          versionId: version.id,
+          sourceLabel,
+          statement: f.statement,
+          category: f.category,
+          tokenCount: estimateTokens(f.statement),
+        })),
+      );
+    }
+
+    // Mirror into absorbed_facts: clean as "auto_published" (provisional but
+    // live — groundable + auto-sendable, surfaced in the review queue); flagged
+    // as "conflict" (fail-closes hasUnresolvedConflicts() for that category
+    // until a human resolves it).
+    await tx.insert(absorbedFactsTable).values([
+      ...clean.map((f) => ({
         tenantId,
         sessionId: null,
         documentId: null,
@@ -1172,20 +1247,43 @@ export async function persistEscalatedFacts(
         sourceLabel,
         statement: f.statement,
         category: f.category,
-        status: "published",
+        status: "auto_published",
+        conflictReason: null,
         tokenCount: estimateTokens(f.statement),
       })),
-    );
+      ...flagged.map(({ fact, reason }) => ({
+        tenantId,
+        sessionId: null,
+        documentId: null,
+        messageId: null,
+        sourceLabel,
+        statement: fact.statement,
+        category: fact.category,
+        status: "conflict",
+        conflictReason: reason,
+        tokenCount: estimateTokens(fact.statement),
+      })),
+    ]);
 
-    const addedTokens = classroomValues.reduce((s, v) => s + v.tokenCount, 0);
-    await tx
-      .update(classroomVersionsTable)
-      .set({
-        factCount: version.factCount + toInsert.length,
-        tokenCount: version.tokenCount + addedTokens,
-      })
-      .where(eq(classroomVersionsTable.id, version.id));
+    // Only clean facts entered the live version; count just those.
+    if (clean.length > 0) {
+      const addedTokens = clean.reduce(
+        (s, f) => s + estimateTokens(f.statement),
+        0,
+      );
+      await tx
+        .update(classroomVersionsTable)
+        .set({
+          factCount: version.factCount + clean.length,
+          tokenCount: version.tokenCount + addedTokens,
+        })
+        .where(eq(classroomVersionsTable.id, version.id));
+    }
 
-    return { persisted: toInsert.length, versionId: version.id };
+    return {
+      persisted: clean.length,
+      flagged: flagged.length,
+      versionId: version.id,
+    };
   });
 }

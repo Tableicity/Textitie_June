@@ -8,10 +8,11 @@ description: How ungrounded inbound SMS escalate to the autonomous Professor, au
 When an inbound Student draft is **ungrounded** (`!kbMatched`) the webhook escalates to an
 autonomous Professor (OpenRouter/Qwen, `qwen/qwen3-max`) that answers from the tenant Library + its own expertise and
 returns strict JSON (2-3 atomic categorized facts + a customer reply + 3 engagement questions +
-confidence). Facts are auto-persisted as **published truth** into the current Classroom version so
-the system never asks the same thing twice; under `autopilot` it may auto-send the reply, `copilot`
-whispers/drafts it, `manual` skips AI entirely. (Modes are canonical `manual | copilot | autopilot`;
-legacy `gated_auto`→`autopilot`, `assisted`→`copilot`, aliased on write.)
+confidence). Clean facts are auto-persisted into the current Classroom version as **provisional
+truth** (see "PROVISIONAL" section below) so the system never asks the same thing twice; under
+`autopilot` it may auto-send the reply, `copilot` whispers/drafts it, `manual` skips AI entirely.
+(Modes are canonical `manual | copilot | autopilot`; legacy `gated_auto`→`autopilot`,
+`assisted`→`copilot`, aliased on write.)
 
 ## Injection safety is deterministic, not provenance-trust
 The customer SMS is QUERY-ONLY and must NEVER become a persisted fact. The Professor labels each
@@ -38,6 +39,37 @@ not merely model-returned), no unresolved conflict, telephony compliance OK, aut
 already handle it, AND the **independent
 inbound query intent is not risky** (a risky inbound intent blocks the send even if the Professor
 labeled its facts benign — the fact classifier can under-tag).
+
+## Self-learned facts are PROVISIONAL, not permanent (review-queue hardening)
+An architect review flagged that auto-persisting escalated facts as plain `published` lets a single
+bad self-learned fact become permanent truth silently. The hardening: at persist time the escalated
+survivors split into
+- **clean** → written to `classroom_facts` (groundable now) AND mirrored to `absorbed_facts` with
+  status **`auto_published`** (provisional-but-live: grounds + auto-sends exactly like `published`,
+  because grounding reads `classroom_facts` which has NO status column, and the auto-send gate never
+  reads fact status), surfaced for a later human review queue;
+- **flagged** (`flagEscalationConflict`: trigram Jaccard sim to an existing classroom fact in the
+  `[0.3, 0.5)` band — `[CONFLICT_SIM, DEDUPE_SIM)` — or overlaps a *different-category* fact) →
+  written ONLY to `absorbed_facts` as status **`conflict`** with a `conflictReason`, NEVER to
+  `classroom_facts`, so it can't ground and it fail-closes auto-send for its category via
+  `hasUnresolvedConflicts`.
+
+**Why:** statuses on these knowledge columns are free-form text by design (project hard-rule: no DB
+CHECK/enum — one bad row else 500s the list endpoint), so adding `auto_published` needs **no
+DDL/migration**.
+
+## Invariant: every "live truth" status must move in LOCKSTEP
+There is now MORE than one active-truth status (`published` AND `auto_published`). Any code that
+reasons over "current truth" must treat them as a **set**, not just `published`. The review caught a
+real bug: the push-union SELECTs (`routes/knowledge.ts`, `routes/brain.ts`) were widened to
+`inArray(status, ['published','auto_published'])`, but the Librarian **conflict-marking UPDATE** in
+`classroomPublish.ts` still guarded `eq(status,'published')` — so an `auto_published` fact the
+Librarian adjudicated as a conflict on a human/Brain push was a **no-op update**: it stayed
+`auto_published`, stayed groundable, and re-entered every future union.
+**How to apply:** when you add a live-truth status, grep for BOTH the union SELECTs and the
+conflict/supersede UPDATEs and widen them together; add a regression test that pushes with an
+`auto_published` fact forced into `verdict.conflicts` and asserts it ends up `conflict` + absent from
+the new published version.
 
 ## Concurrency
 Live escalation persistence takes the **same advisory lock** as human Classroom pushes

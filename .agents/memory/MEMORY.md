@@ -16,7 +16,7 @@
 - [Stripe Checkout wiring](stripe-checkout-wiring.md) — live price IDs, stub customer guard, Stripe v22 type cast, tenant JWT scope gotcha, generated client call convention.
 - [SSRF guard gotchas](ssrf-blocklist-gotchas.md) — never add ::ffff:0:0/96 to net.BlockList (blocks ALL public IPv4); close DNS rebinding via http/https custom `lookup`, not fetch.
 - [Carrier billing reconciliation](carrier-billing-reconciliation.md) — multi-pass Stripe sub-item sync must re-fetch live items each pass; never delete the last item; best-effort sync needs a reconcile recovery path; number_type is derived.
-- [Professor escalation loop](professor-escalation-loop.md) — ungrounded inbound escalates to Professor; don't trust model-attested provenance, screen facts deterministically; send gate stricter than persist gate.
+- [Professor escalation loop](professor-escalation-loop.md) — ungrounded inbound → Professor; screen facts deterministically (not model provenance); self-learned facts are PROVISIONAL (auto_published); every live-truth status moves in lockstep (push-union + conflict-mark).
 - [Brain pull shared pool](brain-pull-shared-pool.md) — Brain pull reuses absorbed_facts (source='brain') + the full-UNION Classroom push, never a separate table; push validates ids fail-closed.
 - [Professor model selection](professor-model-selection.md) — Professor runs on OpenRouter/Qwen (non-thinking default) via Replit AI proxy, Student stays Grok; reasoning Qwen tiers were ~10x too slow.
 - [FTS retrieval AND-semantics](fts-retrieval-and-semantics.md) — websearch_to_tsquery ANDs every lexeme; conversational queries silently return 0 matches; add an OR fallback + don't let the prompt hard-refuse on empty RAG.

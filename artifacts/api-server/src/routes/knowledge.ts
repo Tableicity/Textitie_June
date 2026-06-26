@@ -1122,7 +1122,10 @@ router.post(
       .where(
         and(
           eq(absorbedFactsTable.tenantId, tenantId),
-          eq(absorbedFactsTable.status, "published"),
+          // Include provisional self-learned ("auto_published") facts so a human
+          // push re-snapshots them instead of silently dropping them from the
+          // live Classroom; the Librarian then adjudicates them in this push.
+          inArray(absorbedFactsTable.status, ["published", "auto_published"]),
         ),
       );
 
