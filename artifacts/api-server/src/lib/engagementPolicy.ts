@@ -1,5 +1,6 @@
 import type { FactCategory } from "./knowledge";
 import type { StudentConfidence } from "@workspace/ai-student";
+import type { RouteBranch } from "@workspace/ai-router";
 
 /**
  * B4 — per-tenant engagement mode + the pure gate that decides whether the
@@ -170,6 +171,29 @@ export function describeHandbackReason(reasons: string[]): string {
     if (set.has(code)) return text;
   }
   return "Needs your review";
+}
+
+// ---------------------------------------------------------------------------
+// Triage-router branch safety invariant (Co-Pilot router; Auto-Pilot deferred).
+//
+// The Co-Pilot triage router can short-circuit an inbound into one of two
+// advisory, DRAFT-ONLY branches that are NEVER Classroom-grounded:
+//   - "out_of_scope"     → an LLM-authored decline, and
+//   - "general_in_scope" → an ungrounded Grok "flash" answer.
+// Neither produces curated facts, so neither may EVER auto-send or be learned in
+// ANY engagement mode. Only "tenant_specific" (the grounded Classroom → Professor
+// pipeline) is ever eligible for auto-send/learning.
+//
+// Today the router runs for Co-Pilot ONLY, which never auto-sends or learns at
+// all, so the two ungrounded branches are structurally unreachable from any
+// send/persist path (they short-circuit with a draft + return). This predicate
+// is the EXPLICIT seam the deferred Auto-Pilot router task MUST consult: before
+// any auto-send/learn decision on a routed turn, gate on
+// isRouterBranchAutoSendable(branch) so the ungrounded branches can never reach
+// the send/persist path even when the router is wired into Auto-Pilot.
+// ---------------------------------------------------------------------------
+export function isRouterBranchAutoSendable(branch: RouteBranch): boolean {
+  return branch === "tenant_specific";
 }
 
 export type EscalationSendInput = {

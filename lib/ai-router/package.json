@@ -1,0 +1,17 @@
+{
+  "name": "@workspace/ai-router",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {},
+  "dependencies": {
+    "@workspace/db": "workspace:*",
+    "openai": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

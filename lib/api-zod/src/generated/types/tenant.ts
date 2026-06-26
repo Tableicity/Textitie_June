@@ -31,6 +31,11 @@ export interface Tenant {
    * @nullable
    */
   knowledgeBase: string | null;
+  /**
+   * Conductor-set short brand/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. "B2B HVAC parts supplier; answer product/ordering/support questions only"). null = router fails open to the Classroom/Professor draft path.
+   * @nullable
+   */
+  brandScope: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled: boolean;
   createdAt: Date;

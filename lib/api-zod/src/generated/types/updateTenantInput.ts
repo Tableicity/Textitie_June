@@ -24,6 +24,11 @@ export interface UpdateTenantInput {
   chatwootInboxId?: number | null;
   /** @nullable */
   knowledgeBase?: string | null;
+  /**
+   * Conductor-set short brand/vertical blurb for the inbound triage router. null/empty = router fails open to the existing path.
+   * @nullable
+   */
+  brandScope?: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled?: boolean;
 }

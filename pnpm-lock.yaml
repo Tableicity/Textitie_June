@@ -173,6 +173,9 @@ importers:
 
   artifacts/api-server:
     dependencies:
+      '@workspace/ai-router':
+        specifier: workspace:*
+        version: link:../../lib/ai-router
       '@workspace/ai-student':
         specifier: workspace:*
         version: link:../../lib/ai-student
@@ -822,6 +825,19 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+
+  lib/ai-router:
+    dependencies:
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../db
+      openai:
+        specifier: ^6.0.0
+        version: 6.35.0(ws@8.21.0)(zod@4.3.6)
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
 
   lib/ai-student:
     dependencies:

@@ -697,6 +697,16 @@ export default function Inbox() {
   const aiDraftBody = aiState?.draftBody?.trim() ?? "";
   const aiDraftReady = aiState?.status === "drafted" && aiDraftBody.length > 0;
 
+  // Provenance label for the Co-Pilot triage router's two short-circuit drafts,
+  // so the agent knows a "drafted" reply isn't a Classroom-grounded answer.
+  const draftProvenanceLabel = !aiDraftReady
+    ? null
+    : aiState?.draftSource === "student_flash"
+      ? "Grok general draft — not Classroom grounded"
+      : aiState?.draftSource === "router_decline"
+        ? "Off-scope decline"
+        : null;
+
   // Live send-button colour reflects the effective mode; an Auto-Pilot→Blue
   // handback overrides green for the one message that needs a human. Whisper
   // mode keeps its own amber styling and is independent of engagement mode.
@@ -1460,6 +1470,15 @@ export default function Inbox() {
                       <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
                         <Sparkles className="h-3 w-3" />
                         Auto-Pilot replied
+                      </span>
+                    )}
+                    {draftProvenanceLabel && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600"
+                        data-testid="ai-draft-provenance"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        {draftProvenanceLabel}
                       </span>
                     )}
                     {aiDraftReady && composeText.trim() !== aiDraftBody && (

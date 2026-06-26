@@ -25,8 +25,16 @@ export type ConversationAiState = {
    * @nullable
    */
   draftBody: string | null;
-  /** @nullable */
-  draftSource: "student" | "professor" | null;
+  /**
+   * Origin of the draft. "student" = grounded Classroom draft; "professor" = escalation draft; "student_flash" = Grok general knowledge (NOT Classroom-grounded); "router_decline" = off-scope decline. The latter two are Co-Pilot-only.
+   * @nullable
+   */
+  draftSource:
+    | "student"
+    | "professor"
+    | "student_flash"
+    | "router_decline"
+    | null;
   /** @nullable */
   confidence?: string | null;
   /** @nullable */

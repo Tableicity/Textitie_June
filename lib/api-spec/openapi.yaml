@@ -3067,6 +3067,13 @@ components:
         knowledgeBase:
           type: ["string", "null"]
           description: Free-text knowledge base used by the AI Student to draft Whispers
+        brandScope:
+          type: ["string", "null"]
+          description: >-
+            Conductor-set short brand/vertical blurb the inbound triage router
+            uses to decide whether an inbound SMS is in-scope (e.g. "B2B HVAC
+            parts supplier; answer product/ordering/support questions only").
+            null = router fails open to the Classroom/Professor draft path.
         unregisteredSurchargeEnabled:
           type: boolean
           description: >-
@@ -3086,6 +3093,7 @@ components:
         - chatwootAccountId
         - chatwootInboxId
         - knowledgeBase
+        - brandScope
         - unregisteredSurchargeEnabled
         - createdAt
 
@@ -3137,6 +3145,11 @@ components:
           type: ["integer", "null"]
         knowledgeBase:
           type: ["string", "null"]
+        brandScope:
+          type: ["string", "null"]
+          description: >-
+            Conductor-set short brand/vertical blurb for the inbound triage
+            router. null/empty = router fails open to the existing path.
         unregisteredSurchargeEnabled:
           type: boolean
           description: >-
@@ -3520,7 +3533,12 @@ components:
               description: Suggested reply text to pre-fill the composer (Co-Pilot).
             draftSource:
               type: ["string", "null"]
-              enum: [student, professor, null]
+              enum: [student, professor, student_flash, router_decline, null]
+              description: >-
+                Origin of the draft. "student" = grounded Classroom draft;
+                "professor" = escalation draft; "student_flash" = Grok general
+                knowledge (NOT Classroom-grounded); "router_decline" =
+                off-scope decline. The latter two are Co-Pilot-only.
             confidence:
               type: ["string", "null"]
             queryCategory:

@@ -90,6 +90,16 @@ export default function TenantDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id, tenant?.phoneNumber]);
 
+  const [brandScopeText, setBrandScopeText] = useState("");
+  const [brandScopeDirty, setBrandScopeDirty] = useState(false);
+  useEffect(() => {
+    if (tenant) {
+      setBrandScopeText(tenant.brandScope ?? "");
+      setBrandScopeDirty(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id, tenant?.brandScope]);
+
   const onSavePhone = (values: z.infer<typeof phoneSchema>) => {
     if (!tenant) return;
     const next = values.phoneNumber.trim() || null;
@@ -155,6 +165,29 @@ export default function TenantDetail() {
         },
         onError: (err) => {
           toast({ title: "Update Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const onSaveBrandScope = () => {
+    if (!tenant) return;
+    const next = brandScopeText.trim() || null;
+    updateTenant.mutate(
+      { id: tenant.id, data: { brandScope: next } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
+          setBrandScopeDirty(false);
+          toast({
+            title: "Brand Scope Saved",
+            description: next
+              ? "The inbound triage router will use this to decide if a text is in-scope."
+              : "Brand scope cleared — the triage router falls open to the existing draft path.",
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
         },
       },
     );
@@ -380,6 +413,41 @@ export default function TenantDetail() {
               onCheckedChange={onToggleSurcharge}
               aria-label="Toggle unregistered carrier surcharge"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <MessageSquare size={16} /> Brand Scope (AI triage)
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            A short blurb describing what {tenant.name} is and what the AI may
+            answer. The inbound triage router (Co-Pilot) uses this to sort each
+            text into in-scope vs off-topic before drafting. Leave empty to
+            disable triage — the AI falls back to the Classroom/Professor draft
+            path.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Textarea
+            value={brandScopeText}
+            onChange={(e) => {
+              setBrandScopeText(e.target.value);
+              setBrandScopeDirty(true);
+            }}
+            rows={3}
+            maxLength={1000}
+            placeholder={'e.g. "B2B HVAC parts supplier; answer product, ordering, and support questions only."'}
+          />
+          <div className="flex justify-end">
+            <Button
+              onClick={onSaveBrandScope}
+              disabled={updateTenant.isPending || !brandScopeDirty}
+            >
+              {updateTenant.isPending ? "Saving..." : "Save Brand Scope"}
+            </Button>
           </div>
         </CardContent>
       </Card>

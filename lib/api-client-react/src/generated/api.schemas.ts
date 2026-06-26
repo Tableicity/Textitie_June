@@ -63,6 +63,11 @@ export interface Tenant {
    * @nullable
    */
   knowledgeBase: string | null;
+  /**
+   * Conductor-set short brand/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. "B2B HVAC parts supplier; answer product/ordering/support questions only"). null = router fails open to the Classroom/Professor draft path.
+   * @nullable
+   */
+  brandScope: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled: boolean;
   createdAt: string;
@@ -108,6 +113,11 @@ export interface UpdateTenantInput {
   chatwootInboxId?: number | null;
   /** @nullable */
   knowledgeBase?: string | null;
+  /**
+   * Conductor-set short brand/vertical blurb for the inbound triage router. null/empty = router fails open to the existing path.
+   * @nullable
+   */
+  brandScope?: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled?: boolean;
 }
@@ -392,8 +402,16 @@ export type ConversationAiState = {
    * @nullable
    */
   draftBody: string | null;
-  /** @nullable */
-  draftSource: "student" | "professor" | null;
+  /**
+   * Origin of the draft. "student" = grounded Classroom draft; "professor" = escalation draft; "student_flash" = Grok general knowledge (NOT Classroom-grounded); "router_decline" = off-scope decline. The latter two are Co-Pilot-only.
+   * @nullable
+   */
+  draftSource:
+    | "student"
+    | "professor"
+    | "student_flash"
+    | "router_decline"
+    | null;
   /** @nullable */
   confidence?: string | null;
   /** @nullable */

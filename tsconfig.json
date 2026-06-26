@@ -14,6 +14,9 @@
     },
     {
       "path": "./lib/ai-student"
+    },
+    {
+      "path": "./lib/ai-router"
     }
   ]
 }

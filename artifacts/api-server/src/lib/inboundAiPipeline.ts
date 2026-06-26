@@ -8,7 +8,13 @@ import {
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { postChatwootMessage } from "./chatwoot";
-import { studentWhisper } from "@workspace/ai-student";
+import { studentWhisper, studentFlashDraft } from "@workspace/ai-student";
+import {
+  triageInbound,
+  resolveRouteBranch,
+  routerConfigured,
+  type RouterDecision,
+} from "@workspace/ai-router";
 import {
   retrieveClassroomFactsWithMatch,
   classifyQueryCategory,
@@ -119,6 +125,145 @@ export async function runInboundAiPipeline(
         "SAMA AI: skipped (manual mode or automation handled); state superseded",
       );
       return;
+    }
+
+    // Post a PRIVATE whisper draft to Chatwoot (when configured) for the
+    // short-circuit Co-Pilot router branches, mirroring the whisper the main
+    // draft path posts at the end of the pipeline so Chatwoot-side agents always
+    // see the AI's suggested reply.
+    const postCopilotWhisper = async (whisperBody: string): Promise<void> => {
+      if (!tenant.chatwootAccountId || !tenant.chatwootInboxId) return;
+      try {
+        const post = await postChatwootMessage({
+          accountId: tenant.chatwootAccountId,
+          inboxId: tenant.chatwootInboxId,
+          contactPhone: fromNumber,
+          body: whisperBody,
+          messageType: "outgoing",
+          private: true,
+        });
+        logger.info(
+          { tenantSlug, whisperPost: post.status, detail: post.detail },
+          "SAMA Router: posted Co-Pilot whisper to Chatwoot",
+        );
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          "SAMA Router: Chatwoot whisper failed (non-blocking)",
+        );
+      }
+    };
+
+    // ---- CO-PILOT triage router (pre-retrieval, CO-PILOT ONLY) ----
+    // Classify the inbound BEFORE any retrieval/drafting so the two non-default
+    // branches can short-circuit with a composer-only draft. This NEVER runs for
+    // Auto-Pilot (its block below is byte-for-byte unchanged) or Manual (already
+    // returned above). FAIL-SAFE + FAIL-OPEN: missing GROK_KEYS, no brand scope,
+    // a thrown error, or anything short of a CONFIDENT non-default classification
+    // falls through to the existing grounded pipeline (tenant_specific). Co-Pilot
+    // only ever drafts — never learns, never auto-sends — so neither short-circuit
+    // branch persists anything; the customer text stays QUERY-ONLY.
+    if (engagementMode === "copilot" && routerConfigured()) {
+      const brandScope = (tenant.brandScope ?? "").trim();
+      if (brandScope.length > 0) {
+        let routerDecision: RouterDecision | null = null;
+        try {
+          routerDecision = await triageInbound({
+            tenant,
+            brandScope,
+            inboundBody: messageBody,
+            fromNumber,
+          });
+        } catch (err) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            "SAMA Router: triage threw (failing open to tenant_specific)",
+          );
+          routerDecision = null;
+        }
+        const branch = routerDecision
+          ? resolveRouteBranch(routerDecision)
+          : "tenant_specific";
+        logger.info(
+          {
+            tenantSlug,
+            conversationId,
+            branch,
+            status: routerDecision?.status,
+            intent: routerDecision?.intent,
+            confidence: routerDecision?.confidence,
+            latencyMs: routerDecision?.latencyMs,
+          },
+          "SAMA Router: triage decision",
+        );
+
+        if (branch === "out_of_scope") {
+          // Off-brand → LLM-authored short decline drafted into the composer for
+          // a human to review/send. Nothing grounded, nothing learned.
+          const declineBody = routerDecision!.declineMessage.trim();
+          const written = await stageCopilotDraftForInbound({
+            tenantId: tenant.id,
+            conversationId,
+            latestInboundMessageId: inboundMessageId,
+            draftBody: declineBody.length > 0 ? declineBody : null,
+            draftSource: "router_decline",
+            confidence: routerDecision!.confidence,
+            queryCategory: null,
+            inboundSid,
+          });
+          if (written) {
+            eventBus.publish(tenant.id, { type: "ai:state", conversationId });
+          }
+          await postCopilotWhisper(
+            `[SAMA Router — off-scope decline]\n${declineBody}`,
+          );
+          logger.info(
+            { tenantSlug, conversationId, draftWritten: written },
+            "SAMA Router: out_of_scope decline drafted for human review",
+          );
+          return;
+        }
+
+        if (branch === "general_in_scope") {
+          // General, in-domain question → Student "flash" draft from Grok's own
+          // parametric knowledge: no Classroom retrieval, no Professor hop, no
+          // learning. Drafted into the composer for a human.
+          const flash = await studentFlashDraft({
+            tenant,
+            fromNumber,
+            inboundBody: messageBody,
+            brandScope,
+          });
+          const flashReply = flash.draftReply.trim();
+          const written = await stageCopilotDraftForInbound({
+            tenantId: tenant.id,
+            conversationId,
+            latestInboundMessageId: inboundMessageId,
+            draftBody: flashReply.length > 0 ? flashReply : null,
+            draftSource: "student_flash",
+            confidence: null,
+            queryCategory: null,
+            inboundSid,
+          });
+          if (written) {
+            eventBus.publish(tenant.id, { type: "ai:state", conversationId });
+          }
+          await postCopilotWhisper(flash.whisperBody);
+          logger.info(
+            {
+              tenantSlug,
+              conversationId,
+              status: flash.status,
+              latencyMs: flash.latencyMs,
+              hasDraft: flashReply.length > 0,
+              draftWritten: written,
+            },
+            "SAMA Router: general_in_scope flash draft staged for human review",
+          );
+          return;
+        }
+        // branch === "tenant_specific" → fall through to the existing pipeline.
+      }
     }
 
     // CO-PILOT and AUTO-PILOT both draft. Retrieve Classroom grounding.

@@ -53,6 +53,12 @@ export const ListTenantsResponseItem = zod.object({
     .describe(
       "Free-text knowledge base used by the AI Student to draft Whispers",
     ),
+  brandScope: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set short brand\/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. \"B2B HVAC parts supplier; answer product\/ordering\/support questions only\"). null = router fails open to the Classroom\/Professor draft path.',
+    ),
   unregisteredSurchargeEnabled: zod
     .boolean()
     .describe(
@@ -149,6 +155,12 @@ export const GetTenantResponse = zod.object({
     .describe(
       "Free-text knowledge base used by the AI Student to draft Whispers",
     ),
+  brandScope: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set short brand\/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. \"B2B HVAC parts supplier; answer product\/ordering\/support questions only\"). null = router fails open to the Classroom\/Professor draft path.',
+    ),
   unregisteredSurchargeEnabled: zod
     .boolean()
     .describe(
@@ -177,6 +189,12 @@ export const UpdateTenantBody = zod
     chatwootAccountId: zod.number().nullish(),
     chatwootInboxId: zod.number().nullish(),
     knowledgeBase: zod.string().nullish(),
+    brandScope: zod
+      .string()
+      .nullish()
+      .describe(
+        "Conductor-set short brand\/vertical blurb for the inbound triage router. null\/empty = router fails open to the existing path.",
+      ),
     unregisteredSurchargeEnabled: zod
       .boolean()
       .optional()
@@ -208,6 +226,12 @@ export const UpdateTenantResponse = zod.object({
     .nullable()
     .describe(
       "Free-text knowledge base used by the AI Student to draft Whispers",
+    ),
+  brandScope: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set short brand\/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. \"B2B HVAC parts supplier; answer product\/ordering\/support questions only\"). null = router fails open to the Classroom\/Professor draft path.',
     ),
   unregisteredSurchargeEnabled: zod
     .boolean()
@@ -581,9 +605,14 @@ export const CreateConversationResponse = zod.object({
         .union([
           zod.literal("student"),
           zod.literal("professor"),
+          zod.literal("student_flash"),
+          zod.literal("router_decline"),
           zod.literal(null),
         ])
-        .nullable(),
+        .nullable()
+        .describe(
+          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline. The latter two are Co-Pilot-only.',
+        ),
       confidence: zod.string().nullish(),
       queryCategory: zod.string().nullish(),
       reasonCode: zod
@@ -685,9 +714,14 @@ export const ListConversationsResponseItem = zod.object({
         .union([
           zod.literal("student"),
           zod.literal("professor"),
+          zod.literal("student_flash"),
+          zod.literal("router_decline"),
           zod.literal(null),
         ])
-        .nullable(),
+        .nullable()
+        .describe(
+          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline. The latter two are Co-Pilot-only.',
+        ),
       confidence: zod.string().nullish(),
       queryCategory: zod.string().nullish(),
       reasonCode: zod
@@ -778,9 +812,14 @@ export const GetConversationResponse = zod.object({
         .union([
           zod.literal("student"),
           zod.literal("professor"),
+          zod.literal("student_flash"),
+          zod.literal("router_decline"),
           zod.literal(null),
         ])
-        .nullable(),
+        .nullable()
+        .describe(
+          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline. The latter two are Co-Pilot-only.',
+        ),
       confidence: zod.string().nullish(),
       queryCategory: zod.string().nullish(),
       reasonCode: zod
@@ -885,9 +924,14 @@ export const UpdateConversationResponse = zod.object({
         .union([
           zod.literal("student"),
           zod.literal("professor"),
+          zod.literal("student_flash"),
+          zod.literal("router_decline"),
           zod.literal(null),
         ])
-        .nullable(),
+        .nullable()
+        .describe(
+          'Origin of the draft. \"student\" = grounded Classroom draft; \"professor\" = escalation draft; \"student_flash\" = Grok general knowledge (NOT Classroom-grounded); \"router_decline\" = off-scope decline. The latter two are Co-Pilot-only.',
+        ),
       confidence: zod.string().nullish(),
       queryCategory: zod.string().nullish(),
       reasonCode: zod

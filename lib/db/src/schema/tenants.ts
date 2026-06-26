@@ -11,6 +11,11 @@ export const tenantsTable = pgTable("tenants", {
   chatwootAccountId: integer("chatwoot_account_id"),
   chatwootInboxId: integer("chatwoot_inbox_id"),
   knowledgeBase: text("knowledge_base"),
+  // Conductor-set short brand/vertical blurb the inbound triage router
+  // (lib/ai-router) uses to decide whether an inbound SMS is in-scope. Plain
+  // nullable text (NO DB CHECK) + app-level handling; null = router fails open
+  // to the existing Classroom/Professor draft path.
+  brandScope: text("brand_scope"),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionStatus: text("subscription_status").notNull().default("none"),

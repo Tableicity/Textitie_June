@@ -268,6 +268,7 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
     "chatwootAccountId",
     "chatwootInboxId",
     "knowledgeBase",
+    "brandScope",
     "unregisteredSurchargeEnabled",
   ] as const) {
     if (k in body.data) patch[k] = body.data[k];

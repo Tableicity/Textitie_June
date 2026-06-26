@@ -29,7 +29,15 @@ export type AiStateStatus =
   | "human_handled"
   | "superseded";
 
-export type AiDraftSource = "student" | "professor";
+// "student"        → grounded Classroom draft (or legacy-KB fallback)
+// "professor"      → escalation draft
+// "student_flash"  → Grok general-knowledge draft (Co-Pilot router; NOT grounded)
+// "router_decline" → off-scope decline draft (Co-Pilot router)
+export type AiDraftSource =
+  | "student"
+  | "professor"
+  | "student_flash"
+  | "router_decline";
 
 export interface UpsertAiStateInput {
   tenantId: number;
