@@ -18,10 +18,17 @@ import {
 import {
   retrieveClassroomFactsWithMatch,
   classifyQueryCategory,
+  normalizeCategory,
+  hasUnresolvedConflicts,
+  persistEscalatedFacts,
+  type FactCategory,
+  type ProfessorEscalation,
   type ClassroomMatchType,
 } from "./knowledge";
 import {
   resolveEffectiveEngagementMode,
+  evaluateAutoSend,
+  evaluateProfessorEscalationSend,
   evaluateAutoPilotTurn,
   describeHandbackReason,
 } from "./engagementPolicy";
@@ -36,6 +43,7 @@ import {
   getConversationAiState,
   type AiDraftSource,
 } from "./aiStateStore";
+import { professorConfigured } from "./grokClient";
 import { sendConversationReply } from "./outboundReply";
 import { checkOutboundCompliance } from "./compliance";
 import { recordMessageUsage } from "./stripe-stub";
@@ -74,6 +82,331 @@ export interface InboundAiPipelineContext {
    * param exists for parity/testing.
    */
   automationHandled?: boolean;
+}
+
+// Chip shown near the composer once the customer has been auto-acknowledged but
+// the real answer still belongs to a human. The status stays refused/failed so
+// the send button stays Blue — the human still owns the reply.
+const HOLDING_ACK_REASON_TEXT = "Acknowledged — needs your reply";
+
+/**
+ * Auto-Pilot "graceful handback". When Auto-Pilot REFUSES to auto-send (the
+ * fail-closed gate blocked it) or its AI draft FAILED, write the Blue handback
+ * AND — when the tenant configured a holding phrase — auto-send that phrase
+ * verbatim as a content-free acknowledgment (NOT an answer), keeping the
+ * handback so a human still owns the real reply.
+ *
+ * Invariants (best-effort; this NEVER throws past the pipeline's contract):
+ *   - Empty/whitespace phrase → exactly today's silent Blue handback (fail-safe).
+ *   - Throttle: at most ONE ack per waiting episode. The marker lives on the
+ *     conversation_ai_states row (handbackAckSentAt); a same-episode burst short-
+ *     circuits here and carries the marker forward without re-sending. A human
+ *     send flips the row to human_handled (clearing the marker), ending the
+ *     episode so a later inbound may ack afresh.
+ *   - Compliance is re-checked at SEND time; any block → send NOTHING, release
+ *     the claim, stay silent Blue (no marker, so a later inbound may ack once the
+ *     block clears).
+ *   - Idempotent via the ai_auto_replies claim (keyed on the inbound SID, or a
+ *     stable msg:<id> synthetic when no carrier SID); released on send failure.
+ *   - Never learns (no fact persistence on this path).
+ *   - The AI's real draft is preserved in draftBody for the human.
+ */
+async function maybeHandbackWithHoldingAck(opts: {
+  tenant: Tenant;
+  tenantSlug: string;
+  conversationId: number;
+  inboundMessageId: number;
+  inboundSid: string | null;
+  fromNumber: string;
+  status: "refused" | "failed";
+  draftBody: string | null;
+  draftSource?: AiDraftSource | null;
+  confidence?: string | null;
+  queryCategory?: string | null;
+  reasonCode: string;
+  reasonText: string;
+}): Promise<void> {
+  const {
+    tenant,
+    tenantSlug,
+    conversationId,
+    inboundMessageId,
+    inboundSid,
+    fromNumber,
+    status,
+    draftBody,
+    draftSource,
+    confidence,
+    queryCategory,
+    reasonCode,
+    reasonText,
+  } = opts;
+
+  // Write the Blue handback (today's behavior) + publish ai:state. `ack` carries
+  // the throttle marker forward when set; `useAckReason` swaps the chip to the
+  // "acknowledged" copy once the customer has actually been auto-acked.
+  const writeHandback = async (
+    ack: { messageId: number | null; sentAt: Date | null } | null,
+    useAckReason: boolean,
+  ) => {
+    await upsertConversationAiState({
+      tenantId: tenant.id,
+      conversationId,
+      status,
+      draftBody,
+      draftSource,
+      confidence,
+      queryCategory,
+      reasonCode,
+      reasonText: useAckReason ? HOLDING_ACK_REASON_TEXT : reasonText,
+      latestInboundMessageId: inboundMessageId,
+      inboundSid,
+      handbackAckMessageId: ack?.messageId ?? null,
+      handbackAckSentAt: ack?.sentAt ?? null,
+    });
+    eventBus.publish(tenant.id, { type: "ai:state", conversationId });
+  };
+
+  const phrase = tenant.autopilotHoldingPhrase?.trim() ?? "";
+  // Opt-out / fail-safe: no phrase → exactly today's silent Blue handback.
+  if (!phrase) {
+    await writeHandback(null, false);
+    return;
+  }
+
+  // THROTTLE — once per waiting episode. An existing unresolved Auto-Pilot
+  // handback (refused/failed) that we already acked (marker set, no human reply
+  // since — a human send would have flipped it to human_handled and cleared the
+  // marker) must NOT be re-acked: carry the marker forward, no send.
+  let priorAck: { messageId: number | null; sentAt: Date | null } | null = null;
+  try {
+    const prior = await getConversationAiState(tenant.id, conversationId);
+    if (
+      prior &&
+      (prior.status === "refused" || prior.status === "failed") &&
+      prior.handbackAckSentAt != null
+    ) {
+      priorAck = {
+        messageId: prior.handbackAckMessageId,
+        sentAt: prior.handbackAckSentAt,
+      };
+    }
+  } catch (err) {
+    // Can't determine throttle state → fail SAFE toward NOT double-texting:
+    // degrade to today's silent Blue handback for this turn (no send, no marker).
+    logger.warn(
+      {
+        tenantSlug,
+        conversationId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "SAMA Auto-Pilot holding-ack: prior-state read failed; silent Blue handback",
+    );
+    await writeHandback(null, false);
+    return;
+  }
+  if (priorAck) {
+    await writeHandback(priorAck, true);
+    return;
+  }
+
+  // Idempotency: claim the inbound before sending so a webhook retry can't
+  // double-send the ack. No carrier SID (rare) → key on the inbound message id.
+  const claimKey = inboundSid ?? `msg:${inboundMessageId}`;
+  let claimed: { id: number }[];
+  try {
+    claimed = await db
+      .insert(aiAutoRepliesTable)
+      .values({ tenantId: tenant.id, inboundSid: claimKey })
+      .onConflictDoNothing({
+        target: [aiAutoRepliesTable.tenantId, aiAutoRepliesTable.inboundSid],
+      })
+      .returning({ id: aiAutoRepliesTable.id });
+  } catch (err) {
+    logger.warn(
+      {
+        tenantSlug,
+        conversationId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "SAMA Auto-Pilot holding-ack: claim insert failed; silent Blue handback",
+    );
+    await writeHandback(null, false);
+    return;
+  }
+
+  if (claimed.length === 0) {
+    // Another invocation already owns this inbound's ack (a retry/race). Do not
+    // re-send; preserve whatever marker the winner may have written so the
+    // throttle stays intact.
+    let carry: { messageId: number | null; sentAt: Date | null } | null = null;
+    try {
+      const cur = await getConversationAiState(tenant.id, conversationId);
+      if (cur && cur.handbackAckSentAt != null) {
+        carry = {
+          messageId: cur.handbackAckMessageId,
+          sentAt: cur.handbackAckSentAt,
+        };
+      }
+    } catch {
+      // ignore — fall through with no carry
+    }
+    await writeHandback(carry, carry != null);
+    return;
+  }
+
+  // Re-check outbound compliance at SEND time (TOCTOU). Any block → send
+  // NOTHING, release the claim, stay silent Blue (no marker, so a later inbound
+  // may ack once the block clears). Fail CLOSED on a thrown check.
+  let complianceOk = false;
+  try {
+    const c = await checkOutboundCompliance(tenant.id, tenantSlug, fromNumber);
+    complianceOk = c.ok;
+  } catch (err) {
+    logger.warn(
+      {
+        tenantSlug,
+        conversationId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "SAMA Auto-Pilot holding-ack: compliance recheck failed; blocking ack",
+    );
+  }
+  if (!complianceOk) {
+    try {
+      await db
+        .delete(aiAutoRepliesTable)
+        .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+    } catch (releaseErr) {
+      logger.error(
+        {
+          tenantSlug,
+          conversationId,
+          err:
+            releaseErr instanceof Error
+              ? releaseErr.message
+              : String(releaseErr),
+        },
+        "SAMA Auto-Pilot holding-ack: failed to release claim after compliance block",
+      );
+    }
+    await writeHandback(null, false);
+    logger.info(
+      { tenantSlug, conversationId },
+      "SAMA Auto-Pilot holding-ack: compliance blocked the ack; silent Blue handback",
+    );
+    return;
+  }
+
+  // Send the holding phrase verbatim. The compliance check just ran, so skip the
+  // duplicate check inside sendConversationReply.
+  let claimFinalized = false;
+  try {
+    const sent = await sendConversationReply({
+      tenantId: tenant.id,
+      tenantSlug,
+      conversationId,
+      contactPhone: fromNumber,
+      departmentId: null,
+      body: phrase,
+      senderName: "Textitie AI",
+      conductorAuthorized: true,
+      runComplianceCheck: false,
+    });
+    if (sent.ok && sent.status === "sent") {
+      await db
+        .update(aiAutoRepliesTable)
+        .set({ outboundMessageId: sent.messageRow.id })
+        .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+      // Claim now terminal: any throw past here is post-send bookkeeping only.
+      claimFinalized = true;
+      await db
+        .update(conversationsTable)
+        .set({ lastMessageAt: new Date() })
+        .where(eq(conversationsTable.id, conversationId));
+      // Keep the Blue handback, record the ack marker, swap the chip copy.
+      await writeHandback(
+        { messageId: sent.messageRow.id, sentAt: new Date() },
+        true,
+      );
+      recordMessageUsage(tenant.id, tenantSlug).catch((e) =>
+        logger.warn(
+          { err: e, tenantId: tenant.id },
+          "Usage tracking failed (non-blocking)",
+        ),
+      );
+      eventBus.publish(tenant.id, {
+        type: "message:new",
+        conversationId,
+        direction: "outbound",
+      });
+      logger.info(
+        { tenantSlug, conversationId, messageId: sent.messageRow.id },
+        "SAMA Auto-Pilot: auto-sent holding ack; kept Blue handback",
+      );
+    } else {
+      // Claimed but the ack did not go out → release the claim and stay silent
+      // Blue (no marker) so a later inbound may retry.
+      await db
+        .delete(aiAutoRepliesTable)
+        .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+      claimFinalized = true;
+      await writeHandback(null, false);
+      logger.error(
+        {
+          tenantSlug,
+          conversationId,
+          reason: sent.ok ? sent.status : sent.reason,
+        },
+        "SAMA Auto-Pilot holding-ack: send did not complete; released claim, silent Blue handback",
+      );
+    }
+  } catch (sendErr) {
+    const sendErrMsg =
+      sendErr instanceof Error ? sendErr.message : String(sendErr);
+    if (!claimFinalized) {
+      try {
+        await db
+          .delete(aiAutoRepliesTable)
+          .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+      } catch (releaseErr) {
+        logger.error(
+          {
+            tenantSlug,
+            conversationId,
+            err:
+              releaseErr instanceof Error
+                ? releaseErr.message
+                : String(releaseErr),
+          },
+          "SAMA Auto-Pilot holding-ack: failed to release claim after send error",
+        );
+      }
+      try {
+        await writeHandback(null, false);
+      } catch (stateErr) {
+        logger.error(
+          {
+            tenantSlug,
+            conversationId,
+            err:
+              stateErr instanceof Error ? stateErr.message : String(stateErr),
+          },
+          "SAMA Auto-Pilot holding-ack: failed to write Blue handback after send error",
+        );
+      }
+      logger.error(
+        { tenantSlug, conversationId, err: sendErrMsg },
+        "SAMA Auto-Pilot holding-ack: send threw; released claim, silent Blue handback",
+      );
+    } else {
+      // The ack already went out; only post-send bookkeeping failed.
+      logger.warn(
+        { tenantSlug, conversationId, err: sendErrMsg },
+        "SAMA Auto-Pilot holding-ack: post-send step failed (non-blocking); ack already sent",
+      );
+    }
+  }
 }
 
 // Built-in acks used when the tenant has NOT configured an autopilotHoldingPhrase,
@@ -927,14 +1260,44 @@ export async function runInboundAiPipeline(
       return;
     }
 
-    // The Professor is a CREATION-ONLY tool (Human + Professor, via the
-    // Conductor) and no longer runs on live inbound traffic, so an ungrounded
-    // Co-Pilot inbound simply keeps the Student's (Grok) own draft for a human
-    // to review in the composer. Co-Pilot NEVER auto-sends and NEVER learns.
-    const replyText = draft.draftReply.trim();
-    const draftSource: AiDraftSource = "student";
-    const replyConfidence = draft.confidence;
-    const whisperToPost = draft.whisperBody;
+    // ---- Professor REMOVED from the runtime path ----
+    // The Professor is now a CREATION-ONLY tool (Human + Professor, via the
+    // Conductor) and no longer runs on live inbound traffic. Previously an
+    // ungrounded Co-Pilot inbound escalated to the Professor for a nicer draft,
+    // but learning was gated on an autonomous unedited send that Co-Pilot never
+    // does — so the runtime call bought only draft polish at full reasoning-LLM
+    // latency + cost. We now let the Student's own (Grok) draft stand for an
+    // ungrounded tenant-specific question; a human reviews it in the composer
+    // and can route the real answer back through Human + Professor. These two
+    // values stay as inert null/empty only because the LEGACY (unreachable)
+    // Auto-Pilot branch below still references them. `escalation` is typed via an
+    // assertion (not a bare `null`) so control-flow analysis keeps the union type
+    // and the unreachable branch's `escalation!` accesses still typecheck.
+    const escalation = null as ProfessorEscalation | null;
+    const escalatedCategories: FactCategory[] = [];
+
+    // `escalated` is now always false: the Professor was removed from the runtime
+    // path above, so the reply / draftSource / whisper below resolve to the
+    // Student draft. These values remain only for the legacy Auto-Pilot branch.
+    const escalated =
+      !!escalation &&
+      escalation.status === "answered" &&
+      escalation.facts.length > 0 &&
+      escalation.customerReply.trim().length > 0;
+    const replyText = escalated
+      ? escalation!.customerReply.trim()
+      : draft.draftReply.trim();
+    const draftSource: "student" | "professor" = escalated
+      ? "professor"
+      : "student";
+    const replyConfidence = escalated
+      ? escalation!.confidence
+      : draft.confidence;
+    const whisperToPost = escalated
+      ? `[SAMA Professor — escalation]\n${escalation!.customerReply.trim()}\n(confidence ${escalation!.confidence}; ${escalation!.facts.length} fact(s) ready to learn on auto-send)`
+      : draft.whisperBody;
+
+    let autoSent = false;
 
     // ============ CO-PILOT ============
     // Draft into the composer for a human to edit + send. NEVER auto-sends and
@@ -972,30 +1335,451 @@ export async function runInboundAiPipeline(
         },
         "SAMA Co-Pilot: draft staged for human review",
       );
+    } else {
+      // ============ AUTO-PILOT (LEGACY — now UNREACHABLE) ============
+      // NOTE: with the Auto-Pilot SEAM above, autopilot turns return early via
+      // runAutoPilotFailOpenTurn and never reach this branch (manual returned
+      // even earlier, so only copilot takes the `if` above). This fail-closed +
+      // Professor-coupled gate is retained verbatim pending removal in a
+      // follow-up — DO NOT extend it; new Auto-Pilot behavior lives in
+      // runAutoPilotFailOpenTurn.
+      const groundingCategories = facts.map((f) =>
+        normalizeCategory(f.category),
+      );
+
+      if (draft.status !== "drafted" && !escalated) {
+        // Grok produced no usable draft → Blue handback (failed). Auto-send the
+        // tenant's holding phrase (if configured) so the customer is acked while
+        // a human picks up the real answer.
+        await maybeHandbackWithHoldingAck({
+          tenant,
+          tenantSlug,
+          conversationId,
+          inboundMessageId,
+          inboundSid,
+          fromNumber,
+          status: "failed",
+          draftBody: null,
+          confidence: draft.confidence,
+          queryCategory,
+          reasonCode: "grok_error",
+          reasonText: describeHandbackReason(["grok_error"]),
+        });
+        logger.warn(
+          { tenantSlug, conversationId, draftStatus: draft.status },
+          "SAMA Auto-Pilot: Grok produced no draft; Blue handback",
+        );
+      } else {
+        // Conflict check spans the answer's categories PLUS the always-sensitive
+        // pricing/compliance ones and the query intent. Compliance is
+        // re-checked at send time too.
+        const conflictCats = Array.from(
+          new Set<FactCategory>([
+            ...(escalated ? escalatedCategories : groundingCategories),
+            "pricing",
+            "compliance",
+            ...(queryCategory ? [queryCategory] : []),
+          ]),
+        );
+        let hasConflict = true; // fail closed if the check throws
+        try {
+          hasConflict = await hasUnresolvedConflicts(tenant.id, conflictCats);
+        } catch (err) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            "SAMA Auto-Pilot: conflict check failed; blocking auto-send",
+          );
+        }
+        let complianceOk = false;
+        try {
+          const c = await checkOutboundCompliance(
+            tenant.id,
+            tenantSlug,
+            fromNumber,
+          );
+          complianceOk = c.ok;
+        } catch (err) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            "SAMA Auto-Pilot: compliance precheck failed; blocking auto-send",
+          );
+        }
+
+        const decision = escalated
+          ? evaluateProfessorEscalationSend({
+              engagementMode,
+              professorConfigured: professorConfigured(),
+              escalationStatus: escalation!.status,
+              confidence: escalation!.confidence,
+              screenedFactCount: escalation!.facts.length,
+              hasReply: replyText.length > 0,
+              escalatedCategories,
+              queryCategory,
+              hasConflict,
+              complianceOk,
+              automationHandled,
+            })
+          : evaluateAutoSend({
+              engagementMode,
+              draftStatus: draft.status,
+              confidence: draft.confidence,
+              kbMatched: draft.kbMatched,
+              groundedInClassroom: draft.groundedInClassroom,
+              strongClassroomMatch,
+              coverageClassroomMatch,
+              queryCategory,
+              groundingCategories,
+              hasConflict,
+              complianceOk,
+            });
+
+        if (decision.autoSend && inboundSid && replyText) {
+          // Idempotency: claim the inbound SID before sending. The unique
+          // (tenant_id, inbound_sid) index lets exactly one caller win, so a
+          // webhook retry can never double-send.
+          const claimed = await db
+            .insert(aiAutoRepliesTable)
+            .values({ tenantId: tenant.id, inboundSid })
+            .onConflictDoNothing({
+              target: [
+                aiAutoRepliesTable.tenantId,
+                aiAutoRepliesTable.inboundSid,
+              ],
+            })
+            .returning({ id: aiAutoRepliesTable.id });
+
+          if (claimed.length > 0) {
+            // The claim row is non-terminal (outboundMessageId still null) until
+            // a confirmed send records the outbound id OR we explicitly release
+            // it. If the send THROWS before either happens, we MUST release the
+            // claim here: a leaked null-id row makes the existing-claim check
+            // below permanently suppress every retry of this inbound SID.
+            // claimFinalized guards a double-release and prevents a post-send
+            // bookkeeping throw from undoing a reply that already went out.
+            let claimFinalized = false;
+            try {
+              const sent = await sendConversationReply({
+                tenantId: tenant.id,
+                tenantSlug,
+                conversationId,
+                contactPhone: fromNumber,
+                departmentId: null,
+                body: replyText,
+                senderName: "Textitie AI",
+                conductorAuthorized: true,
+              });
+              if (sent.ok && sent.status === "sent") {
+                autoSent = true;
+                await db
+                  .update(aiAutoRepliesTable)
+                  .set({ outboundMessageId: sent.messageRow.id })
+                  .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+                // Claim now carries the outbound id → terminal. Any throw past
+                // this point is post-send bookkeeping only; the reply already went
+                // out, so the catch below must NOT release the claim.
+                claimFinalized = true;
+                await db
+                  .update(conversationsTable)
+                  .set({ lastMessageAt: new Date() })
+                  .where(eq(conversationsTable.id, conversationId));
+
+                // ---- LEARN (only here) ----
+                // The reply went out autonomously and verbatim, so persist the
+                // Professor's screened facts as Classroom truth (so we never ask
+                // twice). No human-touch path ever reaches this line.
+                let learnedFacts = 0;
+                if (escalated) {
+                  try {
+                    const persistResult = await persistEscalatedFacts(
+                      tenant.id,
+                      escalation!.facts,
+                    );
+                    learnedFacts = persistResult.persisted;
+                    logger.info(
+                      {
+                        tenantSlug,
+                        conversationId,
+                        persisted: learnedFacts,
+                        flagged: persistResult.flagged,
+                        versionId: persistResult.versionId,
+                        categories: escalatedCategories,
+                      },
+                      "SAMA Professor: learned facts after autonomous send",
+                    );
+                    try {
+                      await db.insert(auditLogsTable).values({
+                        tenantId: tenant.id,
+                        actorUserId: null,
+                        actorEmail: "system:ai-professor",
+                        action: "ai.professor_escalation",
+                        entityType: "conversation",
+                        entityId: String(conversationId),
+                        afterJson: {
+                          inboundSid,
+                          confidence: escalation!.confidence,
+                          factsReturned: escalation!.facts.length,
+                          persisted: learnedFacts,
+                          versionId: persistResult.versionId,
+                          categories: escalatedCategories,
+                        },
+                      });
+                    } catch (e) {
+                      logger.warn(
+                        { err: e instanceof Error ? e.message : String(e) },
+                        "Professor escalation audit write failed (non-blocking)",
+                      );
+                    }
+                  } catch (err) {
+                    logger.warn(
+                      { err: err instanceof Error ? err.message : String(err) },
+                      "SAMA Professor: fact persistence after send failed (non-blocking)",
+                    );
+                  }
+                }
+
+                await upsertConversationAiState({
+                  tenantId: tenant.id,
+                  conversationId,
+                  status: "auto_sent",
+                  draftBody: null,
+                  draftSource,
+                  confidence: replyConfidence,
+                  queryCategory,
+                  latestInboundMessageId: inboundMessageId,
+                  inboundSid,
+                  outboundMessageId: sent.messageRow.id,
+                  autoSentAt: new Date(),
+                });
+
+                recordMessageUsage(tenant.id, tenantSlug).catch((e) =>
+                  logger.warn(
+                    { err: e, tenantId: tenant.id },
+                    "Usage tracking failed (non-blocking)",
+                  ),
+                );
+                eventBus.publish(tenant.id, {
+                  type: "message:new",
+                  conversationId,
+                  direction: "outbound",
+                });
+                try {
+                  await db.insert(auditLogsTable).values({
+                    tenantId: tenant.id,
+                    actorUserId: null,
+                    actorEmail: "system:ai-student",
+                    action: "ai.auto_replied",
+                    entityType: "conversation",
+                    entityId: String(conversationId),
+                    afterJson: {
+                      inboundSid,
+                      messageId: sent.messageRow.id,
+                      escalated,
+                      learnedFacts,
+                      confidence: replyConfidence,
+                      queryCategory,
+                      groundingCategories: escalated
+                        ? escalatedCategories
+                        : groundingCategories,
+                    },
+                  });
+                } catch (e) {
+                  logger.warn(
+                    { err: e instanceof Error ? e.message : String(e) },
+                    "AI auto-reply audit write failed (non-blocking)",
+                  );
+                }
+                logger.info(
+                  {
+                    tenantSlug,
+                    conversationId,
+                    messageId: sent.messageRow.id,
+                  },
+                  "SAMA Auto-Pilot: AUTO-SENT reply",
+                );
+              } else {
+                // Claimed but the send did not complete. The customer received
+                // nothing, so RELEASE the claim (delete) so a webhook retry can
+                // re-attempt. Blue handback (failed), no learn.
+                await db
+                  .delete(aiAutoRepliesTable)
+                  .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+                claimFinalized = true;
+                await upsertConversationAiState({
+                  tenantId: tenant.id,
+                  conversationId,
+                  status: "failed",
+                  draftBody: replyText.length > 0 ? replyText : null,
+                  draftSource,
+                  confidence: replyConfidence,
+                  queryCategory,
+                  reasonCode: "send_failed",
+                  reasonText: describeHandbackReason(["send_failed"]),
+                  latestInboundMessageId: inboundMessageId,
+                  inboundSid,
+                });
+                eventBus.publish(tenant.id, {
+                  type: "ai:state",
+                  conversationId,
+                });
+                logger.error(
+                  {
+                    tenantSlug,
+                    conversationId,
+                    reason: sent.ok ? sent.status : sent.reason,
+                  },
+                  "SAMA Auto-Pilot: claimed but send failed; released claim, Blue handback",
+                );
+              }
+            } catch (sendErr) {
+              const sendErrMsg =
+                sendErr instanceof Error ? sendErr.message : String(sendErr);
+              if (!claimFinalized) {
+                // The send threw before recording an outbound id, so the customer
+                // received nothing. Release the (null) claim so a webhook/worker
+                // retry can re-attempt, and hand back Blue for this turn —
+                // consistent with the {ok:false} contract above. NOT re-thrown:
+                // a send failure is a terminal handback, not a whole-burst retry.
+                try {
+                  await db
+                    .delete(aiAutoRepliesTable)
+                    .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+                } catch (releaseErr) {
+                  logger.error(
+                    {
+                      tenantSlug,
+                      conversationId,
+                      err:
+                        releaseErr instanceof Error
+                          ? releaseErr.message
+                          : String(releaseErr),
+                    },
+                    "SAMA Auto-Pilot: failed to release auto-send claim after send error",
+                  );
+                }
+                try {
+                  await upsertConversationAiState({
+                    tenantId: tenant.id,
+                    conversationId,
+                    status: "failed",
+                    draftBody: replyText.length > 0 ? replyText : null,
+                    draftSource,
+                    confidence: replyConfidence,
+                    queryCategory,
+                    reasonCode: "send_failed",
+                    reasonText: describeHandbackReason(["send_failed"]),
+                    latestInboundMessageId: inboundMessageId,
+                    inboundSid,
+                  });
+                  eventBus.publish(tenant.id, {
+                    type: "ai:state",
+                    conversationId,
+                  });
+                } catch (stateErr) {
+                  logger.error(
+                    {
+                      tenantSlug,
+                      conversationId,
+                      err:
+                        stateErr instanceof Error
+                          ? stateErr.message
+                          : String(stateErr),
+                    },
+                    "SAMA Auto-Pilot: failed to write Blue handback after send error",
+                  );
+                }
+                logger.error(
+                  { tenantSlug, conversationId, err: sendErrMsg },
+                  "SAMA Auto-Pilot: auto-send threw; released claim, Blue handback",
+                );
+              } else {
+                // The reply already went out (claim is terminal); only post-send
+                // bookkeeping failed. Leave the claim intact so retries stay
+                // idempotent and the customer is never double-texted.
+                logger.warn(
+                  { tenantSlug, conversationId, err: sendErrMsg },
+                  "SAMA Auto-Pilot: post-send step failed (non-blocking); reply already sent",
+                );
+              }
+            }
+          } else {
+            // Another invocation already owns this SID. Treat as auto-sent only
+            // if that one actually completed the send.
+            const existing = await db
+              .select({
+                outboundMessageId: aiAutoRepliesTable.outboundMessageId,
+              })
+              .from(aiAutoRepliesTable)
+              .where(
+                and(
+                  eq(aiAutoRepliesTable.tenantId, tenant.id),
+                  eq(aiAutoRepliesTable.inboundSid, inboundSid),
+                ),
+              )
+              .limit(1);
+            if (existing[0]?.outboundMessageId != null) {
+              autoSent = true;
+              logger.info(
+                { tenantSlug, conversationId },
+                "SAMA Auto-Pilot: auto-send already completed (idempotent skip)",
+              );
+            }
+          }
+        } else if (!decision.autoSend) {
+          // Gate refused → Blue handback for THIS message, no learn. Auto-send
+          // the tenant's holding phrase (if configured) so the customer is acked
+          // while a human owns the real reply.
+          await maybeHandbackWithHoldingAck({
+            tenant,
+            tenantSlug,
+            conversationId,
+            inboundMessageId,
+            inboundSid,
+            fromNumber,
+            status: "refused",
+            draftBody: replyText.length > 0 ? replyText : null,
+            draftSource,
+            confidence: replyConfidence,
+            queryCategory,
+            reasonCode: decision.reasons[0] ?? "gate_refused",
+            reasonText: describeHandbackReason(decision.reasons),
+          });
+          logger.info(
+            {
+              tenantSlug,
+              conversationId,
+              escalated,
+              reasons: decision.reasons,
+            },
+            "SAMA Auto-Pilot: auto-send gated off; Blue handback",
+          );
+        }
+      }
     }
 
-    // Post to Chatwoot when configured: a PRIVATE whisper draft so Chatwoot-side
-    // agents always see the Co-Pilot draft. (This Co-Pilot tail never auto-sends;
-    // Auto-Pilot mirrors its own sends on its dedicated path.) Gated only on
-    // tenant Chatwoot config — the inbound forward already happened on the
-    // webhook's post-ack path.
+    // Post to Chatwoot when configured: a PUBLIC mirror of an auto-sent reply,
+    // else a PRIVATE whisper draft so Chatwoot-side agents always see an
+    // accurate thread. (Gated only on tenant Chatwoot config — the inbound
+    // forward already happened on the webhook's post-ack path.)
     if (tenant.chatwootAccountId && tenant.chatwootInboxId) {
       try {
         const post = await postChatwootMessage({
           accountId: tenant.chatwootAccountId,
           inboxId: tenant.chatwootInboxId,
           contactPhone: fromNumber,
-          body: whisperToPost,
+          body: autoSent ? replyText : whisperToPost,
           messageType: "outgoing",
-          private: true,
+          private: !autoSent,
         });
         logger.info(
           {
             tenantSlug,
             whisperPost: post.status,
+            autoSent,
             detail: post.detail,
           },
-          "SAMA Student: posted Whisper to Chatwoot",
+          autoSent
+            ? "SAMA Student: mirrored auto-reply to Chatwoot"
+            : "SAMA Student: posted Whisper to Chatwoot",
         );
       } catch (err) {
         logger.warn(
