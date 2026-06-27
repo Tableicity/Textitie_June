@@ -121,6 +121,7 @@ async function processFollowUpTimers(tenantSlug: string): Promise<void> {
           eq(conversationsTable.tenantId, rule.tenantId),
           eq(conversationsTable.status, "open"),
           lt(conversationsTable.lastMessageAt, cutoff),
+          eq(conversationsTable.isQuarantined, false),
         ),
       );
 
@@ -192,6 +193,7 @@ async function processAutoResolve(tenantSlug: string): Promise<void> {
           eq(conversationsTable.tenantId, rule.tenantId),
           eq(conversationsTable.status, "open"),
           lt(conversationsTable.lastMessageAt, cutoff),
+          eq(conversationsTable.isQuarantined, false),
         ),
       );
 

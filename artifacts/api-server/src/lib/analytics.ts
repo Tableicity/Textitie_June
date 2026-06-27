@@ -38,6 +38,7 @@ export async function getOverview({ tenantId, from, to }: AnalyticsRange): Promi
       SELECT id, status, created_at, last_message_at
       FROM conversations
       WHERE tenant_id = ${tenantId}
+        AND is_quarantined = false
         AND created_at >= ${from}
         AND created_at <= ${to}
     ),
@@ -104,7 +105,7 @@ export async function getVolume({ tenantId, from, to }: AnalyticsRange): Promise
     convs AS (
       SELECT date_trunc('day', created_at) AS bucket, COUNT(*)::int AS n
       FROM conversations
-      WHERE tenant_id = ${tenantId} AND created_at >= ${from} AND created_at <= ${to}
+      WHERE tenant_id = ${tenantId} AND is_quarantined = false AND created_at >= ${from} AND created_at <= ${to}
       GROUP BY 1
     ),
     msgs AS (
@@ -114,7 +115,7 @@ export async function getVolume({ tenantId, from, to }: AnalyticsRange): Promise
         SUM(CASE WHEN m.direction = 'outbound' THEN 1 ELSE 0 END)::int AS outbound
       FROM messages m
       JOIN conversations c ON c.id = m.conversation_id
-      WHERE c.tenant_id = ${tenantId} AND m.created_at >= ${from} AND m.created_at <= ${to}
+      WHERE c.tenant_id = ${tenantId} AND c.is_quarantined = false AND m.created_at >= ${from} AND m.created_at <= ${to}
       GROUP BY 1
     )
     SELECT
@@ -152,7 +153,7 @@ export async function getAgentKpis({ tenantId, from, to }: AnalyticsRange): Prom
     WITH conv AS (
       SELECT id, status, assigned_user_id, created_at, last_message_at
       FROM conversations
-      WHERE tenant_id = ${tenantId} AND created_at >= ${from} AND created_at <= ${to}
+      WHERE tenant_id = ${tenantId} AND is_quarantined = false AND created_at >= ${from} AND created_at <= ${to}
     ),
     ttfr AS (
       SELECT
@@ -209,7 +210,7 @@ export async function getDepartmentKpis({ tenantId, from, to }: AnalyticsRange):
     WITH conv AS (
       SELECT id, status, department_id, created_at, last_message_at
       FROM conversations
-      WHERE tenant_id = ${tenantId} AND created_at >= ${from} AND created_at <= ${to}
+      WHERE tenant_id = ${tenantId} AND is_quarantined = false AND created_at >= ${from} AND created_at <= ${to}
     ),
     ttfr AS (
       SELECT
@@ -287,7 +288,7 @@ export async function getConversationExport({ tenantId, from, to }: AnalyticsRan
     FROM conversations c
     LEFT JOIN departments d ON d.id = c.department_id
     LEFT JOIN tenant_users u ON u.id = c.assigned_user_id
-    WHERE c.tenant_id = ${tenantId} AND c.created_at >= ${from} AND c.created_at <= ${to}
+    WHERE c.tenant_id = ${tenantId} AND c.is_quarantined = false AND c.created_at >= ${from} AND c.created_at <= ${to}
     ORDER BY c.created_at DESC
   `);
   return result.rows.map((r) => {

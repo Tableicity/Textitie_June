@@ -75,6 +75,7 @@ export async function isBlocked(tenantSlug: string, tenantId: number, phone: str
         eq(contactsTable.tenantId, tenantId),
         eq(contactsTable.phone, phone),
         eq(contactsTable.blocked, true),
+        eq(contactsTable.isQuarantined, false),
       ),
     )
     .limit(1);
@@ -108,6 +109,8 @@ async function countOutboundLast24h(tenantSlug: string, tenantId: number, phone:
       and(
         eq(conversationsTable.tenantId, tenantId),
         eq(conversationsTable.contactPhone, phone),
+        eq(conversationsTable.isQuarantined, false),
+        eq(messagesTable.isQuarantined, false),
         eq(messagesTable.direction, "outbound"),
         gte(messagesTable.createdAt, since),
       ),

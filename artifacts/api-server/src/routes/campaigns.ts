@@ -354,7 +354,7 @@ router.patch("/conversations/:id/tags", requireTenantAuth, async (req, res) => {
     const conv = await db
       .select({ id: conversationsTable.id })
       .from(conversationsTable)
-      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.isQuarantined, false)))
       .limit(1);
 
     if (conv.length === 0) {

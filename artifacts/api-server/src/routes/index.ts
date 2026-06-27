@@ -30,6 +30,7 @@ import surveysPublicRouter from "./surveysPublic";
 import eventsRouter from "./events";
 import knowledgeRouter from "./knowledge";
 import brainRouter from "./brain";
+import migrationsRouter from "./migrations";
 
 const router: IRouter = Router();
 
@@ -64,5 +65,6 @@ router.use(surveysPublicRouter);
 router.use(eventsRouter);
 router.use(knowledgeRouter);
 router.use(brainRouter);
+router.use(migrationsRouter);
 
 export default router;

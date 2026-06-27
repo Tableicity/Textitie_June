@@ -189,6 +189,7 @@ export async function buildAudience(
     SELECT c.id, c.contact_phone, c.contact_name
     FROM conversations c
     WHERE c.tenant_id = $1
+      AND c.is_quarantined = false
       AND NOT EXISTS (
         SELECT 1 FROM opt_outs o
         WHERE o.tenant_id = c.tenant_id AND o.phone_number = c.contact_phone
@@ -196,6 +197,7 @@ export async function buildAudience(
       AND NOT EXISTS (
         SELECT 1 FROM contacts ct
         WHERE ct.tenant_id = c.tenant_id AND ct.phone = c.contact_phone AND ct.blocked = true
+          AND ct.is_quarantined = false
       )
   `;
   const params: any[] = [tenantId];

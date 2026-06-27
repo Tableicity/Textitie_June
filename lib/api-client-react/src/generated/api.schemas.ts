@@ -1670,6 +1670,45 @@ export interface BrainPushInput {
   summary?: string;
 }
 
+export type MigrationJobCounts = { [key: string]: number };
+
+/**
+ * @nullable
+ */
+export type MigrationJobSummary = { [key: string]: unknown } | null;
+
+export interface MigrationJob {
+  id: number;
+  tenantId: number;
+  source: string;
+  /** pending|extracting|extracted|verifying|verified|review|hydrating|complete|failed|discarded */
+  status: string;
+  /** @nullable */
+  currentEntity?: string | null;
+  pageCursor: number;
+  counts: MigrationJobCounts;
+  /** @nullable */
+  summary?: MigrationJobSummary;
+  /** @nullable */
+  rateLimitedUntil?: string | null;
+  attempts: number;
+  /** @nullable */
+  lastError?: string | null;
+  /** @nullable */
+  createdBy?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StartMigrationInput {
+  /**
+   * The tenant's TextLine API access token (used transiently, encrypted at rest, never logged)
+   * @minLength 1
+   * @maxLength 4096
+   */
+  accessToken: string;
+}
+
 export type ListInjectionsParams = {
   /**
    * @minimum 1

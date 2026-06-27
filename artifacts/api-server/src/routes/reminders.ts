@@ -79,7 +79,7 @@ router.post("/reminders", requireTenantAuth, async (req, res) => {
     const conv = await db
       .select({ id: conversationsTable.id })
       .from(conversationsTable)
-      .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.tenantId, tenantId)))
+      .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.isQuarantined, false)))
       .limit(1);
     if (conv.length === 0) {
       res.status(404).json({ error: "Conversation not found" });

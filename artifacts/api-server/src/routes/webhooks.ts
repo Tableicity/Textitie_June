@@ -208,6 +208,9 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 })
                 .onConflictDoUpdate({
                   target: [contactsTable.tenantId, contactsTable.phone],
+                  // Live inbound only ever conflicts with a LIVE contact — never a
+                  // quarantined TextLine import (matches the partial unique index).
+                  targetWhere: eq(contactsTable.isQuarantined, false),
                   set: updateSet,
                 })
                 // `xmax = 0` is true only for a freshly INSERTed row; an
@@ -273,6 +276,8 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                     eq(conversationsTable.tenantId, tenant.id),
                     eq(conversationsTable.contactPhone, fromNumber),
                     eq(conversationsTable.status, "open"),
+                    // Never attach a live inbound to a quarantined import.
+                    eq(conversationsTable.isQuarantined, false),
                   ),
                 )
                 .limit(1);

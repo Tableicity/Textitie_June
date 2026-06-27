@@ -77,6 +77,7 @@ async function loadBalanced(agents: RoutableAgent[], tenantId: number, tenantSlu
           eq(conversationsTable.assignedUserId, agent.id),
           eq(conversationsTable.tenantId, tenantId),
           eq(conversationsTable.status, "open"),
+          eq(conversationsTable.isQuarantined, false),
         ),
       );
     counts.set(agent.id, rows.length);

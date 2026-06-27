@@ -50,6 +50,8 @@ tags:
     description: Contact records, tags, and history
   - name: reminders
     description: Per-conversation reminders for agents
+  - name: migrations
+    description: TextLine migration assembly line (Conductor-only)
 paths:
   /healthz:
     get:
@@ -3091,6 +3093,212 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/{tenantId}/migrations:
+    post:
+      operationId: startMigration
+      tags: [migrations]
+      summary: Start a TextLine migration for a tenant (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartMigrationInput"
+      responses:
+        "201":
+          description: Migration job created and queued for extraction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationJob"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: A migration is already in progress for this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    get:
+      operationId: listMigrations
+      tags: [migrations]
+      summary: List a tenant's migration jobs (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Migration jobs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MigrationJob"
+
+  /tenants/{tenantId}/migrations/{jobId}:
+    get:
+      operationId: getMigration
+      tags: [migrations]
+      summary: Get a migration job's status and progress (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Migration job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationJob"
+        "404":
+          description: Migration job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/migrations/{jobId}/hydrate:
+    post:
+      operationId: hydrateMigration
+      tags: [migrations]
+      summary: Promote a verified migration's data into quarantined live tables (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Hydration queued (job moves to hydrating)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationJob"
+        "400":
+          description: Job is not in a hydratable state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Migration job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/migrations/{jobId}/flip-live:
+    post:
+      operationId: activateMigration
+      tags: [migrations]
+      summary: Flip a hydrated migration live, clearing quarantine on its rows (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Migration flipped live
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationJob"
+        "400":
+          description: Job is not in a flippable state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: One or more imported phones already have live contacts that could not be auto-merged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Migration job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/migrations/{jobId}/discard:
+    post:
+      operationId: discardMigration
+      tags: [migrations]
+      summary: Discard a migration and delete its quarantined rows + staged data (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Migration discarded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationJob"
+        "409":
+          description: Job is not in a discardable state (in flight, or already flipped live)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Migration job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -5280,3 +5488,52 @@ components:
           items: { type: integer }
         summary: { type: string, maxLength: 1000 }
       required: [factIds]
+
+    MigrationJob:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        source: { type: string }
+        status:
+          type: string
+          description: pending|extracting|extracted|verifying|verified|review|hydrating|complete|failed|discarded
+        currentEntity:
+          type: ["string", "null"]
+        pageCursor: { type: integer }
+        counts:
+          type: object
+          additionalProperties: { type: integer }
+        summary:
+          type: ["object", "null"]
+          additionalProperties: true
+        rateLimitedUntil:
+          type: ["string", "null"]
+          format: date-time
+        attempts: { type: integer }
+        lastError:
+          type: ["string", "null"]
+        createdBy:
+          type: ["integer", "null"]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required:
+        - id
+        - tenantId
+        - source
+        - status
+        - pageCursor
+        - counts
+        - attempts
+        - createdAt
+        - updatedAt
+
+    StartMigrationInput:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: The tenant's TextLine API access token (used transiently, encrypted at rest, never logged)
+      required: [accessToken]

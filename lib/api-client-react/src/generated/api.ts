@@ -95,6 +95,7 @@ import type {
   ListRemindersParams,
   ListWebhookEventsParams,
   Message,
+  MigrationJob,
   OptOutItem,
   OwnedNumbersResponse,
   ProfessorChatResult,
@@ -111,6 +112,7 @@ import type {
   SetAgentStatusInput,
   SetContactBlockedInput,
   ShortcutItem,
+  StartMigrationInput,
   SubscribeInput,
   SubscriptionDetail,
   SubscriptionResult,
@@ -10777,4 +10779,525 @@ export const usePushBrainToClassroom = <
   TContext
 > => {
   return useMutation(getPushBrainToClassroomMutationOptions(options));
+};
+
+/**
+ * @summary Start a TextLine migration for a tenant (Conductor-only)
+ */
+export const getStartMigrationUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/migrations`;
+};
+
+export const startMigration = async (
+  tenantId: number,
+  startMigrationInput: StartMigrationInput,
+  options?: RequestInit,
+): Promise<MigrationJob> => {
+  return customFetch<MigrationJob>(getStartMigrationUrl(tenantId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(startMigrationInput),
+  });
+};
+
+export const getStartMigrationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startMigration>>,
+    TError,
+    { tenantId: number; data: BodyType<StartMigrationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startMigration>>,
+  TError,
+  { tenantId: number; data: BodyType<StartMigrationInput> },
+  TContext
+> => {
+  const mutationKey = ["startMigration"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startMigration>>,
+    { tenantId: number; data: BodyType<StartMigrationInput> }
+  > = (props) => {
+    const { tenantId, data } = props ?? {};
+
+    return startMigration(tenantId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartMigrationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startMigration>>
+>;
+export type StartMigrationMutationBody = BodyType<StartMigrationInput>;
+export type StartMigrationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Start a TextLine migration for a tenant (Conductor-only)
+ */
+export const useStartMigration = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startMigration>>,
+    TError,
+    { tenantId: number; data: BodyType<StartMigrationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof startMigration>>,
+  TError,
+  { tenantId: number; data: BodyType<StartMigrationInput> },
+  TContext
+> => {
+  return useMutation(getStartMigrationMutationOptions(options));
+};
+
+/**
+ * @summary List a tenant's migration jobs (Conductor-only)
+ */
+export const getListMigrationsUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/migrations`;
+};
+
+export const listMigrations = async (
+  tenantId: number,
+  options?: RequestInit,
+): Promise<MigrationJob[]> => {
+  return customFetch<MigrationJob[]>(getListMigrationsUrl(tenantId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListMigrationsQueryKey = (tenantId: number) => {
+  return [`/api/tenants/${tenantId}/migrations`] as const;
+};
+
+export const getListMigrationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMigrations>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMigrations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListMigrationsQueryKey(tenantId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listMigrations>>> = ({
+    signal,
+  }) => listMigrations(tenantId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!tenantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMigrations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListMigrationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMigrations>>
+>;
+export type ListMigrationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List a tenant's migration jobs (Conductor-only)
+ */
+
+export function useListMigrations<
+  TData = Awaited<ReturnType<typeof listMigrations>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listMigrations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListMigrationsQueryOptions(tenantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a migration job's status and progress (Conductor-only)
+ */
+export const getGetMigrationUrl = (tenantId: number, jobId: number) => {
+  return `/api/tenants/${tenantId}/migrations/${jobId}`;
+};
+
+export const getMigration = async (
+  tenantId: number,
+  jobId: number,
+  options?: RequestInit,
+): Promise<MigrationJob> => {
+  return customFetch<MigrationJob>(getGetMigrationUrl(tenantId, jobId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMigrationQueryKey = (tenantId: number, jobId: number) => {
+  return [`/api/tenants/${tenantId}/migrations/${jobId}`] as const;
+};
+
+export const getGetMigrationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMigration>>,
+  TError = ErrorType<ApiError>,
+>(
+  tenantId: number,
+  jobId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMigration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetMigrationQueryKey(tenantId, jobId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMigration>>> = ({
+    signal,
+  }) => getMigration(tenantId, jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(tenantId && jobId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMigration>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMigrationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMigration>>
+>;
+export type GetMigrationQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Get a migration job's status and progress (Conductor-only)
+ */
+
+export function useGetMigration<
+  TData = Awaited<ReturnType<typeof getMigration>>,
+  TError = ErrorType<ApiError>,
+>(
+  tenantId: number,
+  jobId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMigration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMigrationQueryOptions(tenantId, jobId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Promote a verified migration's data into quarantined live tables (Conductor-only)
+ */
+export const getHydrateMigrationUrl = (tenantId: number, jobId: number) => {
+  return `/api/tenants/${tenantId}/migrations/${jobId}/hydrate`;
+};
+
+export const hydrateMigration = async (
+  tenantId: number,
+  jobId: number,
+  options?: RequestInit,
+): Promise<MigrationJob> => {
+  return customFetch<MigrationJob>(getHydrateMigrationUrl(tenantId, jobId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getHydrateMigrationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof hydrateMigration>>,
+    TError,
+    { tenantId: number; jobId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof hydrateMigration>>,
+  TError,
+  { tenantId: number; jobId: number },
+  TContext
+> => {
+  const mutationKey = ["hydrateMigration"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof hydrateMigration>>,
+    { tenantId: number; jobId: number }
+  > = (props) => {
+    const { tenantId, jobId } = props ?? {};
+
+    return hydrateMigration(tenantId, jobId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type HydrateMigrationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof hydrateMigration>>
+>;
+
+export type HydrateMigrationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Promote a verified migration's data into quarantined live tables (Conductor-only)
+ */
+export const useHydrateMigration = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof hydrateMigration>>,
+    TError,
+    { tenantId: number; jobId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof hydrateMigration>>,
+  TError,
+  { tenantId: number; jobId: number },
+  TContext
+> => {
+  return useMutation(getHydrateMigrationMutationOptions(options));
+};
+
+/**
+ * @summary Flip a hydrated migration live, clearing quarantine on its rows (Conductor-only)
+ */
+export const getActivateMigrationUrl = (tenantId: number, jobId: number) => {
+  return `/api/tenants/${tenantId}/migrations/${jobId}/flip-live`;
+};
+
+export const activateMigration = async (
+  tenantId: number,
+  jobId: number,
+  options?: RequestInit,
+): Promise<MigrationJob> => {
+  return customFetch<MigrationJob>(getActivateMigrationUrl(tenantId, jobId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getActivateMigrationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof activateMigration>>,
+    TError,
+    { tenantId: number; jobId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof activateMigration>>,
+  TError,
+  { tenantId: number; jobId: number },
+  TContext
+> => {
+  const mutationKey = ["activateMigration"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof activateMigration>>,
+    { tenantId: number; jobId: number }
+  > = (props) => {
+    const { tenantId, jobId } = props ?? {};
+
+    return activateMigration(tenantId, jobId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ActivateMigrationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof activateMigration>>
+>;
+
+export type ActivateMigrationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Flip a hydrated migration live, clearing quarantine on its rows (Conductor-only)
+ */
+export const useActivateMigration = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof activateMigration>>,
+    TError,
+    { tenantId: number; jobId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof activateMigration>>,
+  TError,
+  { tenantId: number; jobId: number },
+  TContext
+> => {
+  return useMutation(getActivateMigrationMutationOptions(options));
+};
+
+/**
+ * @summary Discard a migration and delete its quarantined rows + staged data (Conductor-only)
+ */
+export const getDiscardMigrationUrl = (tenantId: number, jobId: number) => {
+  return `/api/tenants/${tenantId}/migrations/${jobId}/discard`;
+};
+
+export const discardMigration = async (
+  tenantId: number,
+  jobId: number,
+  options?: RequestInit,
+): Promise<MigrationJob> => {
+  return customFetch<MigrationJob>(getDiscardMigrationUrl(tenantId, jobId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDiscardMigrationMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discardMigration>>,
+    TError,
+    { tenantId: number; jobId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof discardMigration>>,
+  TError,
+  { tenantId: number; jobId: number },
+  TContext
+> => {
+  const mutationKey = ["discardMigration"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof discardMigration>>,
+    { tenantId: number; jobId: number }
+  > = (props) => {
+    const { tenantId, jobId } = props ?? {};
+
+    return discardMigration(tenantId, jobId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DiscardMigrationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof discardMigration>>
+>;
+
+export type DiscardMigrationMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Discard a migration and delete its quarantined rows + staged data (Conductor-only)
+ */
+export const useDiscardMigration = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discardMigration>>,
+    TError,
+    { tenantId: number; jobId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof discardMigration>>,
+  TError,
+  { tenantId: number; jobId: number },
+  TContext
+> => {
+  return useMutation(getDiscardMigrationMutationOptions(options));
 };

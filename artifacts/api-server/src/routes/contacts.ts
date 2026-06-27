@@ -25,7 +25,11 @@ router.get("/contacts", requireTenantAuth, async (req, res) => {
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 && limitRaw <= 200 ? limitRaw : 100;
 
   try {
-    const conditions = [eq(contactsTable.tenantId, tenantId)];
+    const conditions = [
+      eq(contactsTable.tenantId, tenantId),
+      // Quarantined imports stay hidden from the live contact list until flipped.
+      eq(contactsTable.isQuarantined, false),
+    ];
     if (q.length > 0) {
       const pat = `%${q}%`;
       const orExpr = or(
@@ -59,7 +63,7 @@ router.get("/contacts/tags", requireTenantAuth, async (req, res) => {
     const result = await db.execute(sql`
       SELECT DISTINCT UNNEST(tags) AS tag
       FROM contacts
-      WHERE tenant_id = ${tenantId} AND tags IS NOT NULL
+      WHERE tenant_id = ${tenantId} AND tags IS NOT NULL AND is_quarantined = false
       ORDER BY tag ASC
     `);
     const tags = (result.rows as Array<{ tag: string }>).map((r) => r.tag).filter(Boolean);
@@ -97,7 +101,7 @@ router.get("/contacts/blocked-activity", requireTenantAuth, async (req, res) => 
         WHERE tenant_id = ${tenantId} AND action = 'inbound.blocked'
         GROUP BY entity_id
       ) a ON a.entity_id = c.phone
-      WHERE c.tenant_id = ${tenantId} AND c.blocked = true
+      WHERE c.tenant_id = ${tenantId} AND c.blocked = true AND c.is_quarantined = false
       ORDER BY a.last_attempt_at DESC NULLS LAST, c.updated_at DESC
     `);
     const rows = result.rows as Array<{
@@ -133,7 +137,13 @@ router.get("/contacts/:id", requireTenantAuth, async (req, res) => {
     const rows = await db
       .select()
       .from(contactsTable)
-      .where(and(eq(contactsTable.id, id), eq(contactsTable.tenantId, tenantId)))
+      .where(
+        and(
+          eq(contactsTable.id, id),
+          eq(contactsTable.tenantId, tenantId),
+          eq(contactsTable.isQuarantined, false),
+        ),
+      )
       .limit(1);
     if (rows.length === 0) {
       res.status(404).json({ error: "Contact not found" });
@@ -152,6 +162,7 @@ router.get("/contacts/:id", requireTenantAuth, async (req, res) => {
         and(
           eq(conversationsTable.tenantId, tenantId),
           eq(conversationsTable.contactPhone, rows[0].phone),
+          eq(conversationsTable.isQuarantined, false),
         ),
       )
       .orderBy(desc(conversationsTable.lastMessageAt))
@@ -243,6 +254,9 @@ router.post("/contacts/block", requireTenantAuth, async (req, res) => {
       .values({ tenantId, phone: cleanPhone, blocked })
       .onConflictDoUpdate({
         target: [contactsTable.tenantId, contactsTable.phone],
+        // Match the partial-live unique index; blocking only ever targets a live
+        // contact, never a quarantined TextLine import.
+        targetWhere: eq(contactsTable.isQuarantined, false),
         set: { blocked, updatedAt: new Date() },
       })
       .returning();
@@ -279,12 +293,12 @@ router.patch("/contacts/:id", requireTenantAuth, async (req, res) => {
     const before = await db
       .select()
       .from(contactsTable)
-      .where(and(eq(contactsTable.id, id), eq(contactsTable.tenantId, tenantId)))
+      .where(and(eq(contactsTable.id, id), eq(contactsTable.tenantId, tenantId), eq(contactsTable.isQuarantined, false)))
       .limit(1);
     const rows = await db
       .update(contactsTable)
       .set(patch)
-      .where(and(eq(contactsTable.id, id), eq(contactsTable.tenantId, tenantId)))
+      .where(and(eq(contactsTable.id, id), eq(contactsTable.tenantId, tenantId), eq(contactsTable.isQuarantined, false)))
       .returning();
     if (rows.length === 0) {
       res.status(404).json({ error: "Contact not found" });
@@ -327,7 +341,7 @@ router.delete("/contacts/:id", requireTenantAuth, async (req, res) => {
   try {
     const rows = await db
       .delete(contactsTable)
-      .where(and(eq(contactsTable.id, id), eq(contactsTable.tenantId, tenantId)))
+      .where(and(eq(contactsTable.id, id), eq(contactsTable.tenantId, tenantId), eq(contactsTable.isQuarantined, false)))
       .returning();
     if (rows.length === 0) {
       res.status(404).json({ error: "Contact not found" });

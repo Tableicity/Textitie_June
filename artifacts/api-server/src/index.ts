@@ -6,6 +6,8 @@ import { seedTenantUsers } from "./lib/seedTenantUsers";
 import { seedDemoData } from "./lib/seedData";
 import { startTimerEngine } from "./lib/timerEngine";
 import { startInboundAiWorker } from "./lib/inboundAiWorker";
+import { startMigrationWorker } from "./lib/migrationWorker";
+import { startMigrationPhase3Worker } from "./lib/migrationPhase3Worker";
 import { bootstrapHipaaState } from "./lib/hipaaBootstrap";
 import {
   ensurePhoneNumbersSchema,
@@ -108,6 +110,11 @@ app.listen(port, (err) => {
 
       if (!missing.includes("conversation_inbound_ai_stages")) {
         startInboundAiWorker();
+      }
+
+      if (!missing.includes("migration_jobs")) {
+        startMigrationWorker();
+        startMigrationPhase3Worker();
       }
     });
 });

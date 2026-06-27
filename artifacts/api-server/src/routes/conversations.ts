@@ -69,7 +69,11 @@ router.get("/conversations", requireTenantAuth, async (req, res) => {
   const toStr = typeof req.query.to === "string" ? req.query.to : "";
 
   try {
-    const conditions = [eq(conversationsTable.tenantId, tenantId)];
+    const conditions = [
+      eq(conversationsTable.tenantId, tenantId),
+      // Quarantined imports never appear in the live inbox until flipped live.
+      eq(conversationsTable.isQuarantined, false),
+    ];
     if (departmentId !== undefined) {
       if (departmentId === 0) {
         conditions.push(isNull(conversationsTable.departmentId));
@@ -100,7 +104,7 @@ router.get("/conversations", requireTenantAuth, async (req, res) => {
       const orExpr = or(
         ilike(conversationsTable.contactName, pat),
         ilike(conversationsTable.contactPhone, pat),
-        sql`EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = ${conversationsTable.id} AND m.body ILIKE ${pat})`,
+        sql`EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = ${conversationsTable.id} AND m.is_quarantined = false AND m.body ILIKE ${pat})`,
       );
       if (orExpr) conditions.push(orExpr);
     }
@@ -130,6 +134,10 @@ router.get("/conversations", requireTenantAuth, async (req, res) => {
         and(
           eq(contactsTable.tenantId, conversationsTable.tenantId),
           eq(contactsTable.phone, conversationsTable.contactPhone),
+          // Quarantined imported contacts never join into a live conversation read
+          // (with the partial-live unique index, a phone may have both a live and a
+          // quarantined contact — without this filter the join would double rows).
+          eq(contactsTable.isQuarantined, false),
         ),
       )
       .where(and(...conditions))
@@ -187,12 +195,17 @@ router.get("/conversations/:id", requireTenantAuth, async (req, res) => {
         and(
           eq(contactsTable.tenantId, conversationsTable.tenantId),
           eq(contactsTable.phone, conversationsTable.contactPhone),
+          // Quarantined imported contacts never join into a live conversation read
+          // (with the partial-live unique index, a phone may have both a live and a
+          // quarantined contact — without this filter the join would double rows).
+          eq(contactsTable.isQuarantined, false),
         ),
       )
       .where(
         and(
           eq(conversationsTable.id, id),
           eq(conversationsTable.tenantId, tenantId),
+          eq(conversationsTable.isQuarantined, false),
         ),
       )
       .limit(1);
@@ -257,6 +270,8 @@ router.post("/conversations", requireTenantAuth, async (req, res) => {
       .values({ tenantId, phone, name })
       .onConflictDoUpdate({
         target: [contactsTable.tenantId, contactsTable.phone],
+        // Match the partial-live unique index; never touch a quarantined import.
+        targetWhere: eq(contactsTable.isQuarantined, false),
         set: name ? { name, updatedAt: new Date() } : { updatedAt: new Date() },
       })
       .returning({ id: contactsTable.id, location: contactsTable.location });
@@ -288,6 +303,10 @@ router.post("/conversations", requireTenantAuth, async (req, res) => {
         and(
           eq(contactsTable.tenantId, conversationsTable.tenantId),
           eq(contactsTable.phone, conversationsTable.contactPhone),
+          // Quarantined imported contacts never join into a live conversation read
+          // (with the partial-live unique index, a phone may have both a live and a
+          // quarantined contact — without this filter the join would double rows).
+          eq(contactsTable.isQuarantined, false),
         ),
       )
       .where(
@@ -295,6 +314,8 @@ router.post("/conversations", requireTenantAuth, async (req, res) => {
           eq(conversationsTable.tenantId, tenantId),
           eq(conversationsTable.contactPhone, phone),
           eq(conversationsTable.status, "open"),
+          // Never reuse a quarantined import for a live conversation.
+          eq(conversationsTable.isQuarantined, false),
         ),
       )
       .orderBy(desc(conversationsTable.lastMessageAt))
@@ -364,6 +385,7 @@ router.get(
           and(
             eq(conversationsTable.id, conversationId),
             eq(conversationsTable.tenantId, tenantId),
+            eq(conversationsTable.isQuarantined, false),
           ),
         )
         .limit(1);
@@ -376,7 +398,12 @@ router.get(
       const messages = await db
         .select()
         .from(messagesTable)
-        .where(eq(messagesTable.conversationId, conversationId))
+        .where(
+          and(
+            eq(messagesTable.conversationId, conversationId),
+            eq(messagesTable.isQuarantined, false),
+          ),
+        )
         .orderBy(messagesTable.createdAt);
 
       res.json(messages);
@@ -408,7 +435,7 @@ router.post(
       const conv = await db
         .select({ id: conversationsTable.id })
         .from(conversationsTable)
-        .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.tenantId, tenantId)))
+        .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.isQuarantined, false)))
         .limit(1);
       if (conv.length === 0) {
         res.status(404).json({ error: "Conversation not found" });
@@ -470,7 +497,7 @@ router.patch("/conversations/:id", requireTenantAuth, async (req, res) => {
     const conv = await db
       .select()
       .from(conversationsTable)
-      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.isQuarantined, false)))
       .limit(1);
     if (conv.length === 0) {
       res.status(404).json({ error: "Conversation not found" });
@@ -607,6 +634,8 @@ router.post(
           and(
             eq(conversationsTable.id, conversationId),
             eq(conversationsTable.tenantId, tenantId),
+            // A quarantined import must never send a real outbound SMS.
+            eq(conversationsTable.isQuarantined, false),
           ),
         )
         .limit(1);
@@ -720,7 +749,7 @@ router.post("/conversations/:id/claim", requireTenantAuth, async (req, res) => {
     const rows = await db
       .select()
       .from(conversationsTable)
-      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.isQuarantined, false)))
       .limit(1);
 
     if (rows.length === 0) {
@@ -773,7 +802,7 @@ router.post("/conversations/:id/transfer", requireTenantAuth, async (req, res) =
     const conv = await db
       .select()
       .from(conversationsTable)
-      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.isQuarantined, false)))
       .limit(1);
 
     if (conv.length === 0) {
@@ -827,7 +856,7 @@ router.post("/conversations/:id/unassign", requireTenantAuth, async (req, res) =
     const conv = await db
       .select()
       .from(conversationsTable)
-      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.isQuarantined, false)))
       .limit(1);
 
     if (conv.length === 0) {
@@ -861,7 +890,7 @@ router.post("/conversations/:id/auto-route", requireTenantAuth, async (req, res)
     const conv = await db
       .select()
       .from(conversationsTable)
-      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId)))
+      .where(and(eq(conversationsTable.id, id), eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.isQuarantined, false)))
       .limit(1);
 
     if (conv.length === 0) {
@@ -921,7 +950,7 @@ router.get("/conversations/:id/events", requireTenantAuth, async (req, res) => {
     const conv = await db
       .select({ id: conversationsTable.id })
       .from(conversationsTable)
-      .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.tenantId, tenantId)))
+      .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.tenantId, tenantId), eq(conversationsTable.isQuarantined, false)))
       .limit(1);
 
     if (conv.length === 0) {

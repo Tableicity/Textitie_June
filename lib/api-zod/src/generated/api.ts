@@ -2960,3 +2960,167 @@ export const PushBrainToClassroomBody = zod.object({
   factIds: zod.array(zod.number()),
   summary: zod.string().max(pushBrainToClassroomBodySummaryMax).optional(),
 });
+
+/**
+ * @summary Start a TextLine migration for a tenant (Conductor-only)
+ */
+export const StartMigrationParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const startMigrationBodyAccessTokenMax = 4096;
+
+export const StartMigrationBody = zod.object({
+  accessToken: zod
+    .string()
+    .min(1)
+    .max(startMigrationBodyAccessTokenMax)
+    .describe(
+      "The tenant's TextLine API access token (used transiently, encrypted at rest, never logged)",
+    ),
+});
+
+/**
+ * @summary List a tenant's migration jobs (Conductor-only)
+ */
+export const ListMigrationsParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const ListMigrationsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  source: zod.string(),
+  status: zod
+    .string()
+    .describe(
+      "pending|extracting|extracted|verifying|verified|review|hydrating|complete|failed|discarded",
+    ),
+  currentEntity: zod.string().nullish(),
+  pageCursor: zod.number(),
+  counts: zod.record(zod.string(), zod.number()),
+  summary: zod.record(zod.string(), zod.unknown()).nullish(),
+  rateLimitedUntil: zod.coerce.date().nullish(),
+  attempts: zod.number(),
+  lastError: zod.string().nullish(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListMigrationsResponse = zod.array(ListMigrationsResponseItem);
+
+/**
+ * @summary Get a migration job's status and progress (Conductor-only)
+ */
+export const GetMigrationParams = zod.object({
+  tenantId: zod.coerce.number(),
+  jobId: zod.coerce.number(),
+});
+
+export const GetMigrationResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  source: zod.string(),
+  status: zod
+    .string()
+    .describe(
+      "pending|extracting|extracted|verifying|verified|review|hydrating|complete|failed|discarded",
+    ),
+  currentEntity: zod.string().nullish(),
+  pageCursor: zod.number(),
+  counts: zod.record(zod.string(), zod.number()),
+  summary: zod.record(zod.string(), zod.unknown()).nullish(),
+  rateLimitedUntil: zod.coerce.date().nullish(),
+  attempts: zod.number(),
+  lastError: zod.string().nullish(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Promote a verified migration's data into quarantined live tables (Conductor-only)
+ */
+export const HydrateMigrationParams = zod.object({
+  tenantId: zod.coerce.number(),
+  jobId: zod.coerce.number(),
+});
+
+export const HydrateMigrationResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  source: zod.string(),
+  status: zod
+    .string()
+    .describe(
+      "pending|extracting|extracted|verifying|verified|review|hydrating|complete|failed|discarded",
+    ),
+  currentEntity: zod.string().nullish(),
+  pageCursor: zod.number(),
+  counts: zod.record(zod.string(), zod.number()),
+  summary: zod.record(zod.string(), zod.unknown()).nullish(),
+  rateLimitedUntil: zod.coerce.date().nullish(),
+  attempts: zod.number(),
+  lastError: zod.string().nullish(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Flip a hydrated migration live, clearing quarantine on its rows (Conductor-only)
+ */
+export const ActivateMigrationParams = zod.object({
+  tenantId: zod.coerce.number(),
+  jobId: zod.coerce.number(),
+});
+
+export const ActivateMigrationResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  source: zod.string(),
+  status: zod
+    .string()
+    .describe(
+      "pending|extracting|extracted|verifying|verified|review|hydrating|complete|failed|discarded",
+    ),
+  currentEntity: zod.string().nullish(),
+  pageCursor: zod.number(),
+  counts: zod.record(zod.string(), zod.number()),
+  summary: zod.record(zod.string(), zod.unknown()).nullish(),
+  rateLimitedUntil: zod.coerce.date().nullish(),
+  attempts: zod.number(),
+  lastError: zod.string().nullish(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Discard a migration and delete its quarantined rows + staged data (Conductor-only)
+ */
+export const DiscardMigrationParams = zod.object({
+  tenantId: zod.coerce.number(),
+  jobId: zod.coerce.number(),
+});
+
+export const DiscardMigrationResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  source: zod.string(),
+  status: zod
+    .string()
+    .describe(
+      "pending|extracting|extracted|verifying|verified|review|hydrating|complete|failed|discarded",
+    ),
+  currentEntity: zod.string().nullish(),
+  pageCursor: zod.number(),
+  counts: zod.record(zod.string(), zod.number()),
+  summary: zod.record(zod.string(), zod.unknown()).nullish(),
+  rateLimitedUntil: zod.coerce.date().nullish(),
+  attempts: zod.number(),
+  lastError: zod.string().nullish(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});

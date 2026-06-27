@@ -156,7 +156,7 @@ router.post("/integrations/:provider/resync", requireTenantAuth, requireAdmin, a
     const allContacts = await db
       .select()
       .from(contactsTable)
-      .where(eq(contactsTable.tenantId, tenantId));
+      .where(and(eq(contactsTable.tenantId, tenantId), eq(contactsTable.isQuarantined, false)));
     let enqueued = 0;
     for (const c of allContacts) {
       const [first, ...rest] = (c.name ?? "").split(/\s+/).filter(Boolean);

@@ -31,6 +31,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users, Receipt, GraduationCap } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import MigrationsPanel from "@/components/MigrationsPanel";
 
 const injectSchema = z.object({
   to: z.string().min(3, "Phone number is required"),
@@ -297,6 +299,18 @@ export default function TenantDetail() {
         <h1 className="text-3xl font-bold tracking-tight">{tenant.name}</h1>
         <p className="text-muted-foreground mt-2 font-mono text-sm">{tenant.slug}.sama.io</p>
       </div>
+
+      <Tabs defaultValue="migrations" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="migrations">Migrations</TabsTrigger>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="migrations">
+          <MigrationsPanel tenantId={tenant.id} tenantName={tenant.name} />
+        </TabsContent>
+
+        <TabsContent value="overview" className="space-y-8">
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
@@ -709,6 +723,8 @@ export default function TenantDetail() {
           </Form>
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
