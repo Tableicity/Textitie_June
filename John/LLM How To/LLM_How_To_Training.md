@@ -14,8 +14,8 @@
 |---|---|
 | **Document** | `LLM_How_To_Training.md` |
 | **Location** | `John/LLM How To/` |
-| **Current version** | **v2.0** |
-| **Last updated** | 2026-06-26 |
+| **Current version** | **v3.0** |
+| **Last updated** | 2026-06-27 |
 | **Owner** | Platform / Conductor team |
 | **Companion docs** | `John/LLM Training Manual.md` (concepts), `John/Run_Book.md` (Twilio go-live & secrets), `replit.md` (architecture of record) |
 | **Review cadence** | Review every release that touches the LLM stack; minimum quarterly |
@@ -35,8 +35,8 @@
    - [7a. How to set Brand Scope & the Fallback Phrase (Conductor)](#7a-how-to-set-brand-scope--the-fallback-phrase-conductor)
 8. [How to work the inbox (Co-Pilot, Auto-Pilot, stepping in)](#8-how-to-work-the-inbox-co-pilot-auto-pilot-stepping-in)
 9. [How to read inbox colors & AI-state chips](#9-how-to-read-inbox-colors--ai-state-chips)
-10. [How to handle every handback reason](#10-how-to-handle-every-handback-reason)
-11. [How the self-learning loop works (and how to verify it learned)](#11-how-the-self-learning-loop-works-and-how-to-verify-it-learned)
+10. [How to handle a handback or a step-down](#10-how-to-handle-a-handback-or-a-step-down)
+11. [Why no conversation learns at runtime (knowledge is human-curated)](#11-why-no-conversation-learns-at-runtime-knowledge-is-human-curated)
 12. [How to handle opt-outs (STOP / START)](#12-how-to-handle-opt-outs-stop--start)
 13. [Troubleshooting playbooks](#13-troubleshooting-playbooks)
 14. [Hard safety rules (never break these)](#14-hard-safety-rules-never-break-these)
@@ -65,15 +65,15 @@ There are **two separate apps and two separate user systems**. Know which one yo
 
 ## 2. The 60-second mental model
 
-- Every business (**tenant**) gets two AI workers: a fast **Student** that answers everyday texts from *approved* knowledge, and a slow, smart **Professor** that curates knowledge and rescues the Student when a customer asks something new.
+- Every business (**tenant**) gets two AI workers: a fast **Student** that answers everyday texts from *approved* knowledge, and a slow, smart **Professor** that curates knowledge **with a human**. The Professor is **not** on any live customer-reply path — its old real-time "rescue" of the Student was **removed 2026-06-27**.
 - Knowledge flows through five stages: **Knowledge Base → Library → Professor → Classroom → Student.** Only the **Classroom** (approved, published facts) is what the Student is allowed to use with customers.
-- Each conversation runs in one of three **engagement modes**: **Manual** (AI off), **Co-Pilot** (AI drafts, human sends), **Auto-Pilot** (AI may send by itself *if* every safety gate passes).
+- Each conversation runs in one of three **engagement modes**: **Manual** (AI off), **Co-Pilot** (AI drafts, human sends), **Auto-Pilot** (AI replies on its own — **answering or acknowledging every turn** — with a **circuit breaker** that steps a conversation down to a human if it keeps coming up empty).
 - In **Co-Pilot**, two optional Conductor settings shape the draft (both only ever *draft*, never send/learn): a **Brand Scope** (off-topic questions get a polite decline, general questions get a quick general answer) and a **Fallback Phrase** (a holding reply drafted when a tenant-specific question can't be grounded). See §7a.
 - Besides Professor sessions, a Conductor can also **pull knowledge from the external Brain service** — same review-and-push, same Classroom (§5a).
 - A human can take over **any** conversation at **any** time.
-- The system only **learns** a new fact when the AI sent a reply **autonomously and unedited** (a clean Auto-Pilot send). Any human touch = no learning.
+- **No conversation learns at runtime** — not even Auto-Pilot. Knowledge enters the Classroom **only** when a human approves it (a Professor session or a Brain pull). See §11.
 
-If you remember nothing else: **the Student only knows what's been pushed to the Classroom, and the AI never sends pricing, compliance, or technical-setup answers by itself.**
+If you remember nothing else: **the Student only knows what's been pushed to the Classroom, the only hard stop on an auto-send is compliance/opt-out, and no live conversation ever teaches the system.**
 
 ---
 
@@ -111,17 +111,17 @@ If you remember nothing else: **the Student only knows what's been pushed to the
 5. When the answer is good, tell the Professor to **absorb** it. The Professor extracts **atomic facts** from its own answer — one statement of truth each.
 6. Each extracted fact arrives in **`draft`** status with a **category** auto-assigned. Categories:
 
-   | Category | Examples | Can the AI auto-send it? |
+   | Category | Examples | Notes |
    |---|---|---|
-   | `general` | Hours, location, general info | ✅ Yes |
-   | `features` | What the product does | ✅ Yes |
-   | `pricing` | Prices, discounts, billing | ❌ Never — human send only |
-   | `compliance` | Legal, TCPA, consent, refunds | ❌ Never — human send only |
-   | `technical_setup` | Install/config steps that can break things | ❌ Never — human send only |
+   | `general` | Hours, location, general info | Routine |
+   | `features` | What the product does | Routine |
+   | `pricing` | Prices, discounts, billing | High-stakes — verify before publishing |
+   | `compliance` | Legal, TCPA, consent, refunds | High-stakes — verify before publishing |
+   | `technical_setup` | Install/config steps that can break things | High-stakes — verify before publishing |
 
 7. Proceed to §5 to accept/reject these drafts.
 
-> **Why the three "risky" categories exist:** money, law, and breakage. A wrong pricing/compliance/setup answer is costly or dangerous, so the AI is **never** allowed to send those on its own — it drafts them and a human sends.
+> **Why these categories matter:** money, law, and breakage. Give `pricing` / `compliance` / `technical_setup` facts extra scrutiny **before you publish** — once published, Auto-Pilot (closed-book) may quote them verbatim, and the Librarian dedups these topics more tightly. **Changed 2026-06-27:** category alone no longer *blocks* auto-send; the only hard send-time guard is compliance/opt-out. To keep a topic always human-reviewed, run that conversation in **Co-Pilot**.
 
 ---
 
@@ -157,7 +157,7 @@ If you remember nothing else: **the Student only knows what's been pushed to the
    - **Flags contradictions with a reason** — these render **unchecked** so you can't promote them by accident. (Deeper semantic conflict adjudication also happens at push.)
 3. Review the **candidates**. For each one:
    - Confirm it is correct and on-topic.
-   - Fix the **category** if it is wrong (the category drives the safety gates — see §4).
+   - Fix the **category** if it is wrong (it guides curation scrutiny and Librarian dedup — see §4).
    - Leave flagged/contradictory candidates unchecked unless you have verified them.
 4. Select the candidates you want and press **Push.** This:
    - Validates every selected item is a real Brain candidate **for this tenant** — it refuses the **whole** push if any isn't (no partial promote).
@@ -170,15 +170,15 @@ If you remember nothing else: **the Student only knows what's been pushed to the
 
 ## 6. How to resolve a knowledge conflict
 
-**Goal:** Clear a `conflict` flag so the AI stops going quiet on that topic.
+**Goal:** Clear a `conflict` flag so the Student never grounds an answer on contradictory facts.
 
-**Why conflicts happen:** When two published facts mention the **same subject** but **different numbers** (e.g., "Pro plan is $50" vs "$60"), the Librarian flags both as `conflict`. While a conflict exists, the AI **refuses to auto-send** on that topic — on purpose.
+**Why conflicts happen:** When two published facts mention the **same subject** but **different numbers** (e.g., "Pro plan is $50" vs "$60"), the Librarian flags both as `conflict` so a human resolves which is true. Leaving a contradiction in the Classroom risks the Student grounding an answer on the wrong number.
 
 1. In the Professor / Classroom view, find facts marked **`conflict`**.
 2. Identify the correct statement (check the source material).
 3. **Reject** the wrong fact and **keep** the correct one — or edit/re-absorb a single correct fact (§4–§5).
 4. **Push to Classroom** again to publish the resolution.
-5. Confirm the `conflict` flag is gone. Auto-send for that topic re-enables automatically.
+5. Confirm the `conflict` flag is gone and the Classroom now holds a single correct fact for that topic.
 
 > **Tip:** A sudden burst of "Conflicting knowledge" handbacks usually means a recent push introduced a contradicting price or policy. Resolve at the source rather than just rejecting one side blindly.
 
@@ -206,7 +206,7 @@ There are two levels:
 |---|---|---|---|---|---|
 | **Manual** | 🔵 Blue | No | No | No | VIP/sensitive conversations; zero AI |
 | **Co-Pilot** | 🟡 Yellow | Yes | No (human sends) | No | The safe default — AI assists, human acts |
-| **Auto-Pilot** | 🟢 Green | Yes | Yes, **if the gate passes** | Yes, **only on a clean autonomous send** | High-volume, well-covered topics |
+| **Auto-Pilot** | 🟢 Green | Yes | **Yes — answers or acks every turn** (fail-open + breaker) | **No — never learns** | High-volume, well-covered topics |
 
 > **Note:** Old mode names are auto-translated on save (`assisted` → Co-Pilot, `gated_auto` → Auto-Pilot). Anything unrecognized safely falls back to **Co-Pilot**.
 
@@ -231,9 +231,9 @@ There are two levels:
 ### Fallback Phrase (the ungrounded holding reply)
 1. In the **Fallback Phrase** card, write one on-brand "holding" sentence for when Co-Pilot can't ground a tenant-specific question (e.g., *"Great question — let me check on that and get right back to you."*).
 2. **Save.**
-3. What it does: in Co-Pilot, when an inbound reaches the grounded pipeline but has **no Classroom/KB match** (typically a question that needs this business's specific facts), Co-Pilot drafts this phrase **verbatim** (instead of guessing) and **skips** the slow Professor rescue. A human sends the stall, then teaches the real answer (§4–§5) so it's grounded next time.
+3. What it does: in Co-Pilot, when an inbound reaches the grounded pipeline but has **no Classroom/KB match** (typically a question that needs this business's specific facts), Co-Pilot drafts this phrase **verbatim** (instead of guessing). A human sends the stall, then teaches the real answer (§4–§5) so it's grounded next time.
 
-> **⚠️ Safety:** The fallback is a *stall, not an answer.* It exists so the AI never guesses at brand-specific pricing/policy/account facts. Leaving it blank simply restores the default (Co-Pilot escalates ungrounded questions to the Professor for a drafted suggestion).
+> **⚠️ Safety:** The fallback is a *stall, not an answer.* It exists so the AI never guesses at brand-specific pricing/policy/account facts. Leaving it blank simply means Co-Pilot keeps the **Student's own best draft** for an ungrounded question — there is no Professor rescue (that path was removed 2026-06-27).
 
 ---
 
@@ -243,20 +243,20 @@ There are two levels:
 1. A customer texts in; the Student writes a draft and **pre-fills your composer.**
 2. Read the draft. Edit anything you want.
 3. Press **Send.** (Co-Pilot **never** learns — your edits and sends are never stored as truth.)
-4. *Streaming drafts:* when the Professor is rescuing an ungrounded question, the customer reply **streams into your composer as it's written** — you can start editing before it finishes.
 
 > **Heads-up — a Co-Pilot draft can come from different places.** Besides the Student's normal grounded draft, in Co-Pilot you may see: a **polite decline** (the Brand-Scope Router judged the message off-scope), a **quick general answer** (in-domain but answerable from general knowledge), or your tenant's **fallback holding phrase** (a tenant-specific question that couldn't be grounded). All of them are just drafts — review, edit, and send as normal; none ever sends itself or learns. See §7a to tune these.
 
 **Monitoring an Auto-Pilot (🟢) conversation:**
-1. If the gate passes, the AI **sends the reply verbatim** and you'll see status `auto_sent`. No action needed — just monitor.
-2. If the gate refuses or Grok fails, the conversation **hands back Blue for that one message** (status `refused` / `failed`) with a reason chip. Handle it manually (§10). After you do, the conversation returns to green for the next turn.
+1. On a Classroom match, the AI **sends a grounded reply verbatim** (status `auto_sent`) and stays green. No action needed — just monitor.
+2. When it can't ground a turn, it sends a graceful **acknowledgement** and stays green — the customer is never left hanging. If a conversation keeps coming up empty, the **circuit breaker** trips: it sends a final ack and **steps the conversation down to Blue.** Pick it up manually (§10) and re-enable Auto-Pilot once you've trained the missing knowledge.
+3. A genuine **compliance/opt-out** hold or a failed send surfaces Blue for that turn (status `refused` / `failed`) with a reason chip — handle it manually (§10).
 
 **Stepping into any conversation (works in any mode):**
 1. Open the conversation and just send a message yourself.
 2. The pending AI turn is marked **`human_handled`** and **is not learned.**
 3. You have the wheel; the background AI will not overwrite what you sent.
 
-> **⚠️ Safety:** Pricing, compliance, and technical-setup questions will **always** be handed to you in Auto-Pilot — the AI drafts but never sends them. This is correct, not a bug.
+> **⚠️ Safety:** Auto-Pilot is **closed-book** — it only ever sends facts a human published. Category alone no longer blocks an auto-send (changed 2026-06-27); the hard stop is **compliance/opt-out**, re-checked at send. If a topic must always be human-reviewed, run that conversation in **Co-Pilot**.
 
 ---
 
@@ -265,7 +265,7 @@ There are two levels:
 **Colors (effective engagement mode):**
 - 🔵 **Blue** — AI off for this turn (Manual, or a handback for one message).
 - 🟡 **Yellow** — Co-Pilot: a draft is ready for you to send.
-- 🟢 **Green** — Auto-Pilot: the AI may send by itself when safe.
+- 🟢 **Green** — Auto-Pilot: the AI replies on its own every turn — a grounded answer or a graceful ack.
 
 **AI-state status → what to do:**
 
@@ -274,53 +274,52 @@ There are two levels:
 | `idle` | Nothing pending | Normal |
 | `drafted` | A draft is waiting (Co-Pilot or handback) | Review, edit, send |
 | `auto_sent` | Auto-Pilot sent it verbatim | Nothing — monitor |
-| `refused` | The gate declined to auto-send | Read the chip, send manually |
-| `failed` | Grok or the send failed | Read the chip, send manually |
+| `refused` | The AI held back this turn (e.g. a compliance hold) | Read the chip, send manually |
+| `failed` | The model or the send failed | Read the chip, send manually |
 | `human_handled` | A human took this turn | Done — returns to green next turn |
 | `superseded` | A newer inbound replaced this | Ignore (historical) |
 
-> **Note:** In Co-Pilot, a `drafted` suggestion may be the Student's grounded draft, a Professor rescue, a Brand-Scope Router decline/flash answer, or the fallback holding phrase (§7a). They all behave identically — review, edit, send.
+> **Note:** In Co-Pilot, a `drafted` suggestion may be the Student's grounded draft (or its own best draft when ungrounded), a Brand-Scope Router decline/flash answer, or the fallback holding phrase (§7a). They all behave identically — review, edit, send. (There is no longer a Professor "rescue" draft — removed 2026-06-27.)
 
 ---
 
-## 10. How to handle every handback reason
+## 10. How to handle a handback or a step-down
 
-When the AI hands back Blue, a **chip** tells you why. The most important reason wins. Find the chip and do the matching action:
+Since the **2026-06-27** fail-open change, Auto-Pilot **rarely** hands a single message back — on a knowledge miss it sends a graceful **acknowledgement** and stays green. You'll now see Blue in three situations:
 
-| Chip you see | What it means | What to do |
+| What you see | What it means | What to do |
 |---|---|---|
-| "No matching knowledge" | The Classroom doesn't cover this | Answer manually; then teach it (§3–§5) so next time it's covered |
-| "Sensitive topic — needs a human" | Pricing/compliance/setup intent | Answer manually — this will always need you |
-| "Compliance hold — needs your review" | A compliance check blocked the send | Verify consent/opt-out status, then reply manually |
-| "Conflicting knowledge — needs your review" | Two facts contradict | Resolve the conflict (§6), then reply |
-| "Not confident enough to auto-send" | Confidence wasn't `high` | Read the draft, fix it, send |
-| "Auto-send failed — please send manually" | The send attempt failed | Send manually; the system already freed the retry lock |
-| "AI couldn't draft a reply" | The Student produced nothing usable | Reply manually |
-| "AI is offline" | The AI key is unset/unavailable | Reply manually; tell a Conductor to check `GROK_KEYS` (§13) |
+| Chip: **"Auto-Pilot paused after repeated out-of-scope messages…"** | The **circuit breaker** tripped — the conversation kept coming up empty, so Auto-Pilot sent a final ack and stepped it down to Blue | Reply manually, then teach the missing knowledge (§3–§5). **Re-enable Auto-Pilot** once it's covered — the step-down is *not* auto-cleared. |
+| Chip: **"Compliance hold — needs your review"** | A compliance/opt-out check blocked the send (a hard guard, re-checked at send time) | Verify consent/opt-out status, then reply manually if appropriate |
+| Chip: **"Auto-send failed — please send manually"** | A send the AI decided to make didn't complete | Send manually; the system already freed the retry lock and recorded **no** breaker event |
+
+Two more chips appear when the AI provider is down (the role stubs out — SMS still records):
+- **"AI couldn't draft a reply"** — the Student produced nothing usable; reply manually.
+- **"AI is offline"** — the AI provider is unavailable; reply manually and tell a Conductor to check `GROK_KEYS` (§13).
+
+> **Gone since 2026-06-27:** the old per-message handbacks for *"Sensitive topic,"* *"Not confident enough,"* and (in Auto-Pilot) *"No matching knowledge"* / *"Conflicting knowledge."* Those came from the retired fail-closed gates. Auto-Pilot is now closed-book and fail-open: an unknown question gets an out-of-scope **ack** (green), not a handback, until the breaker steps in.
 
 ---
 
-## 11. How the self-learning loop works (and how to verify it learned)
+## 11. Why no conversation learns at runtime (knowledge is human-curated)
 
-**What it is:** When a customer asks something the Classroom doesn't cover, the Student can't ground its answer — `kbMatched = false` **and** no strong Classroom search hit. Instead of guessing, the system escalates to the **Professor** in the background, off the customer-reply path. (A strong Classroom search hit suppresses escalation even when the Student self-reports no match, and the Professor must be configured.)
+**The rule:** **no engagement mode learns from a live conversation** — not Co-Pilot, not Auto-Pilot. The inbound SMS path never writes a fact. This changed **2026-06-27**, when the live Professor escalation / self-learning loop was removed.
 
-**What happens, in order:**
-1. The inbound is written to a **durable staging queue** and a **per-conversation worker** processes one inbound at a time (rapid-fire texts are smartly **coalesced** into a single reply to the combined/latest message). This work **survives restarts**.
-2. The **Professor** answers from the tenant's **Library** + its own expertise and returns: a customer reply, a confidence level, 2–3 candidate facts, and up to 3 follow-up questions.
-3. **Injection safety:** the customer's text is treated as **a question only — never as truth.** Deterministic guards drop any "fact" that just echoes the customer or isn't actually supported by the Library. A customer can never *teach* the system.
-4. **Learn-or-not:**
-   - **Auto-Pilot + stricter gate passes** → send the reply, **then** persist the screened facts as published Classroom truth. The system won't escalate this question again.
-   - **Co-Pilot** → the reply is drafted/whispered for you. **Nothing is learned.**
-   - **Manual** → escalation is skipped.
+**What this means for you:**
+- An **unknown question** no longer teaches the system on its own. In **Co-Pilot** the Student drafts its best answer (or the fallback phrase) for you to review; in **Auto-Pilot** it sends a graceful out-of-scope **ack** and stays green (until the breaker steps it down).
+- The **Professor is creation-only** now: it helps you curate knowledge offline, with a human. It is **not** consulted on any live customer reply.
 
-**The one-line learning rule:**
-> Facts are learned **if and only if** the reply was **sent autonomously AND unedited** (a clean Auto-Pilot send). Any human touch = no learning.
+**How knowledge actually gets in — the only two ways (both human-approved):**
+1. **Professor session** → accept facts → **push to Classroom** (§4–§5).
+2. **Brain pull** → review candidates → **push to Classroom** (§5a).
 
-**How to verify it actually learned:**
-1. After a clean Auto-Pilot send on a previously-unknown question, open the tenant's **Classroom**.
-2. Confirm a **new published fact** appeared in the current version covering that topic.
-3. Re-ask the same question — the Student should now ground it directly (no escalation).
-4. If nothing was learned: the send wasn't clean/autonomous (a human touched it), the gate refused, or the candidate facts failed screening — all by design.
+**How to "teach" the AI a missing answer (the new playbook):**
+1. Note the question the AI couldn't ground (a Co-Pilot fallback draft, an Auto-Pilot ack, or a breaker step-down).
+2. Run a **Professor session** (§4) or a **Brain pull** (§5a) covering that topic.
+3. **Accept** the correct facts and **push to Classroom** (§5).
+4. Verify: open the **Classroom**, confirm the new **published** fact, then re-ask — the Student should now ground it directly.
+
+> **⚠️ Safety (still true):** during curation, the source/customer text is treated as **input only, never as truth** — deterministic screening drops any "fact" that just echoes the asker or isn't supported by the Library. A customer can never *teach* the system.
 
 ---
 
@@ -344,14 +343,14 @@ Opt-outs are handled **automatically before the AI ever runs** — but staff mus
 **"The AI isn't replying at all — every conversation is Blue / 'AI is offline'."**
 → A Conductor should check that the AI key (`GROK_KEYS`) is set. With no key, the AI safely stubs out by design and **SMS still works** — messages are still recorded.
 
-**"The AI keeps handing back pricing/compliance questions."**
-→ Correct behavior. Those categories **always** require a human send. The AI drafts them, you send them.
+**"Should Auto-Pilot really be answering pricing / compliance questions on its own?"**
+→ Since 2026-06-27, category no longer blocks an auto-send — if a human **published** the fact, Auto-Pilot (closed-book) may quote it. The only hard send-time guard is **compliance/opt-out**. To keep a topic always human-reviewed, run that conversation in **Co-Pilot** (or don't publish that fact).
 
 **"It says 'No matching knowledge' for something we definitely told it."**
 → The fact is probably still in `draft`, or it's in the Library but was never absorbed/pushed. Run a Professor session, accept the fact, and push to the Classroom (§4–§5).
 
-**"It says 'Conflicting knowledge'."**
-→ Two published facts contradict (often two prices). Resolve in the Classroom (§6); automation re-enables for that topic once resolved.
+**"Two of our facts contradict (a 'conflict' flag)."**
+→ Two published facts contradict (often two prices), so the Librarian flagged them for a human. Resolve in the Classroom (§6) so the Student grounds on a single correct fact.
 
 **"A customer got a duplicate text."**
 → The AI path is protected against this (one send per inbound). If it happened, check whether an automation rule **and** a campaign both fired, or whether a human also sent manually.
@@ -360,22 +359,22 @@ Opt-outs are handled **automatically before the AI ever runs** — but staff mus
 → That's the Brand-Scope triage Router (§7a): it judged the message off-scope (decline) or answerable from general knowledge (flash). It's Co-Pilot-only and never sends itself — edit/replace and send. If it misfires often, refine the tenant's **Brand Scope**.
 
 **"Every ungrounded Co-Pilot reply is just our canned holding sentence."**
-→ That's the **fallback phrase** (§7a) doing its job: the question was tenant-specific but nothing in the Classroom could ground it, so the system stalls instead of guessing. Send it, then teach the answer (§4–§5) so next time it grounds. To restore Professor-drafted suggestions for ungrounded questions, clear the tenant's **Fallback Phrase**.
+→ That's the **fallback phrase** (§7a) doing its job: the question was tenant-specific but nothing in the Classroom could ground it, so the system stalls instead of guessing. Send it, then teach the answer (§4–§5) so next time it grounds. Clear the tenant's **Fallback Phrase** and Co-Pilot instead keeps the Student's own best draft for ungrounded questions (there is no Professor rescue — removed 2026-06-27).
 
 **"We taught the Professor something but the Student still doesn't know it."**
 → The Student only reads the **published Classroom** — not Professor chat or the Library. Accept and **push** the facts to create a new Classroom version.
 
 **"Why didn't it learn from that great Auto-Pilot conversation?"**
-→ Learning happens only on a **clean, unedited, autonomous** send. If a human edited, stepped in, or it was Co-Pilot, nothing is learned — by design.
+→ **No conversation learns at runtime** (changed 2026-06-27) — not even a clean Auto-Pilot send. Knowledge enters the Classroom only through human-approved curation: a Professor session (§4–§5) or a Brain pull (§5a). See §11.
 
 ---
 
 ## 14. Hard safety rules (never break these)
 
 1. **Customer text is a question, never truth.** Customers can never teach the system.
-2. **Pricing / compliance / technical_setup are never auto-sent.** Drafted yes, AI-sent never.
-3. **Gates are fail-closed.** When unsure, the system hands back to a human; it does not guess.
-4. **Learning requires a clean autonomous send.** Any human touch ⇒ no learning.
+2. **Compliance / opt-out is the only hard send-time guard** — re-checked at the moment of sending. Category no longer blocks an auto-send (changed 2026-06-27); use Co-Pilot to force human review of a topic.
+3. **Auto-Pilot is closed-book and fail-open.** It answers from the approved Classroom or sends a graceful ack — never a guess — and a **circuit breaker** steps a stuck conversation down to a human (Blue).
+4. **No conversation learns at runtime.** Knowledge enters the Classroom only through human-approved curation (a Professor session or a Brain pull).
 5. **A missing AI key must never break SMS.** Messages still record; the AI just goes quiet.
 6. **Compliance is re-checked at the moment of sending**, not just when drafting.
 7. **One conversation = one AI state**, and a human can take over at any moment without being overwritten by a slow background AI write.
@@ -406,6 +405,7 @@ This document is version-controlled by **two things working together**: the revi
 |---|---|---|---|
 | **v1.0** | 2026-06-23 | Platform team | Initial release. Full granular how-to: access/roles, knowledge loading, Professor sessions, fact acceptance & Classroom push, conflict resolution, engagement modes, inbox operation, colors/states, handback handling, self-learning loop, opt-outs, troubleshooting, safety rules, and this revision-control policy. |
 | **v2.0** | 2026-06-26 | Platform team | Added the Co-Pilot **Brand-Scope triage Router** and **fallback holding phrase** (new §7a; plus inbox §8, colors §9, and troubleshooting §13 updates) and the Conductor **Brain knowledge-pull** procedure (new §5a). 60-second mental model (§2) and knowledge-loading (§3) updated to match. |
+| **v3.0** | 2026-06-27 | Platform team | **Removed the live Professor escalation / self-learning loop.** Professor is now **creation-only**; **no engagement mode learns at runtime**. Rewrote Auto-Pilot to the **fail-OPEN** turn responder + **circuit breaker** (§2, §7, §8, §11) and dropped the category auto-send block — **compliance/opt-out is the only hard send-time guard** (§4, §8, §14). Reframed conflicts (§6), the fallback phrase (§7a), colors/handbacks (§9–§10), troubleshooting (§13), and the §11 learning section ("Why no conversation learns at runtime"). |
 
 ---
 

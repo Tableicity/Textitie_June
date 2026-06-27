@@ -383,7 +383,7 @@ export default function TenantDetail() {
             title: "Fallback Phrase Saved",
             description: next
               ? "Co-Pilot will draft this verbatim when an inbound is tenant-specific but ungrounded."
-              : "Fallback phrase cleared — Co-Pilot falls back to the existing Student/Professor draft path.",
+              : "Fallback phrase cleared — Co-Pilot falls back to the existing Student draft path.",
           });
         },
         onError: (err) => {
@@ -406,7 +406,7 @@ export default function TenantDetail() {
             title: "Holding Phrase Saved",
             description: next
               ? "Auto-Pilot will text this verbatim as an acknowledgment when it hands a message back to a human."
-              : "Holding phrase cleared — Auto-Pilot handbacks stay silent (today's behavior).",
+              : "Holding phrase cleared — Auto-Pilot handbacks use a built-in default acknowledgment.",
           });
         },
         onError: (err) => {
@@ -960,8 +960,7 @@ export default function TenantDetail() {
             to a human (the gate refused, or the AI draft failed). It is an
             acknowledgment, NOT an answer — the conversation stays Blue so a human
             still owns the real reply, and the customer is texted at most once per
-            wait. Leave empty to keep Auto-Pilot handbacks silent (today's
-            behavior).
+            wait. Leave empty to use a built-in default acknowledgment.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">

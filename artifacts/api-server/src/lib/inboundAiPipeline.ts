@@ -833,8 +833,8 @@ export async function runInboundAiPipeline(
     let facts: ClassroomFact[] = [];
     // A real FTS hit (every non-stopword term present in a Classroom fact) is a
     // deterministic grounding signal we trust over the Student's brittle
-    // self-report: it suppresses needless slow Professor escalation (gate below)
-    // AND lets Auto-Pilot auto-answer grounded questions (evaluateAutoSend).
+    // self-report: it marks the Co-Pilot draft as grounded AND lets Auto-Pilot
+    // auto-answer grounded questions (evaluateAutoPilotTurn).
     let classroomMatch: ClassroomMatchType = "none";
     let classroomTopRank: number | null = null;
     try {
@@ -854,10 +854,8 @@ export async function runInboundAiPipeline(
     }
     const strongClassroomMatch = classroomMatch === "fts";
     // Coverage is a weaker-but-real grounding signal: the relevant fact is
-    // present, so we treat the turn as grounded (skip the slow Professor
-    // escalation and suppress the Co-Pilot holding fallback). Auto-Pilot's gate
-    // still demands a "high" confidence self-report before sending — only a full
-    // FTS hit bypasses that (see evaluateAutoSend).
+    // present, so we treat the turn as grounded (and suppress the Co-Pilot
+    // holding fallback).
     const coverageClassroomMatch = classroomMatch === "coverage";
     const classroomGrounded = strongClassroomMatch || coverageClassroomMatch;
     const classroomContext = facts

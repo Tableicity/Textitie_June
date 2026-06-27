@@ -93,8 +93,8 @@ vi.mock("./compliance", async () => {
 const RUN = `aithrow-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 const phone = `+1983${String(Date.now()).slice(-7)}`;
 
-// A grounded, high-confidence, safe-category draft — everything evaluateAutoSend
-// needs to pass so execution actually reaches the (mocked, throwing) send.
+// A grounded, high-confidence, safe-category draft — everything the Auto-Pilot
+// gate needs to pass so execution actually reaches the (mocked, throwing) send.
 const GOOD_DRAFT: StudentDraft = {
   status: "drafted",
   whisperBody: "Customer asked about opening hours.",
