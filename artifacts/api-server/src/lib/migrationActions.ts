@@ -193,9 +193,15 @@ export async function flipMigrationLive(
         UPDATE conversations SET is_quarantined = false
         WHERE migration_job_id = ${jobId} AND is_quarantined = true AND tenant_id = ${tenantId}
       `);
+      // messages has no tenant_id of its own — scope via its conversation's
+      // tenant so the mutation can never cross a tenant boundary even if a
+      // migration_job_id were ever mis-associated.
       await tx.execute(sql`
         UPDATE messages SET is_quarantined = false
         WHERE migration_job_id = ${jobId} AND is_quarantined = true
+          AND conversation_id IN (
+            SELECT id FROM conversations WHERE tenant_id = ${tenantId}
+          )
       `);
 
       // 5. Stamp flippedAt (idempotency marker) without disturbing the summary.
@@ -264,9 +270,14 @@ export async function discardMigration(
 
     // messages -> conversations (FK order); contacts only when quarantined so a
     // live contact we linked conversations to survives. raw_data is job-scoped.
+    // messages has no tenant_id — scope via its conversation's tenant so the
+    // delete can never cross a tenant boundary.
     const m = await tx.execute(sql`
       DELETE FROM messages
       WHERE migration_job_id = ${jobId} AND is_quarantined = true
+        AND conversation_id IN (
+          SELECT id FROM conversations WHERE tenant_id = ${tenantId}
+        )
     `);
     const c = await tx.execute(sql`
       DELETE FROM conversations

@@ -578,3 +578,130 @@ describe("flipMigrationLive — merge, clear, idempotency, collision", () => {
     expect((row?.summary as Record<string, unknown>)?.flippedAt).toBeFalsy();
   });
 });
+
+describe("flip/discard — message mutations are tenant-scoped", () => {
+  // `messages` has no tenant_id; it is scoped via its conversation. A corrupted
+  // or malformed migration_job_id association could otherwise let a Phase-3
+  // action reach another tenant's messages. These adversarial cases plant a
+  // quarantined message in tenant B that carries tenant A's job id and prove the
+  // conversation-ownership scoping never touches it.
+  async function plantQuarantinedImport(tenantId: number, jobId: number) {
+    const phone = uniquePhone();
+    const [contact] = await db
+      .insert(contactsTable)
+      .values({
+        tenantId,
+        phone,
+        isQuarantined: true,
+        migrationJobId: jobId,
+        importExternalId: `phone:${phone}`,
+      })
+      .returning({ id: contactsTable.id });
+    const [conv] = await db
+      .insert(conversationsTable)
+      .values({
+        tenantId,
+        contactId: contact.id,
+        contactPhone: phone,
+        isQuarantined: true,
+        migrationJobId: jobId,
+        importExternalId: `qc-${phone}`,
+      })
+      .returning({ id: conversationsTable.id });
+    const [msg] = await db
+      .insert(messagesTable)
+      .values({
+        conversationId: conv.id,
+        direction: "inbound",
+        body: "A import",
+        isQuarantined: true,
+        migrationJobId: jobId,
+        importExternalId: `qm-${phone}`,
+      })
+      .returning({ id: messagesTable.id });
+    return { convId: conv.id, msgId: msg.id };
+  }
+
+  // A normal tenant-B conversation whose message is (adversarially) tagged with
+  // tenant A's job id.
+  async function plantForeignMessage(tenantId: number, foreignJobId: number) {
+    const phone = uniquePhone();
+    const [contact] = await db
+      .insert(contactsTable)
+      .values({ tenantId, phone, isQuarantined: true })
+      .returning({ id: contactsTable.id });
+    const [conv] = await db
+      .insert(conversationsTable)
+      .values({
+        tenantId,
+        contactId: contact.id,
+        contactPhone: phone,
+        isQuarantined: true,
+      })
+      .returning({ id: conversationsTable.id });
+    const [msg] = await db
+      .insert(messagesTable)
+      .values({
+        conversationId: conv.id,
+        direction: "inbound",
+        body: "B must survive",
+        isQuarantined: true,
+        migrationJobId: foreignJobId,
+        importExternalId: `bqm-${phone}`,
+      })
+      .returning({ id: messagesTable.id });
+    return msg.id;
+  }
+
+  it("discard never deletes another tenant's message that shares the job id", async () => {
+    const tenantA = await makeTenant();
+    const tenantB = await makeTenant();
+    const jobId = await makeJob(tenantA, { status: "review" });
+
+    const a = await plantQuarantinedImport(tenantA, jobId);
+    const bMsgId = await plantForeignMessage(tenantB, jobId);
+
+    const res = await discardMigration(tenantA, jobId);
+    expect(res.status).toBe("ok");
+
+    // Tenant A's import message is deleted.
+    const aStill = await db
+      .select({ id: messagesTable.id })
+      .from(messagesTable)
+      .where(eq(messagesTable.id, a.msgId));
+    expect(aStill).toHaveLength(0);
+
+    // Tenant B's message survives — discard is scoped to tenant A's conversations.
+    const bStill = await db
+      .select({ id: messagesTable.id })
+      .from(messagesTable)
+      .where(eq(messagesTable.id, bMsgId));
+    expect(bStill).toHaveLength(1);
+  });
+
+  it("flip never de-quarantines another tenant's message that shares the job id", async () => {
+    const tenantA = await makeTenant();
+    const tenantB = await makeTenant();
+    const jobId = await makeJob(tenantA, { status: "complete", summary: {} });
+
+    const a = await plantQuarantinedImport(tenantA, jobId);
+    const bMsgId = await plantForeignMessage(tenantB, jobId);
+
+    const res = await flipMigrationLive(tenantA, jobId);
+    expect(res.status).toBe("ok");
+
+    // Tenant A's import message is cleared.
+    const [aMsg] = await db
+      .select({ isQuarantined: messagesTable.isQuarantined })
+      .from(messagesTable)
+      .where(eq(messagesTable.id, a.msgId));
+    expect(aMsg?.isQuarantined).toBe(false);
+
+    // Tenant B's message stays quarantined — flip is scoped to tenant A's convs.
+    const [bMsg] = await db
+      .select({ isQuarantined: messagesTable.isQuarantined })
+      .from(messagesTable)
+      .where(eq(messagesTable.id, bMsgId));
+    expect(bMsg?.isQuarantined).toBe(true);
+  });
+});
