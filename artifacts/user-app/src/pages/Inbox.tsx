@@ -202,6 +202,8 @@ export default function Inbox() {
   const [showBuyGas, setShowBuyGas] = useState(false);
   const [newPhone, setNewPhone] = useState("");
   const [newName, setNewName] = useState("");
+  // "0" = Unassigned; otherwise a department id as a string.
+  const [newDept, setNewDept] = useState<string>("0");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Tracks the last Co-Pilot draft we auto-inserted, so we prefill a draft once
@@ -234,6 +236,15 @@ export default function Inbox() {
     const t = setTimeout(() => setSearchQ(searchInput.trim()), 300);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // When the New Message dialog opens, default its department to whatever the
+  // inbox is currently filtered to, so a conversation started while viewing
+  // "Customer Service" lands in Customer Service instead of Unassigned.
+  useEffect(() => {
+    if (showNewMessage) {
+      setNewDept(deptFilter !== "all" && deptFilter !== "0" ? deptFilter : "0");
+    }
+  }, [showNewMessage, deptFilter]);
 
   const { data: departments } = useListDepartments();
   const { data: agents } = useListAgents();
@@ -571,6 +582,7 @@ export default function Inbox() {
         setShowNewMessage(false);
         setNewPhone("");
         setNewName("");
+        setNewDept("0");
         if (data?.id) setSelectedId(data.id);
       },
     },
@@ -1767,6 +1779,7 @@ export default function Inbox() {
                 data: {
                   contactPhone: e164,
                   contactName: newName.trim() || null,
+                  departmentId: newDept === "0" ? null : Number(newDept),
                 },
               });
             }}
@@ -1795,6 +1808,27 @@ export default function Inbox() {
                 placeholder="Jane Doe"
               />
             </div>
+            {departments && departments.length > 0 && (
+              <div>
+                <Label className="mb-1.5 block">Department</Label>
+                <Select value={newDept} onValueChange={setNewDept}>
+                  <SelectTrigger data-testid="select-new-message-department">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Unassigned</SelectItem>
+                    {departments.map((d) => (
+                      <SelectItem key={d.id} value={d.id.toString()}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  New conversations are filed under this department.
+                </p>
+              </div>
+            )}
             <DialogFooter>
               <Button
                 type="button"
