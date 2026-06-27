@@ -1,0 +1,25 @@
+So, the clean version of what you're describing
+Your model works, and it's close to where the system already is — the only real decision is what to do on a tenant-specific Classroom miss:
+
+Student = Classroom first (authoritative tenant truth, grounded), + Grok's general knowledge for general questions (already wired via the router flash branch).
+Drop the Professor from the runtime path entirely — it returns to being purely a creation tool (Human + Professor), exactly per your segmentation.
+For the tenant-specific gap, don't let Grok invent it. Use the cheap fallback stall that already exists ("Let me confirm that and get right back to you") — no Professor tax, no hallucinated tenant fact, and the human can answer or feed it back through the creation avenue. In Co-Pilot a human reviews anyway, so this is safe and fast.
+Net: you'd be paying for one fast LLM (Grok) at runtime instead of two, the Professor stops touching live traffic, and the only thing you give up is auto-drafting tenant-specific answers you don't have knowledge for yet — which is precisely the thing that should go back through Human + Professor, not get guessed at the edge. That's fully consistent with everything you've said.
+
+Thank you; I will publish and Test Co Pilot - any last thoughts before we move to the next project
+
+6 minutes ago
+
+1 message & 1 action
+Please contnue - I had a keyboard hit
+
+5 minutes ago
+
+Deciding on next steps
+...leans on Grok (Student) and, today, the Professor (OpenRouter). Make sure both keys are present in the deployment environment — saving a deploy secret doesn't restart prod, you have to (re)publish for it to take effect. If a provider is missing, that role silently degrades to a stub and the drafts just get worse, which is easy to misread as a Co-Pilot bug.
+
+The schema migrates itself on publish. The Auto-Pilot turn-events table ships via Replit's publish-time diff — no manual step. Just glance at the Publish UI to confirm it's an additive change (it is) so nothing prompts for a destructive confirm.
+
+One stale doc to fix later. replit.md still says "self-learning runs for Co-Pilot only" — that's now wrong (nothing learns). Worth correcting when you circle back so future-you, or another agent, isn't misled.
+
+That's everything — the build's in good shape to publish and test. Good sessio
