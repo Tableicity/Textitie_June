@@ -29,3 +29,4 @@ export * from "./knowledge";
 export * from "./aiAutoReplies";
 export * from "./conversationAiStates";
 export * from "./conversationInboundAiStages";
+export * from "./autopilotTurnEvents";

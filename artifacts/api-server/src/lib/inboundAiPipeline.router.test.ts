@@ -16,6 +16,7 @@ import {
   messagesTable,
   aiAutoRepliesTable,
   conversationAiStatesTable,
+  autopilotTurnEventsTable,
   type Tenant,
 } from "@workspace/db";
 import { runInboundAiPipeline } from "./inboundAiPipeline";
@@ -242,6 +243,9 @@ beforeEach(async () => {
 afterEach(async () => {
   if (!tenantId) return;
   await db
+    .delete(autopilotTurnEventsTable)
+    .where(eq(autopilotTurnEventsTable.tenantId, tenantId));
+  await db
     .delete(conversationAiStatesTable)
     .where(eq(conversationAiStatesTable.tenantId, tenantId));
   await db
@@ -255,6 +259,9 @@ afterAll(async () => {
     .select({ id: conversationsTable.id })
     .from(conversationsTable)
     .where(eq(conversationsTable.tenantId, tenantId));
+  await db
+    .delete(autopilotTurnEventsTable)
+    .where(eq(autopilotTurnEventsTable.tenantId, tenantId));
   await db
     .delete(conversationAiStatesTable)
     .where(eq(conversationAiStatesTable.tenantId, tenantId));
@@ -390,19 +397,27 @@ describe("runInboundAiPipeline — Co-Pilot triage router", () => {
     expect(studentWhisper).toHaveBeenCalledTimes(1);
   });
 
-  it("Auto-Pilot NEVER runs the router (path unchanged); gate refuses the ungrounded draft", async () => {
-    vi.mocked(professorConfigured).mockReturnValue(false); // no escalation
+  it("Auto-Pilot NEVER runs the router; a closed-book miss sends a graceful ack (no Student stitch)", async () => {
+    vi.mocked(sendConversationReply).mockResolvedValue({
+      ok: true,
+      status: "sent",
+      messageRow: { id: 7001 },
+      sendSummary: {},
+    } as unknown as Awaited<ReturnType<typeof sendConversationReply>>);
 
     await run({ tenant: { ...tenant, engagementMode: "autopilot" } });
 
+    // The Co-Pilot triage router is Co-Pilot-only and must never run here.
     expect(triageInbound).not.toHaveBeenCalled();
     expect(studentFlashDraft).not.toHaveBeenCalled();
-    expect(studentWhisper).toHaveBeenCalledTimes(1);
-    expect(sendConversationReply).not.toHaveBeenCalled();
+    // Closed-book: a no-match turn never invokes the Student.
+    expect(studentWhisper).not.toHaveBeenCalled();
+    // Fail-OPEN: the customer still gets a graceful out-of-scope ack (GREEN).
+    expect(sendConversationReply).toHaveBeenCalledTimes(1);
 
     const states = await readState();
     expect(states).toHaveLength(1);
-    expect(states[0].status).toBe("refused");
+    expect(states[0].status).toBe("auto_sent");
   });
 
   it("Manual NEVER runs the router and never drafts", async () => {

@@ -16,6 +16,7 @@ import {
   messagesTable,
   aiAutoRepliesTable,
   conversationAiStatesTable,
+  autopilotTurnEventsTable,
   type Tenant,
 } from "@workspace/db";
 import { runInboundAiPipeline } from "./inboundAiPipeline";
@@ -249,6 +250,9 @@ beforeEach(async () => {
 afterEach(async () => {
   if (!tenantId) return;
   await db
+    .delete(autopilotTurnEventsTable)
+    .where(eq(autopilotTurnEventsTable.tenantId, tenantId));
+  await db
     .delete(conversationAiStatesTable)
     .where(eq(conversationAiStatesTable.tenantId, tenantId));
   await db
@@ -262,6 +266,9 @@ afterAll(async () => {
     .select({ id: conversationsTable.id })
     .from(conversationsTable)
     .where(eq(conversationsTable.tenantId, tenantId));
+  await db
+    .delete(autopilotTurnEventsTable)
+    .where(eq(autopilotTurnEventsTable.tenantId, tenantId));
   await db
     .delete(conversationAiStatesTable)
     .where(eq(conversationAiStatesTable.tenantId, tenantId));
@@ -370,17 +377,26 @@ describe("runInboundAiPipeline — Co-Pilot fallback holding phrase", () => {
     expect(states[0].draftSource).toBe("student");
   });
 
-  it("Auto-Pilot + fallback set + ungrounded → fallback NEVER used (path unchanged)", async () => {
-    vi.mocked(professorConfigured).mockReturnValue(false); // no escalation
+  it("Auto-Pilot + fallback set → the Co-Pilot fallback phrase is NEVER used (closed-book ack instead)", async () => {
+    vi.mocked(sendConversationReply).mockResolvedValue({
+      ok: true,
+      status: "sent",
+      messageRow: { id: 7101 },
+      sendSummary: {},
+    } as unknown as Awaited<ReturnType<typeof sendConversationReply>>);
 
     await run({ tenant: { ...tenant, engagementMode: "autopilot" } });
 
-    expect(sendConversationReply).not.toHaveBeenCalled();
+    // Auto-Pilot is fail-OPEN: it sends its OWN closed-book out-of-scope ack, but
+    // must NEVER reuse the Co-Pilot fallback holding phrase (that path is frozen).
+    expect(sendConversationReply).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendConversationReply).mock.calls[0][0].body).not.toBe(
+      FALLBACK,
+    );
 
     const states = await readState();
     expect(states).toHaveLength(1);
-    // The fail-closed gate refuses the ungrounded draft; it is NOT a fallback draft.
-    expect(states[0].status).toBe("refused");
+    expect(states[0].status).toBe("auto_sent");
     expect(states[0].draftSource).not.toBe("fallback_phrase");
   });
 

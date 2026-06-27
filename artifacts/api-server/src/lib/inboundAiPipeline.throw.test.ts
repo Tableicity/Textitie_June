@@ -16,6 +16,7 @@ import {
   messagesTable,
   aiAutoRepliesTable,
   conversationAiStatesTable,
+  autopilotTurnEventsTable,
   type Tenant,
   type ClassroomFact,
 } from "@workspace/db";
@@ -42,8 +43,9 @@ import { sendConversationReply } from "./outboundReply";
 //   3. NOT learn anything;
 //   4. NOT re-throw — a send failure is a terminal handback for THIS message,
 //      not a whole-burst requeue.
-// The complementary case: an UNEXPECTED failure (here, the Student throwing)
-// MUST propagate so the inbound-AI worker requeues/dead-letters the burst.
+// The complementary case: under the fail-OPEN redesign a RESPONDER error (the
+// Student throwing) is NOT fatal — Auto-Pilot still sends a graceful out-of-scope
+// ack for that turn and never re-throws (closed-book, no Professor escalation).
 //
 // Approach mirrors the other DB-backed tests in this dir (e.g.
 // inboundStageStore.test.ts): we use the REAL database and seed real rows, and
@@ -187,6 +189,9 @@ beforeEach(async () => {
 afterEach(async () => {
   if (!tenantId) return;
   await db
+    .delete(autopilotTurnEventsTable)
+    .where(eq(autopilotTurnEventsTable.tenantId, tenantId));
+  await db
     .delete(conversationAiStatesTable)
     .where(eq(conversationAiStatesTable.tenantId, tenantId));
   await db
@@ -200,6 +205,9 @@ afterAll(async () => {
     .select({ id: conversationsTable.id })
     .from(conversationsTable)
     .where(eq(conversationsTable.tenantId, tenantId));
+  await db
+    .delete(autopilotTurnEventsTable)
+    .where(eq(autopilotTurnEventsTable.tenantId, tenantId));
   await db
     .delete(conversationAiStatesTable)
     .where(eq(conversationAiStatesTable.tenantId, tenantId));
@@ -265,11 +273,19 @@ describe("runInboundAiPipeline — Auto-Pilot send-throw fault tolerance", () =>
     expect(states[0].autoSentAt).toBeNull();
   });
 
-  it("re-throws when an UNEXPECTED pipeline failure occurs before the send (so the worker requeues the burst)", async () => {
+  it("treats a Student/LLM error as a graceful fallback ack (fail-OPEN; no re-throw)", async () => {
     vi.mocked(studentWhisper).mockRejectedValue(
       new Error("Database connection timed out internally"),
     );
+    vi.mocked(sendConversationReply).mockResolvedValue({
+      ok: true,
+      status: "sent",
+      messageRow: { id: 4242 },
+      sendSummary: {},
+    } as unknown as Awaited<ReturnType<typeof sendConversationReply>>);
 
+    // A responder error must NOT propagate: Auto-Pilot is fail-OPEN, so the
+    // customer still gets a graceful out-of-scope ack for this turn.
     await expect(
       runInboundAiPipeline({
         tenant,
@@ -281,10 +297,10 @@ describe("runInboundAiPipeline — Auto-Pilot send-throw fault tolerance", () =>
         fromNumber: "+15557654321",
         automationHandled: false,
       }),
-    ).rejects.toThrow("Database connection timed out internally");
+    ).resolves.toBeUndefined();
 
-    // The failure happened before the send block — no send, no claim.
-    expect(sendConversationReply).not.toHaveBeenCalled();
+    // The fallback ack went out and the idempotency claim is retained.
+    expect(sendConversationReply).toHaveBeenCalledTimes(1);
     const claims = await db
       .select()
       .from(aiAutoRepliesTable)
@@ -294,6 +310,14 @@ describe("runInboundAiPipeline — Auto-Pilot send-throw fault tolerance", () =>
           eq(aiAutoRepliesTable.inboundSid, inboundSid),
         ),
       );
-    expect(claims).toHaveLength(0);
+    expect(claims).toHaveLength(1);
+
+    // GREEN: the turn was handled autonomously (a fallback is still auto_sent).
+    const states = await db
+      .select()
+      .from(conversationAiStatesTable)
+      .where(eq(conversationAiStatesTable.conversationId, conversationId));
+    expect(states).toHaveLength(1);
+    expect(states[0].status).toBe("auto_sent");
   });
 });

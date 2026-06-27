@@ -1,6 +1,6 @@
 ---
 name: AI auto-send safety contract
-description: Rules for the autopilot engagement-mode auto-send path — fail-closed gate + the ai_auto_replies claim lifecycle.
+description: Rules for the autopilot auto-send path — the fail-OPEN closed-book gate + fallback circuit breaker, and the ai_auto_replies claim lifecycle (release on fail/throw).
 ---
 
 # AI auto-send (engagement mode `autopilot`) safety contract
@@ -8,10 +8,14 @@ description: Rules for the autopilot engagement-mode auto-send path — fail-clo
 > Modes are now canonical `manual | copilot | autopilot` (legacy `gated_auto`→`autopilot`,
 > `assisted`→`copilot`, aliased on write). Auto-send only ever runs under `autopilot`.
 
-The Student may auto-send an SMS reply ONLY through the pure, fail-closed gate
-`evaluateAutoSend` (`artifacts/api-server/src/lib/engagementPolicy.ts`). Keep it a
-single AND of independent signals so each can be unit-tested; any unknown/unsafe
-input must BLOCK (fall back to the agent whisper).
+**Auto-Pilot now runs the fail-OPEN closed-book gate `evaluateAutoPilotTurn`** (NOT the old
+fail-closed `evaluateAutoSend`, which is retained but off the autopilot path). It still
+auto-sends, but a no-match / responder error sends a graceful ack instead of refusing, and a
+fallback **circuit breaker** (`autopilot_turn_events`) steps the conversation to `manual` after 3
+consecutive / >3-in-2-min fallbacks. The idempotency + compliance rules below are UNCHANGED and
+still apply to every autopilot send. **Breaker integrity:** a send that fails or throws must record
+NO turn event (only the claim is released) — the breaker advances solely on confirmed sends, so a
+delivery outage can never trip a conversation down to Blue.
 
 ## Idempotency claim lifecycle (the subtle part)
 Before sending, claim the inbound carrier MessageSid by INSERT into

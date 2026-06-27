@@ -31,8 +31,13 @@ import {
   resolveEffectiveEngagementMode,
   evaluateAutoSend,
   evaluateProfessorEscalationSend,
+  evaluateAutoPilotTurn,
   describeHandbackReason,
 } from "./engagementPolicy";
+import {
+  recordAutopilotTurnEvent,
+  getAutopilotFallbackCounts,
+} from "./autopilotTurnEventStore";
 import {
   upsertConversationAiState,
   supersedeConversationAiState,
@@ -407,6 +412,557 @@ async function maybeHandbackWithHoldingAck(opts: {
   }
 }
 
+// Built-in acks used when the tenant has NOT configured an autopilotHoldingPhrase,
+// so the fail-OPEN promise (the conversation always gets a reply) holds even with
+// zero tenant config. A configured holding phrase overrides both.
+const DEFAULT_AUTOPILOT_FALLBACK_ACK =
+  "Thanks for your message! I don't have an answer for that just yet — let me look into it and follow up shortly.";
+const DEFAULT_AUTOPILOT_FINAL_ACK =
+  "Thanks for your patience. I'm passing this to a member of our team who'll follow up with you directly.";
+
+// Inbox chip copy once the breaker steps a conversation down to manual (BLUE).
+const AUTOPILOT_STEPDOWN_REASON_TEXT =
+  "Auto-Pilot paused after repeated out-of-scope messages — reply manually or update the Classroom, then re-enable Auto-Pilot.";
+
+/**
+ * AUTO-PILOT closed-book fail-OPEN responder + fallback circuit breaker.
+ *
+ * Decision logic lives in the pure `evaluateAutoPilotTurn` (the "Gate Table");
+ * this function is the I/O shell that gathers its inputs and enacts its verdict.
+ *
+ * Invariants (the redesign's hard contract):
+ *   - CLOSED-BOOK: answers ONLY from the approved Classroom index. NO live
+ *     Professor escalation, NO Library read, NO fact persistence (Learns = No).
+ *   - FAIL-OPEN: a knowledge miss (or responder error) still sends a graceful
+ *     ack so the conversation never stalls; it never goes silent.
+ *   - BREAKER: 3 consecutive fallbacks OR >3 in a rolling 2-min window send a
+ *     final ack and step the conversation down to manual (BLUE) via
+ *     `engagementModeOverride = 'manual'`; a human re-enables it (no auto-clear).
+ *   - HARD compliance/opt-out: re-checked at send time inside
+ *     `sendConversationReply`; a block suppresses the AI entirely.
+ *   - Idempotent via the `ai_auto_replies` claim (keyed on the inbound SID, or a
+ *     `msg:<id>` synthetic when no carrier SID); released on a failed send so a
+ *     webhook retry can re-attempt. The turn event is likewise idempotent on
+ *     (tenantId, inboundMessageId), so a retry never double-counts the breaker.
+ *
+ * Best-effort like the rest of the pipeline: EXPECTED outcomes (compliance hold,
+ * send failure) are handled inline and return normally; an UNEXPECTED failure
+ * propagates so the FIFO worker can retry the burst.
+ */
+async function runAutoPilotFailOpenTurn(
+  ctx: InboundAiPipelineContext,
+): Promise<void> {
+  const {
+    tenant,
+    tenantSlug,
+    conversationId,
+    inboundMessageId,
+    inboundSid,
+    messageBody,
+    fromNumber,
+  } = ctx;
+
+  const queryCategory = classifyQueryCategory(messageBody);
+  // Declared up front so the failure-handback closure below can preserve a
+  // stitched answer (if any) for the human; assigned in the retrieval block.
+  let answerText = "";
+
+  // Blue "failed" handback used when a send we DECIDED to make could not be
+  // delivered (infra failure, NOT a knowledge miss) — so it records no turn
+  // event and never moves the breaker. Preserves a stitched answer (if any) as a
+  // draft for the human.
+  const writeFailedHandback = async () => {
+    await upsertConversationAiState({
+      tenantId: tenant.id,
+      conversationId,
+      status: "failed",
+      draftBody: answerText.length > 0 ? answerText : null,
+      draftSource: answerText.length > 0 ? "student" : null,
+      confidence: null,
+      queryCategory,
+      reasonCode: "send_failed",
+      reasonText: describeHandbackReason(["send_failed"]),
+      latestInboundMessageId: inboundMessageId,
+      inboundSid,
+    });
+  };
+
+  // Row 1 — a human already took THIS turn (or a newer one). Defer entirely: no
+  // send, no event, leave the human_handled state intact.
+  try {
+    const prior = await getConversationAiState(tenant.id, conversationId);
+    if (
+      prior &&
+      prior.status === "human_handled" &&
+      (prior.latestInboundMessageId == null ||
+        prior.latestInboundMessageId >= inboundMessageId)
+    ) {
+      logger.info(
+        { tenantSlug, conversationId },
+        "SAMA Auto-Pilot: human already handled this turn; deferring",
+      );
+      return;
+    }
+  } catch (err) {
+    // Non-fatal: the ai_auto_replies claim + human-send fencing still prevent a
+    // double reply, so continue rather than stall.
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "SAMA Auto-Pilot: prior-state read failed (continuing)",
+    );
+  }
+
+  // CLOSED-BOOK retrieval — the approved Classroom index ONLY.
+  let facts: ClassroomFact[] = [];
+  let matchType: ClassroomMatchType = "none";
+  try {
+    const retrieval = await retrieveClassroomFactsWithMatch(
+      tenant.id,
+      messageBody,
+      { category: queryCategory },
+    );
+    facts = retrieval.facts;
+    matchType = retrieval.matchType;
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "SAMA Auto-Pilot: classroom retrieval failed; treating as no match",
+    );
+  }
+  // A real FTS hit or a weaker-but-real coverage hit (relevant fact present) both
+  // count as grounded — mirroring the Co-Pilot/Auto-Pilot grounding signal.
+  const knowledgeMatched =
+    (matchType === "fts" || matchType === "coverage") && facts.length > 0;
+
+  // Stitch a grounded answer with the FAST Student — ONLY on a match, and ONLY
+  // from the approved facts (no Library, no Professor). A miss never calls the
+  // Student: we go straight to a graceful ack (closed-book + low latency).
+  let responderErrored = false;
+  if (knowledgeMatched) {
+    const classroomContext = facts
+      .map((f) => `- ${f.statement} (source: ${f.sourceLabel})`)
+      .join("\n");
+    try {
+      const draft = await studentWhisper({
+        tenant,
+        fromNumber,
+        inboundBody: messageBody,
+        classroomContext,
+      });
+      const reply = draft.draftReply.trim();
+      if (draft.status === "drafted" && reply.length > 0) {
+        answerText = reply;
+      } else {
+        // Grounded but the Student produced nothing usable → Row 6 (error
+        // fallback). Never silent.
+        responderErrored = true;
+      }
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "SAMA Auto-Pilot: Student stitch threw; treating as responder error",
+      );
+      responderErrored = true;
+    }
+  }
+
+  // HARD compliance precheck (re-checked again at send time). Fail CLOSED on a
+  // thrown check so a broken compliance read can never auto-send.
+  let complianceOk = false;
+  try {
+    const c = await checkOutboundCompliance(tenant.id, tenantSlug, fromNumber);
+    complianceOk = c.ok;
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "SAMA Auto-Pilot: compliance precheck threw; suppressing this turn",
+    );
+  }
+
+  // Prior breaker tallies (turns BEFORE this one). Fail OPEN to zero so a
+  // counting hiccup can never spuriously step a tenant down.
+  const now = new Date();
+  let consecutiveFallbacks = 0;
+  let fallbacksInWindow = 0;
+  try {
+    const counts = await getAutopilotFallbackCounts(
+      tenant.id,
+      conversationId,
+      now,
+    );
+    consecutiveFallbacks = counts.consecutive;
+    fallbacksInWindow = counts.inWindow;
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "SAMA Auto-Pilot: fallback-count read failed; assuming zero",
+    );
+  }
+
+  const decision = evaluateAutoPilotTurn({
+    engagementMode: "autopilot",
+    knowledgeMatched,
+    responderErrored,
+    complianceOk,
+    humanHandledThisTurn: false, // the early defer above already handled this
+    consecutiveFallbacks,
+    fallbacksInWindow,
+  });
+
+  logger.info(
+    {
+      tenantSlug,
+      conversationId,
+      matchType,
+      knowledgeMatched,
+      responderErrored,
+      complianceOk,
+      consecutiveFallbacks,
+      fallbacksInWindow,
+      action: decision.action,
+      outcome: decision.outcome,
+      reasonCode: decision.reasonCode,
+    },
+    "SAMA Auto-Pilot: gate decision",
+  );
+
+  // ---- ENACT ----
+
+  // Row 1 (belt-and-suspenders) — pure defer.
+  if (decision.action === "defer") {
+    return;
+  }
+
+  // Row 0 — compliance hold: send NOTHING. Record for audit (neutral to the
+  // breaker) and clear any actionable AI state so the inbox shows no draft.
+  if (decision.action === "suppress") {
+    try {
+      await recordAutopilotTurnEvent({
+        tenantId: tenant.id,
+        conversationId,
+        inboundMessageId,
+        inboundSid,
+        outcome: "compliance_block",
+        replyKind: "none",
+        reasonCode: decision.reasonCode,
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "SAMA Auto-Pilot: compliance event record failed (non-blocking)",
+      );
+    }
+    try {
+      await supersedeConversationAiState({
+        tenantId: tenant.id,
+        conversationId,
+        latestInboundMessageId: inboundMessageId,
+      });
+      eventBus.publish(tenant.id, { type: "ai:state", conversationId });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "SAMA Auto-Pilot: compliance state supersede failed (non-blocking)",
+      );
+    }
+    logger.info(
+      { tenantSlug, conversationId },
+      "SAMA Auto-Pilot: compliance hold; suppressed AI",
+    );
+    return;
+  }
+
+  // answer | fallback | stepdown — all SEND a message, then record the event.
+  const holdingPhrase = tenant.autopilotHoldingPhrase?.trim() ?? "";
+  let body: string;
+  if (decision.action === "answer" && answerText.length > 0) {
+    body = answerText;
+  } else if (decision.action === "stepdown") {
+    body = holdingPhrase.length > 0 ? holdingPhrase : DEFAULT_AUTOPILOT_FINAL_ACK;
+  } else {
+    // fallback, or a defensive degraded "answer" with no text.
+    body =
+      holdingPhrase.length > 0 ? holdingPhrase : DEFAULT_AUTOPILOT_FALLBACK_ACK;
+  }
+
+  // outcome is non-null for answer|fallback|stepdown (see evaluateAutoPilotTurn).
+  const outcome = decision.outcome!;
+  const claimKey = inboundSid ?? `msg:${inboundMessageId}`;
+
+  // Idempotency: claim the inbound before sending so a webhook retry can't
+  // double-send or double-count the breaker.
+  let claimed: { id: number }[];
+  try {
+    claimed = await db
+      .insert(aiAutoRepliesTable)
+      .values({ tenantId: tenant.id, inboundSid: claimKey })
+      .onConflictDoNothing({
+        target: [aiAutoRepliesTable.tenantId, aiAutoRepliesTable.inboundSid],
+      })
+      .returning({ id: aiAutoRepliesTable.id });
+  } catch (err) {
+    logger.error(
+      {
+        tenantSlug,
+        conversationId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "SAMA Auto-Pilot: claim insert failed; Blue handback",
+    );
+    try {
+      await writeFailedHandback();
+      eventBus.publish(tenant.id, { type: "ai:state", conversationId });
+    } catch {
+      // best-effort
+    }
+    return;
+  }
+
+  if (claimed.length === 0) {
+    // A retry/race — another invocation already owns this inbound. Do NOT
+    // re-send or re-count; the winner recorded the turn event.
+    logger.info(
+      { tenantSlug, conversationId },
+      "SAMA Auto-Pilot: inbound already claimed (idempotent skip)",
+    );
+    return;
+  }
+
+  let claimFinalized = false;
+  try {
+    const sent = await sendConversationReply({
+      tenantId: tenant.id,
+      tenantSlug,
+      conversationId,
+      contactPhone: fromNumber,
+      departmentId: null,
+      body,
+      senderName: "Textitie AI",
+      conductorAuthorized: true,
+    });
+
+    if (sent.ok && sent.status === "sent") {
+      await db
+        .update(aiAutoRepliesTable)
+        .set({ outboundMessageId: sent.messageRow.id })
+        .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+      // Claim now terminal: any throw past here is post-send bookkeeping only.
+      claimFinalized = true;
+      await db
+        .update(conversationsTable)
+        .set({ lastMessageAt: new Date() })
+        .where(eq(conversationsTable.id, conversationId));
+
+      // Record the turn event (idempotent) — this drives the breaker tallies.
+      try {
+        await recordAutopilotTurnEvent({
+          tenantId: tenant.id,
+          conversationId,
+          inboundMessageId,
+          inboundSid,
+          outcome,
+          replyKind: decision.replyKind,
+          outboundMessageId: sent.messageRow.id,
+          reasonCode: decision.reasonCode,
+        });
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          "SAMA Auto-Pilot: turn event record failed (non-blocking)",
+        );
+      }
+
+      // Breaker tripped → flip the conversation to manual (BLUE). A human
+      // re-enables Auto-Pilot (no auto-clear).
+      if (decision.setOverrideManual) {
+        try {
+          await db
+            .update(conversationsTable)
+            .set({ engagementModeOverride: "manual" })
+            .where(eq(conversationsTable.id, conversationId));
+        } catch (err) {
+          logger.error(
+            { err: err instanceof Error ? err.message : String(err) },
+            "SAMA Auto-Pilot: stepdown override write failed",
+          );
+        }
+      }
+
+      // AI state for the inbox button/chip.
+      if (decision.action === "stepdown") {
+        // Final ack went out; conversation is now paused awaiting a human.
+        await upsertConversationAiState({
+          tenantId: tenant.id,
+          conversationId,
+          status: "refused",
+          draftBody: null,
+          draftSource: null,
+          confidence: null,
+          queryCategory,
+          reasonCode: decision.reasonCode,
+          reasonText: AUTOPILOT_STEPDOWN_REASON_TEXT,
+          latestInboundMessageId: inboundMessageId,
+          inboundSid,
+          outboundMessageId: sent.messageRow.id,
+        });
+      } else {
+        // answer | fallback — AI handled this turn autonomously (GREEN).
+        await upsertConversationAiState({
+          tenantId: tenant.id,
+          conversationId,
+          status: "auto_sent",
+          draftBody: null,
+          draftSource: "student",
+          confidence: null,
+          queryCategory,
+          reasonCode: decision.reasonCode,
+          latestInboundMessageId: inboundMessageId,
+          inboundSid,
+          outboundMessageId: sent.messageRow.id,
+          autoSentAt: new Date(),
+        });
+      }
+
+      recordMessageUsage(tenant.id, tenantSlug).catch((e) =>
+        logger.warn(
+          { err: e, tenantId: tenant.id },
+          "Usage tracking failed (non-blocking)",
+        ),
+      );
+      eventBus.publish(tenant.id, {
+        type: "message:new",
+        conversationId,
+        direction: "outbound",
+      });
+      eventBus.publish(tenant.id, { type: "ai:state", conversationId });
+
+      try {
+        await db.insert(auditLogsTable).values({
+          tenantId: tenant.id,
+          actorUserId: null,
+          actorEmail: "system:ai-autopilot",
+          action: "ai.autopilot_turn",
+          entityType: "conversation",
+          entityId: String(conversationId),
+          afterJson: {
+            inboundSid,
+            messageId: sent.messageRow.id,
+            outcome,
+            replyKind: decision.replyKind,
+            reasonCode: decision.reasonCode,
+            steppedDown: decision.setOverrideManual,
+            matchType,
+            queryCategory,
+          },
+        });
+      } catch (e) {
+        logger.warn(
+          { err: e instanceof Error ? e.message : String(e) },
+          "SAMA Auto-Pilot: audit write failed (non-blocking)",
+        );
+      }
+
+      // Chatwoot PUBLIC mirror of what the customer received (best-effort).
+      if (tenant.chatwootAccountId && tenant.chatwootInboxId) {
+        try {
+          await postChatwootMessage({
+            accountId: tenant.chatwootAccountId,
+            inboxId: tenant.chatwootInboxId,
+            contactPhone: fromNumber,
+            body,
+            messageType: "outgoing",
+            private: false,
+          });
+        } catch (err) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            "SAMA Auto-Pilot: Chatwoot mirror failed (non-blocking)",
+          );
+        }
+      }
+
+      logger.info(
+        {
+          tenantSlug,
+          conversationId,
+          messageId: sent.messageRow.id,
+          outcome,
+          steppedDown: decision.setOverrideManual,
+        },
+        "SAMA Auto-Pilot: handled turn",
+      );
+    } else {
+      // Claimed but the send did not complete → release the claim so a webhook
+      // retry can re-attempt, Blue handback, NO turn event (delivery issue, not
+      // a knowledge miss → must not move the breaker).
+      await db
+        .delete(aiAutoRepliesTable)
+        .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+      claimFinalized = true;
+      await writeFailedHandback();
+      eventBus.publish(tenant.id, { type: "ai:state", conversationId });
+      logger.error(
+        {
+          tenantSlug,
+          conversationId,
+          reason: sent.ok ? sent.status : sent.reason,
+        },
+        "SAMA Auto-Pilot: send did not complete; released claim, Blue handback",
+      );
+    }
+  } catch (sendErr) {
+    const sendErrMsg =
+      sendErr instanceof Error ? sendErr.message : String(sendErr);
+    if (!claimFinalized) {
+      // Send threw before recording an outbound id → customer got nothing.
+      // Release the (null) claim so a retry can re-attempt, Blue handback. NOT
+      // re-thrown: a send failure is a terminal handback, not a burst retry.
+      try {
+        await db
+          .delete(aiAutoRepliesTable)
+          .where(eq(aiAutoRepliesTable.id, claimed[0].id));
+      } catch (releaseErr) {
+        logger.error(
+          {
+            tenantSlug,
+            conversationId,
+            err:
+              releaseErr instanceof Error
+                ? releaseErr.message
+                : String(releaseErr),
+          },
+          "SAMA Auto-Pilot: failed to release claim after send error",
+        );
+      }
+      try {
+        await writeFailedHandback();
+        eventBus.publish(tenant.id, { type: "ai:state", conversationId });
+      } catch (stateErr) {
+        logger.error(
+          {
+            tenantSlug,
+            conversationId,
+            err:
+              stateErr instanceof Error ? stateErr.message : String(stateErr),
+          },
+          "SAMA Auto-Pilot: failed to write Blue handback after send error",
+        );
+      }
+      logger.error(
+        { tenantSlug, conversationId, err: sendErrMsg },
+        "SAMA Auto-Pilot: send threw; released claim, Blue handback",
+      );
+    } else {
+      // The reply already went out (claim terminal); only post-send bookkeeping
+      // failed. Leave the claim intact so retries stay idempotent.
+      logger.warn(
+        { tenantSlug, conversationId, err: sendErrMsg },
+        "SAMA Auto-Pilot: post-send step failed (non-blocking); reply already sent",
+      );
+    }
+  }
+}
+
 export async function runInboundAiPipeline(
   ctx: InboundAiPipelineContext,
 ): Promise<void> {
@@ -593,7 +1149,22 @@ export async function runInboundAiPipeline(
       }
     }
 
-    // CO-PILOT and AUTO-PILOT both draft. Retrieve Classroom grounding.
+    // ---- AUTO-PILOT SEAM (closed-book fail-OPEN responder) ----
+    // Auto-Pilot NO LONGER shares the Co-Pilot draft/Professor path below. It
+    // answers ONLY from the approved Classroom index (closed-book: no live
+    // Professor escalation, no Library, no learning), sends a graceful ack on a
+    // miss so the conversation never stalls, and trips a fallback circuit breaker
+    // (3 in a row OR >3 in 2 min) that steps the conversation down to manual.
+    // Returning here leaves the entire shared path below Co-Pilot-only in
+    // practice (Manual already returned above); Co-Pilot logic is byte-for-byte
+    // unchanged.
+    if (engagementMode === "autopilot") {
+      await runAutoPilotFailOpenTurn(ctx);
+      return;
+    }
+
+    // CO-PILOT path: retrieve Classroom grounding for the draft. (Auto-Pilot
+    // returned at the seam above; Manual returned earlier.)
     const queryCategory = classifyQueryCategory(messageBody);
     let facts: ClassroomFact[] = [];
     // A real FTS hit (every non-stopword term present in a Classroom fact) is a
@@ -861,7 +1432,13 @@ export async function runInboundAiPipeline(
         "SAMA Co-Pilot: draft staged for human review",
       );
     } else {
-      // ============ AUTO-PILOT ============
+      // ============ AUTO-PILOT (LEGACY — now UNREACHABLE) ============
+      // NOTE: with the Auto-Pilot SEAM above, autopilot turns return early via
+      // runAutoPilotFailOpenTurn and never reach this branch (manual returned
+      // even earlier, so only copilot takes the `if` above). This fail-closed +
+      // Professor-coupled gate is retained verbatim pending removal in a
+      // follow-up — DO NOT extend it; new Auto-Pilot behavior lives in
+      // runAutoPilotFailOpenTurn.
       const groundingCategories = facts.map((f) =>
         normalizeCategory(f.category),
       );

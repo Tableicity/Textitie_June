@@ -272,3 +272,239 @@ export function evaluateProfessorEscalationSend(
 
   return { autoSend: reasons.length === 0, reasons };
 }
+
+// ===========================================================================
+// Auto-Pilot conversational "Gate Table" — fail-OPEN responder + circuit breaker
+//
+// This is a DIFFERENT model from evaluateAutoSend above. evaluateAutoSend is the
+// legacy per-message FAIL-CLOSED gate (every condition must pass or we hand the
+// single message back to a human). The Auto-Pilot redesign is FAIL-OPEN and
+// CONVERSATIONAL: every inbound gets a turn — either a grounded answer or a
+// graceful out-of-scope acknowledgement — so the conversation never stalls. The
+// ONLY stop is a deterministic circuit breaker on repeated fallbacks.
+//
+// IMPORTANT: this path is closed-book and provenance-gated — Auto-Pilot answers
+// ONLY from the approved Classroom index (no live Professor escalation, no
+// learning). The topic-based "risky category" rails do NOT apply here (if the
+// knowledge is approved it is answerable). The only hard guard is compliance /
+// opt-out, which is absolute and re-checked again at send time. Co-Pilot and
+// Manual do NOT use this — evaluateAutoSend / the Co-Pilot path are untouched.
+// ===========================================================================
+
+export const AUTOPILOT_TURN_OUTCOMES = [
+  "answer",
+  "fallback",
+  "error_fallback",
+  "stepdown_consecutive",
+  "stepdown_window",
+  "compliance_block",
+] as const;
+export type AutopilotTurnOutcome = (typeof AUTOPILOT_TURN_OUTCOMES)[number];
+
+// Outcomes that represent an UNANSWERED turn and increment the breaker tally.
+export const AUTOPILOT_FALLBACK_OUTCOMES: ReadonlySet<AutopilotTurnOutcome> =
+  new Set<AutopilotTurnOutcome>(["fallback", "error_fallback"]);
+// Outcomes that bound the trailing run: a successful answer, or a prior stepdown
+// after which a human re-enabled Auto-Pilot — either way, start fresh.
+export const AUTOPILOT_RUN_BOUNDARY_OUTCOMES: ReadonlySet<AutopilotTurnOutcome> =
+  new Set<AutopilotTurnOutcome>([
+    "answer",
+    "stepdown_consecutive",
+    "stepdown_window",
+  ]);
+
+// Step down GREEN→BLUE on the Nth consecutive fallback...
+export const AUTOPILOT_CONSECUTIVE_FALLBACK_LIMIT = 3;
+// ...or when MORE THAN this many fallbacks land within the rolling window.
+export const AUTOPILOT_WINDOW_FALLBACK_LIMIT = 3;
+// Rolling window for the burst rule (2 minutes).
+export const AUTOPILOT_FALLBACK_WINDOW_MS = 2 * 60 * 1000;
+
+export type AutoPilotTurnInput = {
+  engagementMode: EngagementMode;
+  /** True when retrieval found an approved Classroom match (fts|coverage w/ facts). */
+  knowledgeMatched: boolean;
+  /** True when the responder/LLM failed to produce a usable reply. */
+  responderErrored: boolean;
+  /** Outbound compliance check at decision time (re-checked again at send). */
+  complianceOk: boolean;
+  /** True when a human already took this turn (defer; no AI send, no event). */
+  humanHandledThisTurn: boolean;
+  /** Trailing consecutive fallback-class turns BEFORE this turn. */
+  consecutiveFallbacks: number;
+  /** Fallback-class turns within the rolling window BEFORE this turn. */
+  fallbacksInWindow: number;
+};
+
+export type AutoPilotTurnAction =
+  | "answer"
+  | "fallback"
+  | "stepdown"
+  | "suppress"
+  | "defer";
+export type AutoPilotReplyKind =
+  | "grounded_answer"
+  | "fallback_ack"
+  | "final_ack"
+  | "none";
+
+export type AutoPilotTurnDecision = {
+  action: AutoPilotTurnAction;
+  /** Canonical event to record; null ⇒ record nothing (defer). */
+  outcome: AutopilotTurnOutcome | null;
+  replyKind: AutoPilotReplyKind;
+  reasonCode: string;
+  /** True ⇒ flip the conversation's engagementModeOverride to "manual" (BLUE). */
+  setOverrideManual: boolean;
+  stepdownReason?: "consecutive" | "window";
+};
+
+/**
+ * Decide what Auto-Pilot does for a single inbound turn. Pure + total so it can
+ * be unit-tested exhaustively. Rows are evaluated top-down, first match wins —
+ * matching the published Gate Table.
+ *
+ * The caller supplies the PRIOR fallback tallies (counts BEFORE this turn); this
+ * function adds the current turn on top to decide whether the breaker trips.
+ */
+export function evaluateAutoPilotTurn(
+  input: AutoPilotTurnInput,
+): AutoPilotTurnDecision {
+  // Defensive guard: only Auto-Pilot turns are routed here. Anything else
+  // defers with no send and no recorded event.
+  if (input.engagementMode !== "autopilot") {
+    return {
+      action: "defer",
+      outcome: null,
+      replyKind: "none",
+      reasonCode: "mode_not_autopilot",
+      setOverrideManual: false,
+    };
+  }
+
+  // Row 0 — hard compliance/opt-out guard ALWAYS wins. Suppress the AI. Recorded
+  // for audit but neutral to the breaker (a legal hold is not a knowledge miss).
+  if (!input.complianceOk) {
+    return {
+      action: "suppress",
+      outcome: "compliance_block",
+      replyKind: "none",
+      reasonCode: "compliance_block",
+      setOverrideManual: false,
+    };
+  }
+
+  // Row 1 — a human already took this turn; AI defers. No send, no event.
+  if (input.humanHandledThisTurn) {
+    return {
+      action: "defer",
+      outcome: null,
+      replyKind: "none",
+      reasonCode: "human_handled",
+      setOverrideManual: false,
+    };
+  }
+
+  // Row 2 — grounded answer available: stitch + send. Recording an `answer`
+  // resets the consecutive run for future turns.
+  if (input.knowledgeMatched && !input.responderErrored) {
+    return {
+      action: "answer",
+      outcome: "answer",
+      replyKind: "grounded_answer",
+      reasonCode: "answered",
+      setOverrideManual: false,
+    };
+  }
+
+  // Rows 3-6 — fallback-class turn. Tally THIS turn on top of the prior counts.
+  const nextConsecutive = input.consecutiveFallbacks + 1;
+  const nextWindow = input.fallbacksInWindow + 1;
+
+  // Row 4 — Nth consecutive fallback ⇒ step down to BLUE (final ack + manual).
+  if (nextConsecutive >= AUTOPILOT_CONSECUTIVE_FALLBACK_LIMIT) {
+    return {
+      action: "stepdown",
+      outcome: "stepdown_consecutive",
+      replyKind: "final_ack",
+      reasonCode: "consecutive_fallbacks",
+      setOverrideManual: true,
+      stepdownReason: "consecutive",
+    };
+  }
+
+  // Row 5 — MORE THAN the limit within the rolling window ⇒ step down to BLUE.
+  if (nextWindow > AUTOPILOT_WINDOW_FALLBACK_LIMIT) {
+    return {
+      action: "stepdown",
+      outcome: "stepdown_window",
+      replyKind: "final_ack",
+      reasonCode: "fallback_burst",
+      setOverrideManual: true,
+      stepdownReason: "window",
+    };
+  }
+
+  // Row 6 — responder/LLM error ⇒ graceful fallback ack (never silent).
+  if (input.responderErrored) {
+    return {
+      action: "fallback",
+      outcome: "error_fallback",
+      replyKind: "fallback_ack",
+      reasonCode: "responder_error",
+      setOverrideManual: false,
+    };
+  }
+
+  // Row 3 — no match: graceful out-of-scope ack; conversation CONTINUES (GREEN).
+  return {
+    action: "fallback",
+    outcome: "fallback",
+    replyKind: "fallback_ack",
+    reasonCode: "out_of_scope",
+    setOverrideManual: false,
+  };
+}
+
+export type AutoPilotTurnHistoryItem = { outcome: string; createdAt: Date };
+export type AutoPilotFallbackCounts = { consecutive: number; inWindow: number };
+
+/**
+ * Compute the breaker tallies from a conversation's recent Auto-Pilot turn
+ * history (newest-first). Pure so the time/boundary rules are unit-testable
+ * without a DB; the store layer just fetches rows and delegates here.
+ *
+ *  - consecutive: trailing `fallback`/`error_fallback` turns, scanning newest→
+ *    oldest, stopping at the first run boundary (`answer` or a `stepdown_*`).
+ *    `compliance_block` is neutral (skipped, scan continues).
+ *  - inWindow: `fallback`/`error_fallback` turns within `windowMs` of `now`,
+ *    stopping at a `stepdown_*` (a prior stepdown = re-enable boundary) or the
+ *    time edge. `answer`/`compliance_block` inside the window are neutral.
+ */
+export function computeAutoPilotFallbackCounts(
+  eventsNewestFirst: AutoPilotTurnHistoryItem[],
+  now: Date,
+  windowMs: number = AUTOPILOT_FALLBACK_WINDOW_MS,
+): AutoPilotFallbackCounts {
+  let consecutive = 0;
+  for (const ev of eventsNewestFirst) {
+    const o = ev.outcome;
+    if (o === "answer" || o === "stepdown_consecutive" || o === "stepdown_window") {
+      break;
+    }
+    if (o === "fallback" || o === "error_fallback") consecutive += 1;
+    // compliance_block / unknown → neutral, keep scanning.
+  }
+
+  let inWindow = 0;
+  const windowStart = now.getTime() - windowMs;
+  for (const ev of eventsNewestFirst) {
+    if (ev.createdAt.getTime() < windowStart) break; // older than the window
+    const o = ev.outcome;
+    if (o === "stepdown_consecutive" || o === "stepdown_window") break; // re-enable boundary
+    if (o === "fallback" || o === "error_fallback") inWindow += 1;
+    // answer / compliance_block within window → neutral.
+  }
+
+  return { consecutive, inWindow };
+}
