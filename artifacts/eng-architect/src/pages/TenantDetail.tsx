@@ -16,6 +16,10 @@ import {
   useGetTenantDepartments,
   getGetTenantDepartmentsQueryKey,
   useAssignTenantDepartmentNumber,
+  useCreateTenantDepartment,
+  useGetTenantUnassignedConversations,
+  getGetTenantUnassignedConversationsQueryKey,
+  useAssignTenantConversationDepartment,
 } from "@workspace/api-client-react";
 import { getStoredAuthHeader } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,6 +88,24 @@ export default function TenantDetail() {
     });
   const departments = departmentsData?.departments ?? [];
   const assignDeptNumber = useAssignTenantDepartmentNumber();
+
+  const createDept = useCreateTenantDepartment();
+  const [newDeptName, setNewDeptName] = useState("");
+
+  // Conversations that still have no department — the operator can move each into
+  // one without losing any history.
+  const { data: unassignedData, isLoading: unassignedLoading } =
+    useGetTenantUnassignedConversations(tenantId, {
+      query: {
+        enabled: !!tenantId,
+        queryKey: getGetTenantUnassignedConversationsQueryKey(tenantId),
+      },
+    });
+  const unassignedConversations = unassignedData?.conversations ?? [];
+  const assignConvDept = useAssignTenantConversationDepartment();
+  const [convDeptSelections, setConvDeptSelections] = useState<
+    Record<number, string>
+  >({});
 
   // Per-department number picker, keyed by department id. Select mode (Twilio
   // connected) uses "__none__" to mean unassign; manual mode uses an empty
@@ -234,6 +256,71 @@ export default function TenantDetail() {
         },
         onError: (err) => {
           toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const onCreateDepartment = () => {
+    if (!tenant) return;
+    const name = newDeptName.trim();
+    if (!name) {
+      toast({
+        title: "Name Required",
+        description: "Enter a department name.",
+        variant: "destructive",
+      });
+      return;
+    }
+    createDept.mutate(
+      { id: tenant.id, data: { name } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({
+            queryKey: getGetTenantDepartmentsQueryKey(tenant.id),
+          });
+          setNewDeptName("");
+          toast({
+            title: "Department Created",
+            description: `"${name}" is ready for number assignment and conversations.`,
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Create Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const onAssignConvDept = (conversationId: number) => {
+    if (!tenant) return;
+    const raw = convDeptSelections[conversationId];
+    if (!raw || raw === "__none__") {
+      toast({
+        title: "Pick a Department",
+        description: "Choose a department to move this conversation into.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const departmentId = parseInt(raw, 10);
+    assignConvDept.mutate(
+      { id: tenant.id, conversationId, data: { departmentId } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({
+            queryKey: getGetTenantUnassignedConversationsQueryKey(tenant.id),
+          });
+          const deptName =
+            departments.find((d) => d.id === departmentId)?.name ??
+            "the department";
+          toast({
+            title: "Conversation Moved",
+            description: `Moved into ${deptName}. All history preserved.`,
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Move Failed", description: err.message || "An error occurred", variant: "destructive" });
         },
       },
     );
@@ -547,12 +634,36 @@ export default function TenantDetail() {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-md border p-3 space-y-2">
+            <p className="text-sm font-medium">Create a department</p>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Department name (e.g. Customer Service)"
+                value={newDeptName}
+                onChange={(e) => setNewDeptName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onCreateDepartment();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                disabled={createDept.isPending || !newDeptName.trim()}
+                onClick={onCreateDepartment}
+              >
+                {createDept.isPending ? "Creating..." : "Create"}
+              </Button>
+            </div>
+          </div>
           {deptsLoading ? (
             <p className="text-sm text-muted-foreground">Loading departments…</p>
           ) : departments.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No departments yet. The tenant creates departments from their
-              workspace settings; they will appear here for number assignment.
+              No departments yet. Create one above, then assign it a number or
+              move conversations into it.
             </p>
           ) : (
             departments.map((d) => {
@@ -645,6 +756,89 @@ export default function TenantDetail() {
                     onClick={() => onSaveDeptNumber(d.id)}
                   >
                     {isRowPending ? "Saving..." : "Save Department Number"}
+                  </Button>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <MessageSquare size={16} /> Unassigned Conversations
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Conversations with no department yet. Move one into a department to
+            organize it — all message history is preserved.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {unassignedLoading ? (
+            <p className="text-sm text-muted-foreground">
+              Loading conversations…
+            </p>
+          ) : unassignedConversations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No unassigned conversations — every conversation belongs to a
+              department.
+            </p>
+          ) : departments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {unassignedConversations.length} unassigned conversation
+              {unassignedConversations.length === 1 ? "" : "s"}. Create a
+              department above first, then you can move them in.
+            </p>
+          ) : (
+            unassignedConversations.map((c) => {
+              const sel = convDeptSelections[c.id] ?? "__none__";
+              const isRowPending =
+                assignConvDept.isPending &&
+                assignConvDept.variables?.conversationId === c.id;
+              return (
+                <div key={c.id} className="rounded-md border p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">
+                        {c.contactName || c.contactPhone}
+                      </p>
+                      <p className="text-xs text-muted-foreground font-mono">
+                        {c.contactPhone}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="whitespace-nowrap">
+                      {c.status}
+                    </Badge>
+                  </div>
+                  <Select
+                    value={sel}
+                    onValueChange={(v) =>
+                      setConvDeptSelections((prev) => ({ ...prev, [c.id]: v }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">
+                        Select a department…
+                      </SelectItem>
+                      {departments.map((d) => (
+                        <SelectItem key={d.id} value={String(d.id)}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full"
+                    disabled={isRowPending || sel === "__none__"}
+                    onClick={() => onAssignConvDept(c.id)}
+                  >
+                    {isRowPending ? "Moving..." : "Move into Department"}
                   </Button>
                 </div>
               );

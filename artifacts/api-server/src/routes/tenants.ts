@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql, and, isNull, desc } from "drizzle-orm";
 import multer from "multer";
 import twilio from "twilio";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -9,6 +9,7 @@ import {
   tenantUsersTable,
   phoneNumbersTable,
   departmentsTable,
+  conversationsTable,
 } from "@workspace/db";
 import {
   ListTenantsResponse,
@@ -26,6 +27,14 @@ import {
   AssignTenantDepartmentNumberParams,
   AssignTenantDepartmentNumberBody,
   AssignTenantDepartmentNumberResponse,
+  CreateTenantDepartmentParams,
+  CreateTenantDepartmentBody,
+  CreateTenantDepartmentResponse,
+  GetTenantUnassignedConversationsParams,
+  GetTenantUnassignedConversationsResponse,
+  AssignTenantConversationDepartmentParams,
+  AssignTenantConversationDepartmentBody,
+  AssignTenantConversationDepartmentResponse,
 } from "@workspace/api-zod";
 import { provisionChatwootInbox } from "../lib/chatwoot";
 import { requireTenantAuth } from "../middleware/tenantAuth";
@@ -375,6 +384,212 @@ router.post(
         tenantPhoneNumber: tenant?.phoneNumber ?? null,
       }),
     );
+  },
+);
+
+// Create a department for a tenant. Conductor-scoped so the operator can stand up
+// a department (e.g. "Customer Service") before assigning it a number and moving
+// conversations into it — mirrors the tenant-side create but without tenant auth.
+router.post("/tenants/:id/departments", async (req, res): Promise<void> => {
+  const params = CreateTenantDepartmentParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const body = CreateTenantDepartmentBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const tenantId = params.data.id;
+  const name = body.data.name.trim();
+  if (!name) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+
+  // The tenant must exist — departments.tenant_id is an FK, so a missing tenant
+  // would 500 on insert; fail with a clean 404 instead.
+  const [tenant] = await db
+    .select({ id: tenantsTable.id })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, tenantId));
+  if (!tenant) {
+    res.status(404).json({ error: "Tenant not found" });
+    return;
+  }
+
+  // App-level, case-insensitive duplicate-name guard for this operator flow.
+  // There is no DB unique on (tenant_id, name) (the tenant side allows dups); we
+  // accept the small concurrency race rather than add a constraint.
+  const dup = await db
+    .select({ id: departmentsTable.id })
+    .from(departmentsTable)
+    .where(
+      and(
+        eq(departmentsTable.tenantId, tenantId),
+        sql`lower(${departmentsTable.name}) = lower(${name})`,
+      ),
+    )
+    .limit(1);
+  if (dup.length > 0) {
+    res.status(409).json({
+      error: "A department with this name already exists for the tenant",
+    });
+    return;
+  }
+
+  const description =
+    typeof body.data.description === "string" &&
+    body.data.description.trim().length > 0
+      ? body.data.description.trim()
+      : null;
+  const values: typeof departmentsTable.$inferInsert = {
+    tenantId,
+    name,
+    description,
+  };
+  // Only override the DB default (round_robin) when a strategy is supplied.
+  if (body.data.routingStrategy) {
+    values.routingStrategy = body.data.routingStrategy;
+  }
+
+  const [created] = await db
+    .insert(departmentsTable)
+    .values(values)
+    .returning({ id: departmentsTable.id });
+  req.log.info(
+    { tenantId, departmentId: created.id, name },
+    "Conductor created department",
+  );
+
+  const [department] = await db
+    .select(departmentColumns)
+    .from(departmentsTable)
+    .where(eq(departmentsTable.id, created.id));
+  res.status(200).json(CreateTenantDepartmentResponse.parse(department));
+});
+
+// All of a tenant's conversations that still have no department (department_id IS
+// NULL), excluding quarantined imports. Conductor-scoped; powers the Admin
+// "Unassigned conversations" cleanup list. Capped to keep the payload bounded.
+router.get(
+  "/tenants/:id/conversations/unassigned",
+  async (req, res): Promise<void> => {
+    const params = GetTenantUnassignedConversationsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const tenantId = params.data.id;
+    const rows = await db
+      .select({
+        id: conversationsTable.id,
+        tenantId: conversationsTable.tenantId,
+        departmentId: conversationsTable.departmentId,
+        contactName: conversationsTable.contactName,
+        contactPhone: conversationsTable.contactPhone,
+        status: conversationsTable.status,
+        lastMessageAt: conversationsTable.lastMessageAt,
+        createdAt: conversationsTable.createdAt,
+      })
+      .from(conversationsTable)
+      .where(
+        and(
+          eq(conversationsTable.tenantId, tenantId),
+          isNull(conversationsTable.departmentId),
+          eq(conversationsTable.isQuarantined, false),
+        ),
+      )
+      .orderBy(desc(conversationsTable.lastMessageAt))
+      .limit(100);
+    res.json(
+      GetTenantUnassignedConversationsResponse.parse({ conversations: rows }),
+    );
+  },
+);
+
+// Move a conversation into a department (or clear it with departmentId=null),
+// keeping all history. Conductor-scoped. Both the conversation and the target
+// department must belong to the tenant (IDOR guard). Only department_id changes —
+// ownership / agent routing is deliberately left untouched.
+router.patch(
+  "/tenants/:id/conversations/:conversationId",
+  async (req, res): Promise<void> => {
+    const params = AssignTenantConversationDepartmentParams.safeParse(
+      req.params,
+    );
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = AssignTenantConversationDepartmentBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const { id: tenantId, conversationId } = params.data;
+    const departmentId = body.data.departmentId;
+
+    const [conv] = await db
+      .select({
+        id: conversationsTable.id,
+        departmentId: conversationsTable.departmentId,
+      })
+      .from(conversationsTable)
+      .where(
+        and(
+          eq(conversationsTable.id, conversationId),
+          eq(conversationsTable.tenantId, tenantId),
+          eq(conversationsTable.isQuarantined, false),
+        ),
+      );
+    if (!conv) {
+      res.status(404).json({ error: "Conversation not found for tenant" });
+      return;
+    }
+
+    // A non-null target department must belong to this tenant.
+    if (departmentId !== null) {
+      const [dept] = await db
+        .select({ id: departmentsTable.id })
+        .from(departmentsTable)
+        .where(
+          and(
+            eq(departmentsTable.id, departmentId),
+            eq(departmentsTable.tenantId, tenantId),
+          ),
+        );
+      if (!dept) {
+        res.status(404).json({ error: "Department not found for tenant" });
+        return;
+      }
+    }
+
+    const [updated] = await db
+      .update(conversationsTable)
+      .set({ departmentId })
+      .where(eq(conversationsTable.id, conversationId))
+      .returning({
+        id: conversationsTable.id,
+        tenantId: conversationsTable.tenantId,
+        departmentId: conversationsTable.departmentId,
+        contactName: conversationsTable.contactName,
+        contactPhone: conversationsTable.contactPhone,
+        status: conversationsTable.status,
+        lastMessageAt: conversationsTable.lastMessageAt,
+        createdAt: conversationsTable.createdAt,
+      });
+    req.log.info(
+      {
+        tenantId,
+        conversationId,
+        previousDepartmentId: conv.departmentId,
+        departmentId,
+      },
+      "Conductor moved conversation department",
+    );
+    res.json(AssignTenantConversationDepartmentResponse.parse(updated));
   },
 );
 

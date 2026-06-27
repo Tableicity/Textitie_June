@@ -235,6 +235,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: createTenantDepartment
+      tags: [tenants]
+      summary: Create a department for a tenant (Conductor)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantDepartmentInput"
+      responses:
+        "200":
+          description: The created department
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantDepartment"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: A department with this name already exists for the tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /tenants/{id}/departments/{departmentId}/number:
     post:
@@ -284,6 +319,81 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "409":
           description: Number already assigned elsewhere
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{id}/conversations/unassigned:
+    get:
+      operationId: getTenantUnassignedConversations
+      tags: [tenants]
+      summary: List a tenant's conversations that have no department (Conductor)
+      description: >-
+        Conductor-scoped read of a tenant's conversations with no department
+        (department_id IS NULL). Quarantined conversations are excluded. Use this
+        to find legacy conversations that still need to be moved into a department.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Unassigned conversations belonging to the tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantConversationsResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{id}/conversations/{conversationId}:
+    patch:
+      operationId: assignTenantConversationDepartment
+      tags: [tenants]
+      summary: Move a conversation into a department, or clear it (Conductor)
+      description: >-
+        Set a conversation's department (departmentId), keeping all history, or
+        pass null to unassign. The conversation and department must both belong to
+        the tenant.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignTenantConversationDepartmentInput"
+      responses:
+        "200":
+          description: The updated conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantConversation"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Conversation or department not found for tenant
           content:
             application/json:
               schema:
@@ -4306,6 +4416,65 @@ components:
           items:
             $ref: "#/components/schemas/TenantDepartment"
       required: [departments]
+
+    CreateTenantDepartmentInput:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Department name (required, non-empty)
+        description:
+          type: ["string", "null"]
+        routingStrategy:
+          type: string
+          description: Optional routing strategy; defaults to round_robin
+      required: [name]
+
+    TenantConversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        departmentId:
+          type: ["integer", "null"]
+        contactName:
+          type: ["string", "null"]
+        contactPhone:
+          type: string
+        status:
+          type: string
+        lastMessageAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: ["string", "null"]
+          format: date-time
+      required:
+        - id
+        - tenantId
+        - departmentId
+        - contactName
+        - contactPhone
+        - status
+
+    TenantConversationsResponse:
+      type: object
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantConversation"
+      required: [conversations]
+
+    AssignTenantConversationDepartmentInput:
+      type: object
+      properties:
+        departmentId:
+          type: ["integer", "null"]
+          description: Department to move the conversation into, or null to unassign
+      required: [departmentId]
 
     AssignDepartmentNumberInput:
       type: object

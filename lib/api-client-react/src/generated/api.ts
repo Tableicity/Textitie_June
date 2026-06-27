@@ -34,6 +34,7 @@ import type {
   AssignDepartmentNumberInput,
   AssignDepartmentNumberResult,
   AssignNumberInput,
+  AssignTenantConversationDepartmentInput,
   AudiencePreviewInput,
   AudiencePreviewResult,
   AutoRouteResult,
@@ -71,6 +72,7 @@ import type {
   CreateOptOutInput,
   CreateReminderInput,
   CreateShortcutInput,
+  CreateTenantDepartmentInput,
   CreateTenantInput,
   CreditBalance,
   CreditShortfallError,
@@ -125,6 +127,9 @@ import type {
   Tenant,
   TenantChangePasswordInput,
   TenantChangePasswordResult,
+  TenantConversation,
+  TenantConversationsResponse,
+  TenantDepartment,
   TenantDepartmentsResponse,
   TenantLoginInput,
   TenantLoginResult,
@@ -879,6 +884,94 @@ export function useGetTenantDepartments<
 }
 
 /**
+ * @summary Create a department for a tenant (Conductor)
+ */
+export const getCreateTenantDepartmentUrl = (id: number) => {
+  return `/api/tenants/${id}/departments`;
+};
+
+export const createTenantDepartment = async (
+  id: number,
+  createTenantDepartmentInput: CreateTenantDepartmentInput,
+  options?: RequestInit,
+): Promise<TenantDepartment> => {
+  return customFetch<TenantDepartment>(getCreateTenantDepartmentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createTenantDepartmentInput),
+  });
+};
+
+export const getCreateTenantDepartmentMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTenantDepartment>>,
+    TError,
+    { id: number; data: BodyType<CreateTenantDepartmentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTenantDepartment>>,
+  TError,
+  { id: number; data: BodyType<CreateTenantDepartmentInput> },
+  TContext
+> => {
+  const mutationKey = ["createTenantDepartment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTenantDepartment>>,
+    { id: number; data: BodyType<CreateTenantDepartmentInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createTenantDepartment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateTenantDepartmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createTenantDepartment>>
+>;
+export type CreateTenantDepartmentMutationBody =
+  BodyType<CreateTenantDepartmentInput>;
+export type CreateTenantDepartmentMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Create a department for a tenant (Conductor)
+ */
+export const useCreateTenantDepartment = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTenantDepartment>>,
+    TError,
+    { id: number; data: BodyType<CreateTenantDepartmentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createTenantDepartment>>,
+  TError,
+  { id: number; data: BodyType<CreateTenantDepartmentInput> },
+  TContext
+> => {
+  return useMutation(getCreateTenantDepartmentMutationOptions(options));
+};
+
+/**
  * Assign an owned Twilio number to one of a tenant's departments, or clear it with phoneNumber=null. A number is either the account primary or one department's number; if the supplied number is currently this tenant's primary it is moved off primary in the same step.
  * @summary Assign or clear a department's phone number (Conductor)
  */
@@ -992,6 +1085,226 @@ export const useAssignTenantDepartmentNumber = <
   TContext
 > => {
   return useMutation(getAssignTenantDepartmentNumberMutationOptions(options));
+};
+
+/**
+ * Conductor-scoped read of a tenant's conversations with no department (department_id IS NULL). Quarantined conversations are excluded. Use this to find legacy conversations that still need to be moved into a department.
+ * @summary List a tenant's conversations that have no department (Conductor)
+ */
+export const getGetTenantUnassignedConversationsUrl = (id: number) => {
+  return `/api/tenants/${id}/conversations/unassigned`;
+};
+
+export const getTenantUnassignedConversations = async (
+  id: number,
+  options?: RequestInit,
+): Promise<TenantConversationsResponse> => {
+  return customFetch<TenantConversationsResponse>(
+    getGetTenantUnassignedConversationsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetTenantUnassignedConversationsQueryKey = (id: number) => {
+  return [`/api/tenants/${id}/conversations/unassigned`] as const;
+};
+
+export const getGetTenantUnassignedConversationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTenantUnassignedConversations>>,
+  TError = ErrorType<ApiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTenantUnassignedConversations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetTenantUnassignedConversationsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTenantUnassignedConversations>>
+  > = ({ signal }) =>
+    getTenantUnassignedConversations(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTenantUnassignedConversations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTenantUnassignedConversationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTenantUnassignedConversations>>
+>;
+export type GetTenantUnassignedConversationsQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary List a tenant's conversations that have no department (Conductor)
+ */
+
+export function useGetTenantUnassignedConversations<
+  TData = Awaited<ReturnType<typeof getTenantUnassignedConversations>>,
+  TError = ErrorType<ApiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTenantUnassignedConversations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTenantUnassignedConversationsQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Set a conversation's department (departmentId), keeping all history, or pass null to unassign. The conversation and department must both belong to the tenant.
+ * @summary Move a conversation into a department, or clear it (Conductor)
+ */
+export const getAssignTenantConversationDepartmentUrl = (
+  id: number,
+  conversationId: number,
+) => {
+  return `/api/tenants/${id}/conversations/${conversationId}`;
+};
+
+export const assignTenantConversationDepartment = async (
+  id: number,
+  conversationId: number,
+  assignTenantConversationDepartmentInput: AssignTenantConversationDepartmentInput,
+  options?: RequestInit,
+): Promise<TenantConversation> => {
+  return customFetch<TenantConversation>(
+    getAssignTenantConversationDepartmentUrl(id, conversationId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(assignTenantConversationDepartmentInput),
+    },
+  );
+};
+
+export const getAssignTenantConversationDepartmentMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof assignTenantConversationDepartment>>,
+    TError,
+    {
+      id: number;
+      conversationId: number;
+      data: BodyType<AssignTenantConversationDepartmentInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof assignTenantConversationDepartment>>,
+  TError,
+  {
+    id: number;
+    conversationId: number;
+    data: BodyType<AssignTenantConversationDepartmentInput>;
+  },
+  TContext
+> => {
+  const mutationKey = ["assignTenantConversationDepartment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof assignTenantConversationDepartment>>,
+    {
+      id: number;
+      conversationId: number;
+      data: BodyType<AssignTenantConversationDepartmentInput>;
+    }
+  > = (props) => {
+    const { id, conversationId, data } = props ?? {};
+
+    return assignTenantConversationDepartment(
+      id,
+      conversationId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AssignTenantConversationDepartmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof assignTenantConversationDepartment>>
+>;
+export type AssignTenantConversationDepartmentMutationBody =
+  BodyType<AssignTenantConversationDepartmentInput>;
+export type AssignTenantConversationDepartmentMutationError =
+  ErrorType<ApiError>;
+
+/**
+ * @summary Move a conversation into a department, or clear it (Conductor)
+ */
+export const useAssignTenantConversationDepartment = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof assignTenantConversationDepartment>>,
+    TError,
+    {
+      id: number;
+      conversationId: number;
+      data: BodyType<AssignTenantConversationDepartmentInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof assignTenantConversationDepartment>>,
+  TError,
+  {
+    id: number;
+    conversationId: number;
+    data: BodyType<AssignTenantConversationDepartmentInput>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getAssignTenantConversationDepartmentMutationOptions(options),
+  );
 };
 
 /**

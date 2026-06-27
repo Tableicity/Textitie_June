@@ -314,6 +314,35 @@ export const GetTenantDepartmentsResponse = zod.object({
 });
 
 /**
+ * @summary Create a department for a tenant (Conductor)
+ */
+export const CreateTenantDepartmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CreateTenantDepartmentBody = zod.object({
+  name: zod.string().describe("Department name (required, non-empty)"),
+  description: zod.string().nullish(),
+  routingStrategy: zod
+    .string()
+    .optional()
+    .describe("Optional routing strategy; defaults to round_robin"),
+});
+
+export const CreateTenantDepartmentResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  name: zod.string(),
+  phoneNumber: zod
+    .string()
+    .nullable()
+    .describe("E.164 number assigned to this department, or null"),
+  twilioSid: zod.string().nullable(),
+  description: zod.string().nullable(),
+  routingStrategy: zod.string(),
+});
+
+/**
  * Assign an owned Twilio number to one of a tenant's departments, or clear it with phoneNumber=null. A number is either the account primary or one department's number; if the supplied number is currently this tenant's primary it is moved off primary in the same step.
  * @summary Assign or clear a department's phone number (Conductor)
  */
@@ -351,6 +380,56 @@ export const AssignTenantDepartmentNumberResponse = zod.object({
     .describe(
       "The tenant's primary number after the operation (null if the assigned number was moved off primary)",
     ),
+});
+
+/**
+ * Conductor-scoped read of a tenant's conversations with no department (department_id IS NULL). Quarantined conversations are excluded. Use this to find legacy conversations that still need to be moved into a department.
+ * @summary List a tenant's conversations that have no department (Conductor)
+ */
+export const GetTenantUnassignedConversationsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetTenantUnassignedConversationsResponse = zod.object({
+  conversations: zod.array(
+    zod.object({
+      id: zod.number(),
+      tenantId: zod.number(),
+      departmentId: zod.number().nullable(),
+      contactName: zod.string().nullable(),
+      contactPhone: zod.string(),
+      status: zod.string(),
+      lastMessageAt: zod.coerce.date().nullish(),
+      createdAt: zod.coerce.date().nullish(),
+    }),
+  ),
+});
+
+/**
+ * Set a conversation's department (departmentId), keeping all history, or pass null to unassign. The conversation and department must both belong to the tenant.
+ * @summary Move a conversation into a department, or clear it (Conductor)
+ */
+export const AssignTenantConversationDepartmentParams = zod.object({
+  id: zod.coerce.number(),
+  conversationId: zod.coerce.number(),
+});
+
+export const AssignTenantConversationDepartmentBody = zod.object({
+  departmentId: zod
+    .number()
+    .nullable()
+    .describe("Department to move the conversation into, or null to unassign"),
+});
+
+export const AssignTenantConversationDepartmentResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  departmentId: zod.number().nullable(),
+  contactName: zod.string().nullable(),
+  contactPhone: zod.string(),
+  status: zod.string(),
+  lastMessageAt: zod.coerce.date().nullish(),
+  createdAt: zod.coerce.date().nullish(),
 });
 
 /**

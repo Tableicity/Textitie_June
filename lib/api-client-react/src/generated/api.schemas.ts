@@ -713,6 +713,42 @@ export interface TenantDepartmentsResponse {
   departments: TenantDepartment[];
 }
 
+export interface CreateTenantDepartmentInput {
+  /** Department name (required, non-empty) */
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** Optional routing strategy; defaults to round_robin */
+  routingStrategy?: string;
+}
+
+export interface TenantConversation {
+  id: number;
+  tenantId: number;
+  /** @nullable */
+  departmentId: number | null;
+  /** @nullable */
+  contactName: string | null;
+  contactPhone: string;
+  status: string;
+  /** @nullable */
+  lastMessageAt?: string | null;
+  /** @nullable */
+  createdAt?: string | null;
+}
+
+export interface TenantConversationsResponse {
+  conversations: TenantConversation[];
+}
+
+export interface AssignTenantConversationDepartmentInput {
+  /**
+   * Department to move the conversation into, or null to unassign
+   * @nullable
+   */
+  departmentId: number | null;
+}
+
 export interface AssignDepartmentNumberInput {
   /**
    * E.164 number to assign, or null to clear the department's number
