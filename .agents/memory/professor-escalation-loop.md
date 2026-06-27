@@ -1,11 +1,23 @@
 ---
 name: Professor live-escalation self-learning loop
-description: How ungrounded inbound SMS escalate to the autonomous Professor, auto-persist facts as truth, and why customer text is never trusted.
+description: HISTORICAL — the live inbound Professor escalation was REMOVED 2026-06-27 (Professor is now creation-only). Durable injection-safety / lockstep / provisional-fact lessons below still apply to the human-driven creation & Conductor curation flows.
 ---
 
 # Professor live-escalation / self-learning loop
 
-When an inbound Student draft is **ungrounded** (`!kbMatched`) the webhook escalates to an
+> **STATUS (2026-06-27): the live inbound escalation described here was REMOVED.** No engagement
+> mode calls the Professor on inbound traffic anymore — Auto-Pilot was already closed-book, and
+> Co-Pilot's ungrounded escalation was deleted from `lib/inboundAiPipeline.ts`. Co-Pilot now simply
+> keeps the **Student (Grok)** draft (or the per-tenant fallback phrase) for a human to review. The
+> Professor is now a **creation-only** tool (Human + Professor via the Conductor). `professorEscalate`
+> / `screenEscalatedFacts` / `persistEscalatedFacts` / `evaluateProfessorEscalationSend` still exist
+> (used by the creation flow / referenced by the unreachable legacy Auto-Pilot branch) but nothing on
+> the inbound path calls them. **Why this matters for future work:** the durable lessons below
+> (deterministic injection screen, live-truth lockstep, provisional `auto_published` facts, the shared
+> `conflict` status) still govern ANY path that persists Professor facts — keep them even though the
+> *automatic inbound* trigger is gone.
+
+When an inbound Student draft was **ungrounded** (`!kbMatched`) the webhook escalated to an
 autonomous Professor (OpenRouter/Qwen, `qwen/qwen3-max`) that answers from the tenant Library + its own expertise and
 returns strict JSON (2-3 atomic categorized facts + a customer reply + 3 engagement questions +
 confidence). Clean facts are auto-persisted into the current Classroom version as **provisional

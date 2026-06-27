@@ -53,8 +53,9 @@ import { checkOutboundCompliance } from "./compliance";
 //
 // Invariants under test:
 //   - Co-Pilot + fallbackPhrase set + UNGROUNDED → drafts the phrase VERBATIM,
-//     draftSource=fallback_phrase; Professor is SKIPPED; never sends, never learns.
-//   - FAIL-OPEN: empty fallbackPhrase → existing Professor/Student path runs.
+//     draftSource=fallback_phrase; never sends, never learns.
+//   - FAIL-OPEN: empty fallbackPhrase → the Student's own draft stands (the
+//     Professor was removed from the runtime path; it no longer escalates).
 //   - GROUNDED inbound (strong FTS) → fallback NOT used; grounded Student draft.
 //   - Auto-Pilot + fallbackPhrase set → fallback NEVER used (path unchanged).
 //   - Manual + fallbackPhrase set → no draft at all.
@@ -122,7 +123,8 @@ function routed(over: Partial<RouterDecision>): RouterDecision {
 }
 
 // An ungrounded but well-formed Student draft → without a fallback phrase this
-// would trigger the Professor escalation branch (kbMatched false, no strong FTS).
+// is now staged as-is for the human (the Professor was removed from the runtime
+// path; it no longer escalates).
 const UNGROUNDED_DRAFT: StudentDraft = {
   status: "drafted",
   whisperBody: "Customer asked a tenant-specific question.",
@@ -331,25 +333,27 @@ describe("runInboundAiPipeline — Co-Pilot fallback holding phrase", () => {
     expect(claims).toHaveLength(0);
   });
 
-  it("FAILS OPEN: empty fallback + ungrounded → existing Professor escalation path", async () => {
+  it("FAILS OPEN: empty fallback + ungrounded → Student draft stands (Professor removed from runtime)", async () => {
     await run({ tenant: { ...tenant, fallbackPhrase: "" } });
 
     expect(studentWhisper).toHaveBeenCalledTimes(1);
-    expect(professorEscalate).toHaveBeenCalledTimes(1);
+    // The Professor is no longer on the runtime path — the Student's own draft
+    // is staged for the human instead of escalating.
+    expect(professorEscalate).not.toHaveBeenCalled();
 
     const states = await readState();
     expect(states).toHaveLength(1);
     expect(states[0].status).toBe("drafted");
-    expect(states[0].draftSource).toBe("professor");
-    expect(states[0].draftBody).toBe(ESCALATION.customerReply.trim());
+    expect(states[0].draftSource).toBe("student");
+    expect(states[0].draftBody).toBe(UNGROUNDED_DRAFT.draftReply.trim());
   });
 
-  it("FAILS OPEN: whitespace-only fallback is treated as empty", async () => {
+  it("FAILS OPEN: whitespace-only fallback is treated as empty (Student draft, no Professor)", async () => {
     await run({ tenant: { ...tenant, fallbackPhrase: "   \n  " } });
 
-    expect(professorEscalate).toHaveBeenCalledTimes(1);
+    expect(professorEscalate).not.toHaveBeenCalled();
     const states = await readState();
-    expect(states[0].draftSource).toBe("professor");
+    expect(states[0].draftSource).toBe("student");
   });
 
   it("GROUNDED inbound (strong FTS) → fallback NOT used; grounded Student draft", async () => {

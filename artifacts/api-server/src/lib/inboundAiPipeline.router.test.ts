@@ -58,8 +58,9 @@ import { checkOutboundCompliance } from "./compliance";
 //                                   persistence, NO send; draftSource=student_flash.
 //   - Co-Pilot out_of_scope      → decline drafted; NO flash, NO Professor, NO
 //                                   send; draftSource=router_decline.
-//   - Co-Pilot tenant_specific   → falls through to the EXISTING grounded path;
-//                                   ungrounded still escalates; never learns.
+//   - Co-Pilot tenant_specific   → falls through to the grounded path; ungrounded
+//                                   stages the Student draft (the Professor was
+//                                   removed from the runtime path); never learns.
 //   - Router fails open (no brandScope / non-routed) → existing path runs.
 //   - Auto-Pilot + Manual        → router is NEVER called (paths unchanged).
 // ---------------------------------------------------------------------------
@@ -123,8 +124,9 @@ function routed(over: Partial<RouterDecision>): RouterDecision {
   };
 }
 
-// An ungrounded but well-formed Student draft → triggers the Professor escalation
-// branch (kbMatched false, no strong FTS match) in the tenant_specific path.
+// An ungrounded but well-formed Student draft → in the tenant_specific path this
+// is now staged as-is for the human (the Professor was removed from the runtime
+// path; it no longer escalates).
 const UNGROUNDED_DRAFT: StudentDraft = {
   status: "drafted",
   whisperBody: "Customer asked a tenant-specific question.",
@@ -351,7 +353,7 @@ describe("runInboundAiPipeline — Co-Pilot triage router", () => {
     expect(states[0].draftBody).toContain("HVAC");
   });
 
-  it("tenant_specific (ungrounded) falls through and STILL escalates, but never learns", async () => {
+  it("tenant_specific (ungrounded) falls through to the Student draft; Professor removed from runtime; never learns", async () => {
     vi.mocked(triageInbound).mockResolvedValue(
       routed({ intent: "tenant_specific" }),
     );
@@ -361,16 +363,17 @@ describe("runInboundAiPipeline — Co-Pilot triage router", () => {
     expect(triageInbound).toHaveBeenCalledTimes(1);
     expect(studentFlashDraft).not.toHaveBeenCalled();
     expect(studentWhisper).toHaveBeenCalledTimes(1);
-    expect(professorEscalate).toHaveBeenCalledTimes(1);
-    // Co-Pilot NEVER learns, even when the Professor returns facts.
+    // The Professor is no longer on the runtime path — the Student's own (Grok)
+    // draft is staged for the human; nothing escalates and nothing learns.
+    expect(professorEscalate).not.toHaveBeenCalled();
     expect(persistEscalatedFacts).not.toHaveBeenCalled();
     expect(sendConversationReply).not.toHaveBeenCalled();
 
     const states = await readState();
     expect(states).toHaveLength(1);
     expect(states[0].status).toBe("drafted");
-    expect(states[0].draftSource).toBe("professor");
-    expect(states[0].draftBody).toBe(ESCALATION.customerReply.trim());
+    expect(states[0].draftSource).toBe("student");
+    expect(states[0].draftBody).toBe(UNGROUNDED_DRAFT.draftReply.trim());
   });
 
   it("FAILS OPEN to the existing pipeline when brandScope is empty (router never called)", async () => {

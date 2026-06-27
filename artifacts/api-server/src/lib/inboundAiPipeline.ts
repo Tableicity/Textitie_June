@@ -20,8 +20,6 @@ import {
   classifyQueryCategory,
   normalizeCategory,
   hasUnresolvedConflicts,
-  retrieveLibraryContext,
-  professorEscalate,
   persistEscalatedFacts,
   type FactCategory,
   type ProfessorEscalation,
@@ -41,7 +39,6 @@ import {
 import {
   upsertConversationAiState,
   supersedeConversationAiState,
-  finalizeCopilotDraftForInbound,
   stageCopilotDraftForInbound,
   getConversationAiState,
   type AiDraftSource,
@@ -1223,15 +1220,16 @@ export async function runInboundAiPipeline(
     // ---- CO-PILOT fallback holding phrase (tenant-specific + UNGROUNDED) ----
     // When a Co-Pilot tenant has a fallback phrase configured AND this inbound is
     // ungrounded (no Classroom FTS hit and the Student found no KB answer), draft
-    // the human-written holding phrase VERBATIM instead of letting the
-    // Student/Professor guess at brand-specific pricing/policy/account facts. This
-    // is a composer-only draft: a human edits + sends and can trigger the
-    // Professor + Human loop. NEVER auto-sends, NEVER learns. We early-return
-    // (mirroring the router branches) so the slow Professor escalation is skipped
-    // — the whole point is "do not guess". FAIL-OPEN: empty phrase falls through
-    // to the existing Professor/Student path. Auto-Pilot + Manual are untouched
-    // (Manual already returned above; Auto-Pilot is the else branch below and
-    // this gate is Co-Pilot-only).
+    // the human-written holding phrase VERBATIM instead of letting the Student
+    // guess at brand-specific pricing/policy/account facts. This is a
+    // composer-only draft: a human edits + sends and can route the real answer
+    // back through the (creation-only) Human + Professor loop in the Conductor.
+    // NEVER auto-sends, NEVER learns. We early-return (mirroring the router
+    // branches) so the holding phrase wins over a guessed draft — the whole point
+    // is "do not guess". FAIL-OPEN: empty phrase falls through to the Student's
+    // own draft (the Professor no longer runs at runtime). Auto-Pilot + Manual
+    // are untouched (Manual already returned above; Auto-Pilot is the unreachable
+    // else branch below and this gate is Co-Pilot-only).
     const fallbackPhrase = (tenant.fallbackPhrase ?? "").trim();
     const ungrounded = !draft.kbMatched && !classroomGrounded;
     if (
@@ -1262,101 +1260,25 @@ export async function runInboundAiPipeline(
       return;
     }
 
-    // ---- Professor escalation (GENERATE + SCREEN ONLY here) ----
-    // When the Student is ungrounded, the Professor answers from the Library +
-    // its expertise: a better DRAFT now, and (Auto-Pilot only, AFTER a
-    // confirmed verbatim auto-send) the facts we LEARN. We DELIBERATELY do not
-    // persist here — learning is gated on an autonomous, unedited send (the
-    // unifying learning rule). The customer's text is UNTRUSTED — a question,
-    // never truth.
-    let escalation: ProfessorEscalation | null = null;
-    let escalatedCategories: FactCategory[] = [];
-    // Set true when the streaming escalation staged a Co-Pilot draft early
-    // (reply surfaced before the fact-reasoning finished), so the finalize
-    // below updates-in-place instead of re-upserting.
-    let copilotEarlyDraftFired = false;
-    // No in-process throttle needed anymore: the durable per-conversation FIFO
-    // (one inbound in flight per conversation) already prevents the same
-    // conversation from fanning out concurrent escalations, and natural dedup
-    // (once facts persist, the identical question is grounded) handles repeats.
-    // Trust a real Classroom FTS hit over the Student's self-report: when the
-    // answer terms are literally in the Classroom, skip the slow Professor
-    // escalation entirely (the dominant latency source) and answer from the
-    // grounded Student draft.
-    if (
-      professorConfigured() &&
-      draft.status === "drafted" &&
-      !draft.kbMatched &&
-      !classroomGrounded
-    ) {
-      try {
-        const lib = await retrieveLibraryContext(tenant.id, messageBody);
-        const libraryContext = lib
-          .map((c) => c.text)
-          .join("\n\n")
-          .slice(0, 8000);
-        escalation = await professorEscalate(
-          {
-            tenantName: tenant.name,
-            libraryContext,
-            question: messageBody,
-          },
-          // Co-Pilot ONLY: stage the customer reply the instant it finishes
-          // streaming — before the slow fact-reasoning — so the composer
-          // prefills immediately. Auto-Pilot passes no callback: its send gate
-          // needs the screened facts + confidence, so it cannot act early (the
-          // "Professor tax" is intentional). Best-effort; the authoritative
-          // copilot write happens at finalize below.
-          engagementMode === "copilot"
-            ? async (reply) => {
-                // Guarded: a no-op (false) means a human took the wheel or a
-                // newer turn landed mid-stream — don't claim the early draft or
-                // notify in that case.
-                const staged = await stageCopilotDraftForInbound({
-                  tenantId: tenant.id,
-                  conversationId,
-                  latestInboundMessageId: inboundMessageId,
-                  draftBody: reply,
-                  draftSource: "professor",
-                  confidence: null,
-                  queryCategory,
-                  inboundSid,
-                });
-                if (staged) {
-                  copilotEarlyDraftFired = true;
-                  eventBus.publish(tenant.id, {
-                    type: "ai:state",
-                    conversationId,
-                  });
-                }
-              }
-            : undefined,
-        );
-        escalatedCategories = Array.from(
-          new Set(escalation.facts.map((f) => normalizeCategory(f.category))),
-        );
-        logger.info(
-          {
-            tenantSlug,
-            conversationId,
-            status: escalation.status,
-            confidence: escalation.confidence,
-            screenedFacts: escalation.facts.length,
-            categories: escalatedCategories,
-          },
-          "SAMA Professor: escalation drafted (persist gated on auto-send)",
-        );
-      } catch (err) {
-        logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          "SAMA Professor: escalation failed (non-blocking)",
-        );
-        escalation = null;
-      }
-    }
+    // ---- Professor REMOVED from the runtime path ----
+    // The Professor is now a CREATION-ONLY tool (Human + Professor, via the
+    // Conductor) and no longer runs on live inbound traffic. Previously an
+    // ungrounded Co-Pilot inbound escalated to the Professor for a nicer draft,
+    // but learning was gated on an autonomous unedited send that Co-Pilot never
+    // does — so the runtime call bought only draft polish at full reasoning-LLM
+    // latency + cost. We now let the Student's own (Grok) draft stand for an
+    // ungrounded tenant-specific question; a human reviews it in the composer
+    // and can route the real answer back through Human + Professor. These two
+    // values stay as inert null/empty only because the LEGACY (unreachable)
+    // Auto-Pilot branch below still references them. `escalation` is typed via an
+    // assertion (not a bare `null`) so control-flow analysis keeps the union type
+    // and the unreachable branch's `escalation!` accesses still typecheck.
+    const escalation = null as ProfessorEscalation | null;
+    const escalatedCategories: FactCategory[] = [];
 
-    // The Professor answer supersedes the Student draft as the reply when it
-    // produced screened facts AND a customer reply.
+    // `escalated` is now always false: the Professor was removed from the runtime
+    // path above, so the reply / draftSource / whisper below resolve to the
+    // Student draft. These values remain only for the legacy Auto-Pilot branch.
     const escalated =
       !!escalation &&
       escalation.status === "answered" &&
@@ -1381,37 +1303,20 @@ export async function runInboundAiPipeline(
     // Draft into the composer for a human to edit + send. NEVER auto-sends and
     // NEVER learns.
     if (engagementMode === "copilot") {
-      let draftWritten: boolean;
-      if (copilotEarlyDraftFired) {
-        // The streaming callback already staged the draft early. Finalize it
-        // with the authoritative reply + confidence, guarded so we never
-        // clobber a human takeover or a newer inbound turn that landed during
-        // the stream.
-        draftWritten = await finalizeCopilotDraftForInbound({
-          tenantId: tenant.id,
-          conversationId,
-          latestInboundMessageId: inboundMessageId,
-          draftBody: replyText.length > 0 ? replyText : null,
-          draftSource,
-          confidence: replyConfidence,
-          queryCategory,
-          inboundSid,
-        });
-      } else {
-        // No early stream draft (stub/grok-off/grounded/stream failure).
-        // Guarded like the early write so a concurrent human takeover or newer
-        // turn is never clobbered.
-        draftWritten = await stageCopilotDraftForInbound({
-          tenantId: tenant.id,
-          conversationId,
-          latestInboundMessageId: inboundMessageId,
-          draftBody: replyText.length > 0 ? replyText : null,
-          draftSource,
-          confidence: replyConfidence,
-          queryCategory,
-          inboundSid,
-        });
-      }
+      // Stage the Student (Grok) draft into the composer for a human to edit +
+      // send. Guarded so a concurrent human takeover or a newer inbound turn is
+      // never clobbered. NEVER auto-sends, NEVER learns. (The Professor's
+      // early-stream finalize path was removed with the runtime escalation.)
+      const draftWritten = await stageCopilotDraftForInbound({
+        tenantId: tenant.id,
+        conversationId,
+        latestInboundMessageId: inboundMessageId,
+        draftBody: replyText.length > 0 ? replyText : null,
+        draftSource,
+        confidence: replyConfidence,
+        queryCategory,
+        inboundSid,
+      });
       // Only notify the inbox when the guarded write actually changed the row.
       // A no-op means a human took the wheel or a newer turn landed
       // mid-pipeline — re-emitting ai:state there would re-surface a draft for
@@ -1426,7 +1331,6 @@ export async function runInboundAiPipeline(
           conversationId,
           draftSource,
           hasDraft: replyText.length > 0,
-          earlyStreamed: copilotEarlyDraftFired,
           draftWritten,
         },
         "SAMA Co-Pilot: draft staged for human review",
