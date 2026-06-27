@@ -5,11 +5,16 @@ import {
   tenantUsersTable,
   tenantsTable,
   emailVerificationsTable,
+  departmentsTable,
+  contactsTable,
+  conversationsTable,
+  messagesTable,
   ensureTenantSchema,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { signToken, verifyToken } from "./auth";
+import { normalizePhoneE164 } from "../lib/phoneNumberRegistry";
 
 const router = Router();
 
@@ -211,6 +216,58 @@ router.post("/tenant-auth/register", async (req, res) => {
           role: "owner",
         })
         .returning();
+
+      // Every new tenant starts with a default "Demo Department" so the agent
+      // inbox is never empty — the inbox department filter no longer offers an
+      // "All Departments"/"Unassigned" bucket, so a tenant with no department
+      // would see an unusable, empty inbox. The owner is seeded as the first
+      // contact (their own name + cell phone) with a welcome conversation that
+      // lands inside the Demo Department, demonstrating two-way texting.
+      //
+      // The contact + conversation phone are canonicalized to E.164 so a real
+      // text from the owner later matches this seeded conversation instead of
+      // spawning a duplicate (the inbound webhook keys on the E.164 `From`).
+      const e164Phone = normalizePhoneE164(normalizedPhone) ?? normalizedPhone;
+      const [demoDept] = await tx
+        .insert(departmentsTable)
+        .values({
+          tenantId: tenant.id,
+          name: "Demo Department",
+          description:
+            "Your starter department. Create your own departments and add phone numbers once you're live.",
+        })
+        .returning({ id: departmentsTable.id });
+
+      const [contact] = await tx
+        .insert(contactsTable)
+        .values({
+          tenantId: tenant.id,
+          phone: e164Phone,
+          name: trimmedCompanyName,
+        })
+        .returning({ id: contactsTable.id });
+
+      const seedNow = new Date();
+      const [conversation] = await tx
+        .insert(conversationsTable)
+        .values({
+          tenantId: tenant.id,
+          departmentId: demoDept.id,
+          contactId: contact.id,
+          contactPhone: e164Phone,
+          contactName: trimmedCompanyName,
+          status: "open",
+          lastMessageAt: seedNow,
+        })
+        .returning({ id: conversationsTable.id });
+
+      await tx.insert(messagesTable).values({
+        conversationId: conversation.id,
+        direction: "inbound",
+        body: `Welcome to Textitie, ${trimmedCompanyName}! This is your Demo Department. Reply here to see two-way texting in action, then create your own departments and add phone numbers when you're ready to go live.`,
+        senderName: trimmedCompanyName,
+        read: false,
+      });
 
       return { tenant, user };
     });

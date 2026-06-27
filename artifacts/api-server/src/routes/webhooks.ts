@@ -14,7 +14,7 @@ import { pokeInboundAiWorker } from "../lib/inboundAiWorker";
 import { processInboundMessage } from "../lib/automationEngine";
 import { attributeInboundResponse } from "../lib/campaignAttribution";
 import { processDeliveryStatus } from "../lib/deliveryStatus";
-import { resolveTenantByPhoneNumber } from "../lib/tenantPhoneLookup";
+import { resolveTenantByPhoneNumber, resolveInboundDepartmentId } from "../lib/tenantPhoneLookup";
 import { eventBus } from "../lib/eventBus";
 import { logger } from "../lib/logger";
 import { checkTwilioSignature, requireTwilioSignature } from "../lib/twilioSignature";
@@ -308,11 +308,21 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                     .where(eq(conversationsTable.id, conversationId));
                 }
               } else {
+                // Route the new inbound conversation to a real department so it
+                // is visible in the inbox (the department filter no longer has
+                // an "Unassigned"/"All Departments" bucket): the department that
+                // owns the inbound number, else the tenant's default (oldest)
+                // department — the signup-seeded "Demo Department" for new tenants.
+                const inboundDepartmentId = await resolveInboundDepartmentId(
+                  tenant.id,
+                  toNumber,
+                );
                 const [newConv] = await tdb
                   .insert(conversationsTable)
                   .values({
                     tenantId: tenant.id,
                     contactId,
+                    departmentId: inboundDepartmentId,
                     contactPhone: fromNumber,
                     contactName: resolvedContactName,
                     status: "open",

@@ -237,15 +237,6 @@ export default function Inbox() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // When the New Message dialog opens, default its department to whatever the
-  // inbox is currently filtered to, so a conversation started while viewing
-  // "Customer Service" lands in Customer Service instead of Unassigned.
-  useEffect(() => {
-    if (showNewMessage) {
-      setNewDept(deptFilter !== "all" && deptFilter !== "0" ? deptFilter : "0");
-    }
-  }, [showNewMessage, deptFilter]);
-
   const { data: departments } = useListDepartments();
   const { data: agents } = useListAgents();
   const { data: shortcuts } = useListShortcuts({ query: { queryKey: getListShortcutsQueryKey() } });
@@ -255,6 +246,28 @@ export default function Inbox() {
     departments?.forEach((d) => map.set(d.id, d.name));
     return map;
   }, [departments]);
+
+  // The inbox always filters to a real department — the filter no longer offers
+  // an "All Departments"/"Unassigned" bucket. Default to the first department
+  // once they load, and recover if the current selection is no longer valid.
+  useEffect(() => {
+    if (!departments || departments.length === 0) return;
+    const validIds = new Set(departments.map((d) => d.id.toString()));
+    if (!validIds.has(deptFilter)) {
+      setDeptFilter(departments[0].id.toString());
+      setSelectedId(null);
+    }
+  }, [departments, deptFilter]);
+
+  // When the New Message dialog opens, default its department to whatever the
+  // inbox is currently filtered to (always a real department now), so a new
+  // conversation lands in the department the agent is looking at.
+  useEffect(() => {
+    if (!showNewMessage) return;
+    const fallback =
+      departments && departments.length > 0 ? departments[0].id.toString() : "0";
+    setNewDept(deptFilter !== "all" && deptFilter !== "0" ? deptFilter : fallback);
+  }, [showNewMessage, deptFilter, departments]);
 
   const agentMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -840,12 +853,10 @@ export default function Inbox() {
               <SelectTrigger className="h-8 text-xs bg-slate-50 border-slate-200">
                 <div className="flex items-center gap-1.5">
                   <Filter className="w-3 h-3 text-slate-400" />
-                  <SelectValue placeholder="All Departments" />
+                  <SelectValue placeholder="Department" />
                 </div>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Departments</SelectItem>
-                <SelectItem value="0">Unassigned</SelectItem>
                 {departments.map((d) => (
                   <SelectItem key={d.id} value={d.id.toString()}>
                     {d.name}
@@ -1813,10 +1824,9 @@ export default function Inbox() {
                 <Label className="mb-1.5 block">Department</Label>
                 <Select value={newDept} onValueChange={setNewDept}>
                   <SelectTrigger data-testid="select-new-message-department">
-                    <SelectValue placeholder="Unassigned" />
+                    <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">Unassigned</SelectItem>
                     {departments.map((d) => (
                       <SelectItem key={d.id} value={d.id.toString()}>
                         {d.name}
