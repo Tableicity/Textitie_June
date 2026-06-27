@@ -551,6 +551,55 @@ router.post(
   },
 );
 
+router.post(
+  "/tenants/:tenantId/professor/sessions/:sessionId/reopen",
+  async (req: Request, res: Response): Promise<void> => {
+    const tenantId = parseId(req.params.tenantId);
+    const sessionId = parseId(req.params.sessionId);
+    if (tenantId == null || sessionId == null) {
+      res.status(400).json({ error: "Invalid id" });
+      return;
+    }
+    const session = await getSession(tenantId, sessionId);
+    if (!session) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+    // Already active — nothing to do, return it as-is (idempotent).
+    if (session.status === "active") {
+      res.json(toSessionApi(session));
+      return;
+    }
+    // Reopening consumes a live memory slot, so honor the same cap as create.
+    const active = await db
+      .select({ id: professorSessionsTable.id })
+      .from(professorSessionsTable)
+      .where(
+        and(
+          eq(professorSessionsTable.tenantId, tenantId),
+          eq(professorSessionsTable.status, "active"),
+        ),
+      );
+    if (active.length >= MAX_ACTIVE_SESSIONS) {
+      res.status(409).json({
+        error: `You have ${MAX_ACTIVE_SESSIONS} active Professor sessions. Push to Classroom (or archive a session) before reopening one.`,
+      });
+      return;
+    }
+    const [row] = await db
+      .update(professorSessionsTable)
+      .set({ status: "active" })
+      .where(
+        and(
+          eq(professorSessionsTable.id, sessionId),
+          eq(professorSessionsTable.tenantId, tenantId),
+        ),
+      )
+      .returning();
+    res.json(toSessionApi(row ?? session));
+  },
+);
+
 // --- Professor chat ----------------------------------------------------------
 
 router.get(

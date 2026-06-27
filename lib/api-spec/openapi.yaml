@@ -2832,6 +2832,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/{tenantId}/professor/sessions/{sessionId}/reopen:
+    post:
+      operationId: reopenProfessorSession
+      tags: [knowledge]
+      summary: Reopen a pushed/archived Professor session (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session reopened (now active)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfessorSession"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Active session limit reached (push or archive first)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /tenants/{tenantId}/professor/sessions/{sessionId}/messages:
     get:
       operationId: listProfessorMessages

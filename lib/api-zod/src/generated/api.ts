@@ -2678,6 +2678,25 @@ export const ArchiveProfessorSessionResponse = zod.object({
 });
 
 /**
+ * @summary Reopen a pushed/archived Professor session (Conductor-only)
+ */
+export const ReopenProfessorSessionParams = zod.object({
+  tenantId: zod.coerce.number(),
+  sessionId: zod.coerce.number(),
+});
+
+export const ReopenProfessorSessionResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  title: zod.string(),
+  status: zod.enum(["active", "archived", "pushed"]),
+  model: zod.string(),
+  tokensUsed: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
  * @summary List messages in a Professor session (Conductor-only)
  */
 export const ListProfessorMessagesParams = zod.object({

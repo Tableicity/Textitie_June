@@ -8,6 +8,7 @@ import {
   getListProfessorSessionsQueryKey,
   useCreateProfessorSession,
   useArchiveProfessorSession,
+  useReopenProfessorSession,
   useListProfessorMessages,
   getListProfessorMessagesQueryKey,
   useListAbsorbedFacts,
@@ -60,6 +61,7 @@ import {
   ClipboardPaste,
   Archive,
   Lock,
+  RotateCcw,
 } from "lucide-react";
 
 const MEMORY_BUDGET = 10_000_000;
@@ -196,6 +198,7 @@ export default function Professor() {
 
   const createSession = useCreateProfessorSession();
   const archiveSession = useArchiveProfessorSession();
+  const reopenSession = useReopenProfessorSession();
   const updateFact = useUpdateAbsorbedFactStatus();
   const updateFactCategory = useUpdateAbsorbedFactCategory();
   const pushToClassroom = usePushToClassroom();
@@ -359,6 +362,32 @@ export default function Professor() {
         onError: (e: any) =>
           toast({
             title: "Could not archive session",
+            description: e?.message ?? "Unknown error",
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
+  function handleReopen(sessionId?: number) {
+    const target = sessionId ?? selectedId;
+    if (!target) return;
+    reopenSession.mutate(
+      { tenantId, sessionId: target },
+      {
+        onSuccess: (reopened) => {
+          queryClient.invalidateQueries({
+            queryKey: getListProfessorSessionsQueryKey(tenantId),
+          });
+          setSelectedId(reopened.id);
+          toast({
+            title: "Session reopened",
+            description: "Accept any missed facts, then push to the Classroom again.",
+          });
+        },
+        onError: (e: any) =>
+          toast({
+            title: "Could not reopen session",
             description: e?.message ?? "Unknown error",
             variant: "destructive",
           }),
@@ -746,6 +775,11 @@ export default function Professor() {
                         session={s}
                         selected={s.id === selectedId}
                         onSelect={setSelectedId}
+                        onReopen={handleReopen}
+                        reopening={
+                          reopenSession.isPending &&
+                          reopenSession.variables?.sessionId === s.id
+                        }
                       />
                     ))}
                   </div>
@@ -764,6 +798,11 @@ export default function Professor() {
                         session={s}
                         selected={s.id === selectedId}
                         onSelect={setSelectedId}
+                        onReopen={handleReopen}
+                        reopening={
+                          reopenSession.isPending &&
+                          reopenSession.variables?.sessionId === s.id
+                        }
                       />
                     ))}
                   </div>
@@ -778,10 +817,24 @@ export default function Professor() {
           {isReadOnly && (
             <div className="m-3 mb-0 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-700 dark:text-amber-500">
               <Lock size={13} className="shrink-0" />
-              <span>
-                This session is {selectedSession?.status} — read-only. Start a
-                new session to curate new knowledge.
+              <span className="flex-1">
+                This session is {selectedSession?.status} — read-only. Reopen it
+                to accept missed facts, or start a new session.
               </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 gap-1.5 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-500"
+                onClick={() => handleReopen()}
+                disabled={reopenSession.isPending}
+              >
+                {reopenSession.isPending ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <RotateCcw size={12} />
+                )}
+                Reopen
+              </Button>
             </div>
           )}
           {/* Absorbed knowledge */}
@@ -1158,6 +1211,8 @@ function SessionRow({
   onSelect,
   onArchive,
   archiving,
+  onReopen,
+  reopening,
 }: {
   session: {
     id: number;
@@ -1170,6 +1225,8 @@ function SessionRow({
   onSelect: (id: number) => void;
   onArchive?: (id: number) => void;
   archiving?: boolean;
+  onReopen?: (id: number) => void;
+  reopening?: boolean;
 }) {
   return (
     <div
@@ -1220,6 +1277,28 @@ function SessionRow({
             </button>
           </TooltipTrigger>
           <TooltipContent>Archive — frees a memory slot</TooltipContent>
+        </Tooltip>
+      ) : onReopen ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              title="Reopen session"
+              disabled={reopening}
+              onClick={(e) => {
+                e.stopPropagation();
+                onReopen(session.id);
+              }}
+              className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted-foreground/10 hover:text-foreground focus:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {reopening ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <RotateCcw size={13} />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Reopen — accept missed facts &amp; re-push</TooltipContent>
         </Tooltip>
       ) : (
         <Lock

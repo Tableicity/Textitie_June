@@ -9946,6 +9946,97 @@ export const useArchiveProfessorSession = <
 };
 
 /**
+ * @summary Reopen a pushed/archived Professor session (Conductor-only)
+ */
+export const getReopenProfessorSessionUrl = (
+  tenantId: number,
+  sessionId: number,
+) => {
+  return `/api/tenants/${tenantId}/professor/sessions/${sessionId}/reopen`;
+};
+
+export const reopenProfessorSession = async (
+  tenantId: number,
+  sessionId: number,
+  options?: RequestInit,
+): Promise<ProfessorSession> => {
+  return customFetch<ProfessorSession>(
+    getReopenProfessorSessionUrl(tenantId, sessionId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getReopenProfessorSessionMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reopenProfessorSession>>,
+    TError,
+    { tenantId: number; sessionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reopenProfessorSession>>,
+  TError,
+  { tenantId: number; sessionId: number },
+  TContext
+> => {
+  const mutationKey = ["reopenProfessorSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reopenProfessorSession>>,
+    { tenantId: number; sessionId: number }
+  > = (props) => {
+    const { tenantId, sessionId } = props ?? {};
+
+    return reopenProfessorSession(tenantId, sessionId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReopenProfessorSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reopenProfessorSession>>
+>;
+
+export type ReopenProfessorSessionMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Reopen a pushed/archived Professor session (Conductor-only)
+ */
+export const useReopenProfessorSession = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reopenProfessorSession>>,
+    TError,
+    { tenantId: number; sessionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reopenProfessorSession>>,
+  TError,
+  { tenantId: number; sessionId: number },
+  TContext
+> => {
+  return useMutation(getReopenProfessorSessionMutationOptions(options));
+};
+
+/**
  * @summary List messages in a Professor session (Conductor-only)
  */
 export const getListProfessorMessagesUrl = (
