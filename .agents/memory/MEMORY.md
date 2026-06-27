@@ -35,3 +35,4 @@
 - [Drizzle wraps pg error codes](drizzle-pg-error-code-wrapping.md) — SQLSTATE (23505 etc.) is on err.cause not err.code; a catch checking err.code silently never fires (500s instead of 409); use pgErrorCode() to walk the chain.
 - [Orval path+query Params collision](orval-path-query-params-collision.md) — an op with BOTH a path param and a query param makes zod api.ts + types/ both emit `<Op>Params` → TS2308 in the api-zod barrel; drop the query param or split the route.
 - [Department default routing](department-default-routing.md) — inbox dropped All/Unassigned, so every new convo MUST get a dept (inbound→number-owner else oldest/Demo; signup seeds Demo); off-webhook convo phones MUST be E.164 or duplicates spawn.
+- [Professor accept vs Brain](professor-accept-vs-brain.md) — Professor ✓/✗ = immediate per-fact PATCH (stays in list & drains, reversible) vs Brain checkbox-select+bulk push; keep the card's accept optimistic.

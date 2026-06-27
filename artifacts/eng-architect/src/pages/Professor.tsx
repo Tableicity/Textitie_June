@@ -405,15 +405,49 @@ export default function Professor() {
     );
   }
 
-  function setFactStatus(factId: number, status: "published" | "rejected") {
+  async function setFactStatus(
+    factId: number,
+    status: "published" | "rejected",
+  ) {
     if (!selectedId || isReadOnly) return;
+    const queryKey = getListAbsorbedFactsQueryKey(tenantId, selectedId);
+    // Stop any in-flight list refetch so it can't clobber the optimistic write
+    // before onSettled reconciles.
+    await queryClient.cancelQueries({ queryKey });
+    const current = queryClient.getQueryData(queryKey);
+    const prior = Array.isArray(current)
+      ? current.find((f) => f.id === factId)
+      : undefined;
+    // Optimistically flip just this fact so the ✓/✗, the "N accepted" counter,
+    // and the per-source "to review" count respond on click instead of waiting
+    // for the network round-trip — the feedback that made accepting feel like it
+    // "did nothing".
+    queryClient.setQueryData(queryKey, (old) =>
+      Array.isArray(old)
+        ? old.map((f) =>
+            f.id === factId ? { ...f, status, conflictReason: null } : f,
+          )
+        : old,
+    );
     updateFact.mutate(
       { tenantId, factId, data: { status } },
       {
-        onSuccess: () =>
-          queryClient.invalidateQueries({
-            queryKey: getListAbsorbedFactsQueryKey(tenantId, selectedId),
-          }),
+        onError: () => {
+          // Revert only this row so a concurrent optimistic change isn't lost.
+          if (prior) {
+            queryClient.setQueryData(queryKey, (old) =>
+              Array.isArray(old)
+                ? old.map((f) => (f.id === factId ? prior : f))
+                : old,
+            );
+          }
+          toast({
+            title: "Couldn't update fact",
+            description: "Change reverted — please try again.",
+            variant: "destructive",
+          });
+        },
+        onSettled: () => queryClient.invalidateQueries({ queryKey }),
       },
     );
   }
@@ -514,16 +548,30 @@ export default function Professor() {
 
   // group absorbed facts by source
   const factGroups = useMemo(() => {
+    // Reviewed facts (accepted/rejected) sink below the still-pending ones so the
+    // actionable items stay at the top and the bucket visibly "drains" as you
+    // review — mirroring the Brain review flow the operator is used to.
+    const rank: Record<string, number> = {
+      conflict: 0,
+      draft: 1,
+      published: 2,
+      rejected: 3,
+    };
     const map = new Map<string, typeof absorbed>();
     for (const f of absorbed ?? []) {
       const arr = map.get(f.sourceLabel) ?? [];
       arr.push(f);
       map.set(f.sourceLabel, arr);
     }
-    return Array.from(map.entries()).map(([label, facts]) => ({
-      label,
-      facts: facts ?? [],
-    }));
+    return Array.from(map.entries()).map(([label, facts]) => {
+      const sorted = [...(facts ?? [])].sort(
+        (a, b) => (rank[a.status] ?? 1) - (rank[b.status] ?? 1),
+      );
+      const pending = sorted.filter(
+        (f) => f.status === "draft" || f.status === "conflict",
+      ).length;
+      return { label, facts: sorted, pending };
+    });
   }, [absorbed]);
 
   const tokensUsed = selectedSession?.tokensUsed ?? 0;
@@ -765,8 +813,16 @@ export default function Professor() {
                       <button className="flex items-center gap-2 rounded-md border bg-background px-2.5 py-1.5 text-xs hover:bg-muted transition-colors max-w-[18rem]">
                         <Globe size={12} className="text-primary shrink-0" />
                         <span className="truncate">{g.label}</span>
-                        <span className="text-muted-foreground shrink-0">
-                          · {g.facts.length} facts
+                        <span
+                          className={cn(
+                            "shrink-0 font-medium",
+                            g.pending > 0 ? "text-amber-600" : "text-emerald-600",
+                          )}
+                        >
+                          ·{" "}
+                          {g.pending > 0
+                            ? `${g.pending} to review`
+                            : `${g.facts.length} reviewed`}
                         </span>
                       </button>
                     </PopoverTrigger>
@@ -777,9 +833,12 @@ export default function Professor() {
                           <div
                             key={f.id}
                             className={cn(
-                              "flex items-start gap-2 text-xs border-b pb-2 last:border-0",
+                              "flex items-start gap-2 text-xs border-b pb-2 last:border-0 transition-colors",
                               f.status === "conflict" &&
                                 "rounded-md border border-amber-500/40 bg-amber-500/5 p-2",
+                              f.status === "published" &&
+                                "rounded-md border border-emerald-500/40 bg-emerald-500/5 p-2",
+                              f.status === "rejected" && "opacity-50",
                             )}
                           >
                             <div className="flex-1 space-y-1">
