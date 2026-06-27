@@ -290,6 +290,70 @@ export const UpdateTenantResponse = zod.object({
 });
 
 /**
+ * @summary List a tenant's departments and their assigned numbers (Conductor)
+ */
+export const GetTenantDepartmentsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetTenantDepartmentsResponse = zod.object({
+  departments: zod.array(
+    zod.object({
+      id: zod.number(),
+      tenantId: zod.number(),
+      name: zod.string(),
+      phoneNumber: zod
+        .string()
+        .nullable()
+        .describe("E.164 number assigned to this department, or null"),
+      twilioSid: zod.string().nullable(),
+      description: zod.string().nullable(),
+      routingStrategy: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * Assign an owned Twilio number to one of a tenant's departments, or clear it with phoneNumber=null. A number is either the account primary or one department's number; if the supplied number is currently this tenant's primary it is moved off primary in the same step.
+ * @summary Assign or clear a department's phone number (Conductor)
+ */
+export const AssignTenantDepartmentNumberParams = zod.object({
+  id: zod.coerce.number(),
+  departmentId: zod.coerce.number(),
+});
+
+export const AssignTenantDepartmentNumberBody = zod.object({
+  phoneNumber: zod
+    .string()
+    .nullable()
+    .describe(
+      "E.164 number to assign, or null to clear the department's number",
+    ),
+  twilioSid: zod.string().nullish(),
+});
+
+export const AssignTenantDepartmentNumberResponse = zod.object({
+  department: zod.object({
+    id: zod.number(),
+    tenantId: zod.number(),
+    name: zod.string(),
+    phoneNumber: zod
+      .string()
+      .nullable()
+      .describe("E.164 number assigned to this department, or null"),
+    twilioSid: zod.string().nullable(),
+    description: zod.string().nullable(),
+    routingStrategy: zod.string(),
+  }),
+  tenantPhoneNumber: zod
+    .string()
+    .nullable()
+    .describe(
+      "The tenant's primary number after the operation (null if the assigned number was moved off primary)",
+    ),
+});
+
+/**
  * Conductor-authorized message injection. Forwards to the configured n8n
 webhook (or stubs the call if N8N_WEBHOOK_URL is not set), records an
 injection log entry, and returns the resulting log row.

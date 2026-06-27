@@ -1,9 +1,15 @@
 import { Router, type IRouter, type Request } from "express";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import multer from "multer";
 import twilio from "twilio";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { db, tenantsTable, tenantUsersTable, phoneNumbersTable } from "@workspace/db";
+import {
+  db,
+  tenantsTable,
+  tenantUsersTable,
+  phoneNumbersTable,
+  departmentsTable,
+} from "@workspace/db";
 import {
   ListTenantsResponse,
   CreateTenantBody,
@@ -15,11 +21,17 @@ import {
   UpdateTenantBody,
   UpdateTenantParams,
   UpdateTenantResponse,
+  GetTenantDepartmentsParams,
+  GetTenantDepartmentsResponse,
+  AssignTenantDepartmentNumberParams,
+  AssignTenantDepartmentNumberBody,
+  AssignTenantDepartmentNumberResponse,
 } from "@workspace/api-zod";
 import { provisionChatwootInbox } from "../lib/chatwoot";
 import { requireTenantAuth } from "../middleware/tenantAuth";
 import {
   setTenantPrimaryNumber,
+  setDepartmentNumber,
   PhoneNumberConflictError,
 } from "../lib/phoneNumberRegistry";
 import { applyInboundWebhookByNumber } from "../lib/twilioNumberWebhook";
@@ -46,14 +58,15 @@ function getTwilioClient() {
 }
 
 /**
- * After a tenant's PRIMARY number is set through the registry, point that
- * number's inbound webhook at us so an admin-injected (already-owned) number is
- * never left "deaf". Best-effort: the DB registry write is the source of truth;
- * a webhook miss is logged and repairable via /phone-provisioning/repair-webhooks.
- * Also records the resolved Twilio SID on the registry row so reconcile/repair
- * treat an admin-injected number the same as a purchased one.
+ * After a number is assigned through the registry — a tenant's PRIMARY number OR
+ * a department number — point that number's inbound webhook at us so an
+ * admin-injected (already-owned) number is never left "deaf". Best-effort: the
+ * DB registry write is the source of truth; a webhook miss is logged and
+ * repairable via /phone-provisioning/repair-webhooks. Also records the resolved
+ * Twilio SID on the registry row so reconcile/repair treat an admin-injected
+ * number the same as a purchased one.
  */
-async function wirePrimaryNumberWebhook(
+async function wireNumberWebhook(
   req: Request,
   phoneNumber: string,
 ): Promise<void> {
@@ -64,13 +77,13 @@ async function wirePrimaryNumberWebhook(
     if (!result.ok) {
       req.log.warn(
         { phoneNumber, reason: result.reason },
-        "Assigned tenant primary number but did not set inbound webhook; run /phone-provisioning/repair-webhooks",
+        "Assigned number but did not set inbound webhook; run /phone-provisioning/repair-webhooks",
       );
       return;
     }
     req.log.info(
       { phoneNumber, sid: result.sid },
-      "Set inbound webhook on tenant primary number",
+      "Set inbound webhook on assigned number",
     );
     try {
       await db
@@ -80,13 +93,13 @@ async function wirePrimaryNumberWebhook(
     } catch (sidErr) {
       req.log.warn(
         { err: sidErr, phoneNumber },
-        "Set inbound webhook but failed to persist Twilio SID for primary number",
+        "Set inbound webhook but failed to persist Twilio SID for number",
       );
     }
   } catch (err) {
     req.log.warn(
       { err, phoneNumber },
-      "Failed to set inbound webhook on tenant primary number; run /phone-provisioning/repair-webhooks",
+      "Failed to set inbound webhook on assigned number; run /phone-provisioning/repair-webhooks",
     );
   }
 }
@@ -170,7 +183,7 @@ router.post("/tenants", async (req, res): Promise<void> => {
       );
       row!.phoneNumber = result.phoneNumber;
       if (result.phoneNumber) {
-        await wirePrimaryNumberWebhook(req, result.phoneNumber);
+        await wireNumberWebhook(req, result.phoneNumber);
       }
     } catch (err) {
       if (err instanceof PhoneNumberConflictError) {
@@ -232,6 +245,138 @@ router.get("/tenants/:id/users", async (req, res): Promise<void> => {
     }),
   );
 });
+
+// Department helper: project a department row into the API shape (id, name,
+// description, routing strategy + its assigned number). Shared by the list and
+// assign endpoints so both return an identical TenantDepartment.
+const departmentColumns = {
+  id: departmentsTable.id,
+  tenantId: departmentsTable.tenantId,
+  name: departmentsTable.name,
+  phoneNumber: departmentsTable.phoneNumber,
+  twilioSid: departmentsTable.twilioSid,
+  description: departmentsTable.description,
+  routingStrategy: departmentsTable.routingStrategy,
+} as const;
+
+// All of a tenant's departments and their assigned numbers. Conductor-scoped so
+// the operator can wire a department's number exactly like the tenant app does.
+router.get("/tenants/:id/departments", async (req, res): Promise<void> => {
+  const params = GetTenantDepartmentsParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const rows = await db
+    .select(departmentColumns)
+    .from(departmentsTable)
+    .where(eq(departmentsTable.tenantId, params.data.id))
+    .orderBy(departmentsTable.id);
+  res.json(GetTenantDepartmentsResponse.parse({ departments: rows }));
+});
+
+// Assign (or clear, with phoneNumber=null) an owned number for one of a tenant's
+// departments. A number is the account primary XOR one department's number; if
+// the supplied number is currently this tenant's primary, the registry frees it
+// from primary in the same transaction (allowReclaimFromOwnPrimary).
+router.post(
+  "/tenants/:id/departments/:departmentId/number",
+  async (req, res): Promise<void> => {
+    const params = AssignTenantDepartmentNumberParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = AssignTenantDepartmentNumberBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const { id: tenantId, departmentId } = params.data;
+    const raw = body.data.phoneNumber;
+    // Server-side E.164 guard mirrors the primary-number path: a malformed
+    // number would silently break inbound routing for this department.
+    if (raw !== null && raw !== "" && !/^\+[1-9]\d{6,14}$/.test(raw)) {
+      res
+        .status(400)
+        .json({ error: "phoneNumber must be E.164 format, e.g. +19094904265" });
+      return;
+    }
+
+    // The department must belong to this tenant — never let a Conductor assign a
+    // number to a department row that lives under another tenant.
+    const [dept] = await db
+      .select({ id: departmentsTable.id })
+      .from(departmentsTable)
+      .where(
+        and(
+          eq(departmentsTable.id, departmentId),
+          eq(departmentsTable.tenantId, tenantId),
+        ),
+      );
+    if (!dept) {
+      res.status(404).json({ error: "Department not found for tenant" });
+      return;
+    }
+
+    const normalized = raw === "" || raw == null ? null : raw;
+    try {
+      await setDepartmentNumber(
+        tenantId,
+        departmentId,
+        normalized,
+        body.data.twilioSid ?? null,
+        { allowReclaimFromOwnPrimary: true },
+      );
+    } catch (err) {
+      if (err instanceof PhoneNumberConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+
+    // Best-effort post-assign side effects. Wiring the inbound webhook only
+    // applies when a number is actually set (skip on unassign). Carrier billing
+    // counts every owned number regardless of primary-vs-department, but a
+    // primary→department reclaim can null the tenant's primary, so reconcile
+    // either way. Neither failure is fatal: the registry write already committed
+    // and both are recoverable via reconcile/repair.
+    if (normalized) {
+      await wireNumberWebhook(req, normalized);
+    }
+    try {
+      await syncCarrierBillingToStripe(
+        tenantId,
+        "conductor_department_number_change",
+      );
+    } catch (syncErr) {
+      req.log.error(
+        { err: syncErr, tenantId, departmentId },
+        "CRITICAL: carrier billing sync failed after department number change — tenant billing may be stale until reconciled",
+      );
+    }
+
+    const [department] = await db
+      .select(departmentColumns)
+      .from(departmentsTable)
+      .where(eq(departmentsTable.id, departmentId));
+    const [tenant] = await db
+      .select({ phoneNumber: tenantsTable.phoneNumber })
+      .from(tenantsTable)
+      .where(eq(tenantsTable.id, tenantId));
+    req.log.info(
+      { tenantId, departmentId, phoneNumber: normalized },
+      "Conductor assigned department number",
+    );
+    res.json(
+      AssignTenantDepartmentNumberResponse.parse({
+        department,
+        tenantPhoneNumber: tenant?.phoneNumber ?? null,
+      }),
+    );
+  },
+);
 
 router.patch("/tenants/:id", async (req, res): Promise<void> => {
   const params = UpdateTenantParams.safeParse(req.params);
@@ -307,7 +452,7 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
         raw === "" || raw == null ? null : raw,
       );
       if (result.phoneNumber) {
-        await wirePrimaryNumberWebhook(req, result.phoneNumber);
+        await wireNumberWebhook(req, result.phoneNumber);
       }
     } catch (err) {
       if (err instanceof PhoneNumberConflictError) {

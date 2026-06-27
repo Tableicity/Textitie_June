@@ -207,12 +207,20 @@ export async function setTenantPrimaryNumber(
  * Set (or clear, with `rawNumber = null`) a department's number. Rejects if the
  * number belongs to another tenant, to this tenant's primary, or to a different
  * department. Keeps `departments.phone_number` / `twilio_sid` in sync.
+ *
+ * `opts.allowReclaimFromOwnPrimary` (admin/Conductor only): when the number is
+ * THIS tenant's own primary, instead of rejecting, free it from primary
+ * (`tenants.phone_number = null` + drop the primary canonical row) IN THE SAME
+ * transaction and re-claim it as the department's number. The primary↔department
+ * XOR invariant is therefore never even momentarily violated. Tenant-app callers
+ * leave this off and keep the helpful "unassign it from primary first" 409.
  */
 export async function setDepartmentNumber(
   tenantId: number,
   departmentId: number,
   rawNumber: string | null,
   twilioSid: string | null = null,
+  opts: { allowReclaimFromOwnPrimary?: boolean } = {},
 ): Promise<{ phoneNumber: string | null }> {
   const norm = normalizePhoneE164(rawNumber);
 
@@ -244,12 +252,24 @@ export async function setDepartmentNumber(
         );
       }
       if (existing.departmentId == null) {
-        throw new PhoneNumberConflictError(
-          norm,
-          "This number is the account's primary number; it cannot also be a department number.",
-        );
-      }
-      if (existing.departmentId !== departmentId) {
+        if (!opts.allowReclaimFromOwnPrimary) {
+          throw new PhoneNumberConflictError(
+            norm,
+            "This number is the account's primary number; it cannot also be a department number.",
+          );
+        }
+        // Admin reclaim: `existing` is this tenant's own primary (cross-tenant
+        // was already rejected above). Drop the primary canonical row and clear
+        // the denormalized column so the subsequent claim is a clean insert and
+        // the number holds exactly one role for the whole transaction.
+        await tx
+          .delete(phoneNumbersTable)
+          .where(eq(phoneNumbersTable.phoneNumber, norm));
+        await tx
+          .update(tenantsTable)
+          .set({ phoneNumber: null })
+          .where(eq(tenantsTable.id, tenantId));
+      } else if (existing.departmentId !== departmentId) {
         throw new PhoneNumberConflictError(
           norm,
           "This number is already assigned to another department.",

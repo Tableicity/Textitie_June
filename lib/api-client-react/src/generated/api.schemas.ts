@@ -693,6 +693,45 @@ export interface TenantUsersResponse {
   users: TenantUserItem[];
 }
 
+export interface TenantDepartment {
+  id: number;
+  tenantId: number;
+  name: string;
+  /**
+   * E.164 number assigned to this department, or null
+   * @nullable
+   */
+  phoneNumber: string | null;
+  /** @nullable */
+  twilioSid: string | null;
+  /** @nullable */
+  description: string | null;
+  routingStrategy: string;
+}
+
+export interface TenantDepartmentsResponse {
+  departments: TenantDepartment[];
+}
+
+export interface AssignDepartmentNumberInput {
+  /**
+   * E.164 number to assign, or null to clear the department's number
+   * @nullable
+   */
+  phoneNumber: string | null;
+  /** @nullable */
+  twilioSid?: string | null;
+}
+
+export interface AssignDepartmentNumberResult {
+  department: TenantDepartment;
+  /**
+   * The tenant's primary number after the operation (null if the assigned number was moved off primary)
+   * @nullable
+   */
+  tenantPhoneNumber: string | null;
+}
+
 export interface ClaimResult {
   success: boolean;
   assignedUserId: number;

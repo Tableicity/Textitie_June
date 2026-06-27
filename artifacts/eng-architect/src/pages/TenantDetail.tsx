@@ -13,6 +13,9 @@ import {
   useGetTenantUsers,
   getGetTenantUsersQueryKey,
   getListInjectionsQueryKey,
+  useGetTenantDepartments,
+  getGetTenantDepartmentsQueryKey,
+  useAssignTenantDepartmentNumber,
 } from "@workspace/api-client-react";
 import { getStoredAuthHeader } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +33,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users, Receipt, GraduationCap } from "lucide-react";
+import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users, Receipt, GraduationCap, Building2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import MigrationsPanel from "@/components/MigrationsPanel";
 
@@ -71,6 +74,33 @@ export default function TenantDetail() {
     query: { enabled: !!tenantId, queryKey: getGetTenantUsersQueryKey(tenantId) },
   });
   const tenantUsers = tenantUsersData?.users ?? [];
+
+  const { data: departmentsData, isLoading: deptsLoading } =
+    useGetTenantDepartments(tenantId, {
+      query: {
+        enabled: !!tenantId,
+        queryKey: getGetTenantDepartmentsQueryKey(tenantId),
+      },
+    });
+  const departments = departmentsData?.departments ?? [];
+  const assignDeptNumber = useAssignTenantDepartmentNumber();
+
+  // Per-department number picker, keyed by department id. Select mode (Twilio
+  // connected) uses "__none__" to mean unassign; manual mode uses an empty
+  // string. Reset from the server rows whenever they (re)load so a save's
+  // invalidation snaps every row back to its persisted value.
+  const [deptSelections, setDeptSelections] = useState<Record<number, string>>(
+    {},
+  );
+  useEffect(() => {
+    if (!departmentsData) return;
+    const next: Record<number, string> = {};
+    for (const d of departmentsData.departments) {
+      next[d.id] = d.phoneNumber ?? (ownedConfigured ? "__none__" : "");
+    }
+    setDeptSelections(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [departmentsData, ownedConfigured]);
 
   const injectForm = useForm<z.infer<typeof injectSchema>>({
     resolver: zodResolver(injectSchema),
@@ -162,6 +192,44 @@ export default function TenantDetail() {
             description: next
               ? `${tenant.name} now sends and receives on ${next}.`
               : `${tenant.name} unassigned — outbound falls back to the platform default number.`,
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Save Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const onSaveDeptNumber = (departmentId: number) => {
+    if (!tenant) return;
+    const raw = deptSelections[departmentId] ?? "";
+    const next = raw === "__none__" || raw.trim() === "" ? null : raw.trim();
+    if (next && !/^\+[1-9]\d{6,14}$/.test(next)) {
+      toast({
+        title: "Invalid Number",
+        description: "Must be E.164 format, e.g. +19094904265.",
+        variant: "destructive",
+      });
+      return;
+    }
+    assignDeptNumber.mutate(
+      { id: tenant.id, departmentId, data: { phoneNumber: next } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({
+            queryKey: getGetTenantDepartmentsQueryKey(tenant.id),
+          });
+          // A primary→department reclaim nulls the tenant's primary, so refresh
+          // the tenant too and the Telephony card reflects the move.
+          queryClient.invalidateQueries({
+            queryKey: getGetTenantQueryKey(tenant.id),
+          });
+          toast({
+            title: "Department Number Saved",
+            description: next
+              ? `Department now receives on ${next}.`
+              : "Department number unassigned.",
           });
         },
         onError: (err) => {
@@ -465,6 +533,125 @@ export default function TenantDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Building2 size={16} /> Departments
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Assign an owned number to a department for inbound routing, mirroring
+            the tenant workspace. A number is either the account primary or one
+            department's number — assigning the current primary here moves it off
+            primary in the same step.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {deptsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading departments…</p>
+          ) : departments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No departments yet. The tenant creates departments from their
+              workspace settings; they will appear here for number assignment.
+            </p>
+          ) : (
+            departments.map((d) => {
+              const sel =
+                deptSelections[d.id] ?? (ownedConfigured ? "__none__" : "");
+              const saved = d.phoneNumber ?? (ownedConfigured ? "__none__" : "");
+              const deptCurrentOwned =
+                !d.phoneNumber ||
+                ownedNumbers.some((n) => n.phoneNumber === d.phoneNumber);
+              const selectsPrimary =
+                !!tenant.phoneNumber && sel === tenant.phoneNumber;
+              const isRowPending =
+                assignDeptNumber.isPending &&
+                assignDeptNumber.variables?.departmentId === d.id;
+              return (
+                <div key={d.id} className="rounded-md border p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">{d.name}</p>
+                      {d.description && (
+                        <p className="text-xs text-muted-foreground">
+                          {d.description}
+                        </p>
+                      )}
+                    </div>
+                    <span className="font-mono text-sm whitespace-nowrap">
+                      {d.phoneNumber ?? (
+                        <em className="text-muted-foreground">unset</em>
+                      )}
+                    </span>
+                  </div>
+                  {ownedConfigured && d.phoneNumber && !deptCurrentOwned && (
+                    <p className="text-xs text-amber-600">
+                      This number is not owned by the connected Twilio account —
+                      inbound/outbound may fail. Pick an owned number below.
+                    </p>
+                  )}
+                  {ownedConfigured ? (
+                    <Select
+                      value={sel}
+                      onValueChange={(v) =>
+                        setDeptSelections((prev) => ({ ...prev, [d.id]: v }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a number" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">
+                          Unassign — no department number
+                        </SelectItem>
+                        {d.phoneNumber && !deptCurrentOwned && (
+                          <SelectItem value={d.phoneNumber}>
+                            {d.phoneNumber} (current — not owned)
+                          </SelectItem>
+                        )}
+                        {ownedNumbers.map((n) => (
+                          <SelectItem key={n.phoneNumber} value={n.phoneNumber}>
+                            {n.phoneNumber}
+                            {n.friendlyName && n.friendlyName !== n.phoneNumber
+                              ? ` · ${n.friendlyName}`
+                              : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      placeholder="+1XXXXXXXXXX (leave empty to unassign)"
+                      value={sel}
+                      onChange={(e) =>
+                        setDeptSelections((prev) => ({
+                          ...prev,
+                          [d.id]: e.target.value,
+                        }))
+                      }
+                    />
+                  )}
+                  {selectsPrimary && (
+                    <p className="text-xs text-amber-600">
+                      This is the account's primary number — saving will move it
+                      off primary and onto this department.
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full"
+                    disabled={isRowPending || sel === saved}
+                    onClick={() => onSaveDeptNumber(d.id)}
+                  >
+                    {isRowPending ? "Saving..." : "Save Department Number"}
+                  </Button>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">

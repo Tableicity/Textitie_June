@@ -211,6 +211,84 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/{id}/departments:
+    get:
+      operationId: getTenantDepartments
+      tags: [tenants]
+      summary: List a tenant's departments and their assigned numbers (Conductor)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Departments belonging to the tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantDepartmentsResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{id}/departments/{departmentId}/number:
+    post:
+      operationId: assignTenantDepartmentNumber
+      tags: [tenants]
+      summary: Assign or clear a department's phone number (Conductor)
+      description: >-
+        Assign an owned Twilio number to one of a tenant's departments, or clear
+        it with phoneNumber=null. A number is either the account primary or one
+        department's number; if the supplied number is currently this tenant's
+        primary it is moved off primary in the same step.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: departmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignDepartmentNumberInput"
+      responses:
+        "200":
+          description: Updated department and the tenant's resulting primary number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignDepartmentNumberResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Tenant or department not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Number already assigned elsewhere
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /inject:
     post:
       operationId: injectMessage
@@ -4192,6 +4270,64 @@ components:
           items:
             $ref: "#/components/schemas/TenantUserItem"
       required: [users]
+
+    TenantDepartment:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        name:
+          type: string
+        phoneNumber:
+          type: ["string", "null"]
+          description: E.164 number assigned to this department, or null
+        twilioSid:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        routingStrategy:
+          type: string
+      required:
+        - id
+        - tenantId
+        - name
+        - phoneNumber
+        - twilioSid
+        - description
+        - routingStrategy
+
+    TenantDepartmentsResponse:
+      type: object
+      properties:
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantDepartment"
+      required: [departments]
+
+    AssignDepartmentNumberInput:
+      type: object
+      properties:
+        phoneNumber:
+          type: ["string", "null"]
+          description: E.164 number to assign, or null to clear the department's number
+        twilioSid:
+          type: ["string", "null"]
+      required: [phoneNumber]
+
+    AssignDepartmentNumberResult:
+      type: object
+      properties:
+        department:
+          $ref: "#/components/schemas/TenantDepartment"
+        tenantPhoneNumber:
+          type: ["string", "null"]
+          description: >-
+            The tenant's primary number after the operation (null if the assigned
+            number was moved off primary)
+      required: [department, tenantPhoneNumber]
 
     ClaimResult:
       type: object
