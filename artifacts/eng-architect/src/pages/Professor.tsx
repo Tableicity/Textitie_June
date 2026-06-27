@@ -901,7 +901,7 @@ export default function Professor() {
                                   "rounded p-1 hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-40",
                                   f.status === "published"
                                     ? "text-emerald-500"
-                                    : "text-muted-foreground",
+                                    : "text-red-500",
                                 )}
                               >
                                 <Check size={13} />
