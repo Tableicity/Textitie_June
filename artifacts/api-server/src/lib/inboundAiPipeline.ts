@@ -893,8 +893,9 @@ export async function runInboundAiPipeline(
     // branches) so the holding phrase wins over a guessed draft — the whole point
     // is "do not guess". FAIL-OPEN: empty phrase falls through to the Student's
     // own draft (the Professor no longer runs at runtime). Auto-Pilot + Manual
-    // are untouched (Manual already returned above; Auto-Pilot is the unreachable
-    // else branch below and this gate is Co-Pilot-only).
+    // are untouched (Manual already returned above; Auto-Pilot runs on its own
+    // dedicated fail-open path, runAutoPilotFailOpenTurn, dispatched earlier and
+    // never reaches this Co-Pilot-only gate).
     const fallbackPhrase = (tenant.fallbackPhrase ?? "").trim();
     const ungrounded = !draft.kbMatched && !classroomGrounded;
     if (
