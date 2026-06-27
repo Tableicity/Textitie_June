@@ -36,3 +36,4 @@
 - [Orval path+query Params collision](orval-path-query-params-collision.md) — an op with BOTH a path param and a query param makes zod api.ts + types/ both emit `<Op>Params` → TS2308 in the api-zod barrel; drop the query param or split the route.
 - [Department default routing](department-default-routing.md) — inbox dropped All/Unassigned, so every new convo MUST get a dept (inbound→number-owner else oldest/Demo; signup seeds Demo); off-webhook convo phones MUST be E.164 or duplicates spawn.
 - [Professor accept vs Brain](professor-accept-vs-brain.md) — Professor ✓/✗ = immediate per-fact PATCH (stays in list & drains, reversible) vs Brain checkbox-select+bulk push; keep the card's accept optimistic.
+- [Brand-safety rebrand guardrail](brand-safety-rebrand.md) — competitor→canonical scrub; Classroom publish must scrub BOTH inputs and adjudicated output (Librarian can reintroduce names); AI auto-sends scrub, human sends don't.

@@ -19,6 +19,7 @@ import * as http from "node:http";
 import * as https from "node:https";
 import { professorClient, PROFESSOR_MODEL } from "./grokClient";
 import { logger } from "./logger";
+import { rebrandText } from "./brandSafety";
 import { trigrams, trigramSimilarity } from "./textSimilarity";
 import { createCustomerReplyExtractor } from "./professorStream";
 
@@ -750,7 +751,13 @@ Maximum 15 facts. Omit fluff, marketing, and navigation text.`,
     ],
   });
   const text = resp.choices[0]?.message?.content?.trim() ?? "";
-  return { facts: parseFacts(text), tokensUsed: resp.usage?.total_tokens ?? 0 };
+  // Scrub competitor names at the source so the Conductor reviews clean
+  // candidate facts (brand-safety Layer 2, ingestion side).
+  const facts = parseFacts(text).map((f) => ({
+    ...f,
+    statement: rebrandText(f.statement).text,
+  }));
+  return { facts, tokensUsed: resp.usage?.total_tokens ?? 0 };
 }
 
 // One Professor chat turn, grounded in retrieved Library context.

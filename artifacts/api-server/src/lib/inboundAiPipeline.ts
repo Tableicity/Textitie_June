@@ -37,6 +37,7 @@ import {
   type AiDraftSource,
 } from "./aiStateStore";
 import { sendConversationReply } from "./outboundReply";
+import { rebrandText, rebrandAndLog } from "./brandSafety";
 import { checkOutboundCompliance } from "./compliance";
 import { recordMessageUsage } from "./stripe-stub";
 import { eventBus } from "./eventBus";
@@ -213,7 +214,11 @@ async function runAutoPilotFailOpenTurn(
         inboundBody: messageBody,
         classroomContext,
       });
-      const reply = draft.draftReply.trim();
+      const reply = rebrandAndLog(draft.draftReply.trim(), {
+        tenantSlug,
+        conversationId,
+        site: "autopilot_answer",
+      });
       if (draft.status === "drafted" && reply.length > 0) {
         answerText = reply;
       } else {
@@ -403,6 +408,9 @@ async function runAutoPilotFailOpenTurn(
       body,
       senderName: "Textitie AI",
       conductorAuthorized: true,
+      // Guaranteed last-line scrub of every Auto-Pilot auto-send (covers the
+      // grounded answer AND any holding/stepdown phrase) regardless of branch.
+      scrubBrand: true,
     });
 
     if (sent.ok && sent.status === "sent") {
@@ -747,7 +755,10 @@ export async function runInboundAiPipeline(
         if (branch === "out_of_scope") {
           // Off-brand → LLM-authored short decline drafted into the composer for
           // a human to review/send. Nothing grounded, nothing learned.
-          const declineBody = routerDecision!.declineMessage.trim();
+          const declineBody = rebrandAndLog(
+            routerDecision!.declineMessage.trim(),
+            { tenantSlug, conversationId, site: "router_decline" },
+          );
           const written = await stageCopilotDraftForInbound({
             tenantId: tenant.id,
             conversationId,
@@ -781,7 +792,11 @@ export async function runInboundAiPipeline(
             inboundBody: messageBody,
             brandScope,
           });
-          const flashReply = flash.draftReply.trim();
+          const flashReply = rebrandAndLog(flash.draftReply.trim(), {
+            tenantSlug,
+            conversationId,
+            site: "student_flash",
+          });
           const written = await stageCopilotDraftForInbound({
             tenantId: tenant.id,
             conversationId,
@@ -795,7 +810,7 @@ export async function runInboundAiPipeline(
           if (written) {
             eventBus.publish(tenant.id, { type: "ai:state", conversationId });
           }
-          await postCopilotWhisper(flash.whisperBody);
+          await postCopilotWhisper(rebrandText(flash.whisperBody).text);
           logger.info(
             {
               tenantSlug,
@@ -896,7 +911,7 @@ export async function runInboundAiPipeline(
     // are untouched (Manual already returned above; Auto-Pilot runs on its own
     // dedicated fail-open path, runAutoPilotFailOpenTurn, dispatched earlier and
     // never reaches this Co-Pilot-only gate).
-    const fallbackPhrase = (tenant.fallbackPhrase ?? "").trim();
+    const fallbackPhrase = rebrandText((tenant.fallbackPhrase ?? "").trim()).text;
     const ungrounded = !draft.kbMatched && !classroomGrounded;
     if (
       engagementMode === "copilot" &&
@@ -930,10 +945,14 @@ export async function runInboundAiPipeline(
     // Conductor) and no longer runs on live inbound traffic, so an ungrounded
     // Co-Pilot inbound simply keeps the Student's (Grok) own draft for a human
     // to review in the composer. Co-Pilot NEVER auto-sends and NEVER learns.
-    const replyText = draft.draftReply.trim();
+    const replyText = rebrandAndLog(draft.draftReply.trim(), {
+      tenantSlug,
+      conversationId,
+      site: "copilot_draft",
+    });
     const draftSource: AiDraftSource = "student";
     const replyConfidence = draft.confidence;
-    const whisperToPost = draft.whisperBody;
+    const whisperToPost = rebrandText(draft.whisperBody).text;
 
     // ============ CO-PILOT ============
     // Draft into the composer for a human to edit + send. NEVER auto-sends and

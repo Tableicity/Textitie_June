@@ -18,6 +18,7 @@ import {
 } from "../lib/brainClient";
 import { normalizeCategory, estimateTokens } from "../lib/knowledge";
 import { publishClassroomSnapshot } from "../lib/classroomPublish";
+import { rebrandText } from "../lib/brandSafety";
 
 /**
  * Brain ("Beast") manual-pull routes — the "Brain + Human" avenue that mirrors
@@ -156,8 +157,8 @@ router.post(
         sessionId: null,
         messageId: null,
         documentId: null,
-        sourceLabel: c.title ? `[BRAIN] ${c.title}` : "[BRAIN]",
-        statement: c.statement,
+        sourceLabel: c.title ? `[BRAIN] ${rebrandText(c.title).text}` : "[BRAIN]",
+        statement: rebrandText(c.statement).text,
         category: normalizeCategory(c.categoryRaw),
         status: "draft",
         source: "brain",

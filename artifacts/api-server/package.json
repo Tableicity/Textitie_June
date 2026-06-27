@@ -14,6 +14,7 @@
     "@workspace/ai-router": "workspace:*",
     "@workspace/ai-student": "workspace:*",
     "@workspace/api-zod": "workspace:*",
+    "@workspace/brand-safety": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2",

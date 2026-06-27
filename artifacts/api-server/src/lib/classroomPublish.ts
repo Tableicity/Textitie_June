@@ -10,7 +10,8 @@ import {
   type ClassroomFact,
 } from "@workspace/db";
 import { adjudicateForPush } from "./librarian";
-import { CLASSROOM_PUSH_LOCK } from "./knowledge";
+import { CLASSROOM_PUSH_LOCK, estimateTokens } from "./knowledge";
+import { rebrandText } from "./brandSafety";
 
 /**
  * Shared Classroom snapshot publisher.
@@ -66,12 +67,24 @@ export async function publishClassroomSnapshot(opts: {
   const { tenantId, factsToPublish, markSessions } = opts;
   const summary = opts.summary ?? null;
 
+  // Brand-safety GATE (Layer 2): rewrite competitor names to the canonical brand
+  // BEFORE Librarian adjudication, so dedup/conflict logic compares canonical
+  // text AND the published Classroom — the closed book Auto-Pilot grounds on —
+  // can never carry a competitor name. Every push self-heals: re-pushing a
+  // tenant cleans any pre-existing facts (the only safe way to clean prod, which
+  // the agent has read-only access to).
+  const cleanedFacts = factsToPublish.map((f) => ({
+    ...f,
+    statement: rebrandText(f.statement).text,
+    sourceLabel: rebrandText(f.sourceLabel).text,
+  }));
+
   // Librarian pass — collapse near-duplicate/refinement facts and FLAG
   // contradictions before snapshotting. Runs the (slow, read-only) Grok
   // adjudication BEFORE the transaction so we never hold the tx open across LLM
   // calls; all resulting writes are applied atomically inside the tx below.
   const verdict = await adjudicateForPush(
-    factsToPublish.map((f) => ({
+    cleanedFacts.map((f) => ({
       id: f.id,
       statement: f.statement,
       category: f.category,
@@ -80,10 +93,20 @@ export async function publishClassroomSnapshot(opts: {
     })),
   );
 
-  const tokenCount = verdict.publish.reduce(
-    (sum, f) => sum + (f.tokenCount ?? 0),
-    0,
-  );
+  // Final brand-safety pass on the ADJUDICATED output: the Librarian may emit a
+  // brand-new `mergedStatement`, so we cannot rely on only scrubbing the inputs
+  // above — scrub again here so nothing the closed-book Classroom grounds on can
+  // ever carry a competitor name. Recompute token counts when the statement
+  // actually changed so the version aggregate + per-fact counts stay accurate.
+  const publish = verdict.publish.map((f) => {
+    const statement = rebrandText(f.statement).text;
+    const sourceLabel = rebrandText(f.sourceLabel).text;
+    const tokenCount =
+      statement === f.statement ? (f.tokenCount ?? 0) : estimateTokens(statement);
+    return { ...f, statement, sourceLabel, tokenCount };
+  });
+
+  const tokenCount = publish.reduce((sum, f) => sum + (f.tokenCount ?? 0), 0);
 
   // Flag a contradiction onto its source absorbed facts. Guarded by tenantId
   // and an "active truth" status (published OR auto_published) so a fact the
@@ -109,7 +132,7 @@ export async function publishClassroomSnapshot(opts: {
 
   // Everything collapsed into conflicts — nothing safe to publish. Still persist
   // the conflict flags so the Conductor can resolve them.
-  if (verdict.publish.length === 0) {
+  if (publish.length === 0) {
     await db.transaction(async (tx) => {
       await tx.execute(
         sql`select pg_advisory_xact_lock(${tenantId}, ${CLASSROOM_PUSH_LOCK})`,
@@ -154,7 +177,7 @@ export async function publishClassroomSnapshot(opts: {
         version: nextVersion,
         status: "published",
         summary,
-        factCount: verdict.publish.length,
+        factCount: publish.length,
         tokenCount,
       })
       .returning();
@@ -162,7 +185,7 @@ export async function publishClassroomSnapshot(opts: {
     const facts = await tx
       .insert(classroomFactsTable)
       .values(
-        verdict.publish.map((f) => ({
+        publish.map((f) => ({
           tenantId,
           versionId: version.id,
           sourceLabel: f.sourceLabel,

@@ -4,6 +4,7 @@ import { checkOutboundCompliance } from "./compliance";
 import { guardOutboundFrom } from "./outboundFrom";
 import { getSender } from "./senders";
 import type { SendStatus } from "./senders/types";
+import { rebrandAndLog } from "./brandSafety";
 
 type MessageRow = typeof messagesTable.$inferSelect;
 
@@ -50,6 +51,12 @@ export async function sendConversationReply(opts: {
   conductorAuthorized: boolean;
   /** Defaults to true. Set false only if the caller just ran the check. */
   runComplianceCheck?: boolean;
+  /**
+   * When true, rewrite competitor names in `body` to the canonical brand before
+   * persisting + sending (brand-safety Layer 1). AI auto-send paths pass true;
+   * human sends default false so an agent's deliberate wording is respected.
+   */
+  scrubBrand?: boolean;
 }): Promise<OutboundReplyResult> {
   const {
     tenantId,
@@ -62,6 +69,13 @@ export async function sendConversationReply(opts: {
     conductorAuthorized,
   } = opts;
   const runCompliance = opts.runComplianceCheck ?? true;
+  const outboundBody = (opts.scrubBrand ?? false)
+    ? rebrandAndLog(body, {
+        tenantId,
+        conversationId,
+        site: "sendConversationReply",
+      })
+    : body;
 
   if (runCompliance) {
     const compliance = await checkOutboundCompliance(tenantId, tenantSlug, contactPhone);
@@ -103,7 +117,7 @@ export async function sendConversationReply(opts: {
     .values({
       conversationId,
       direction: "outbound",
-      body,
+      body: outboundBody,
       senderName,
       read: true,
       status: "pending",
@@ -113,7 +127,7 @@ export async function sendConversationReply(opts: {
   const sender = getSender();
   const sendResult = await sender.send({
     to: contactPhone,
-    body,
+    body: outboundBody,
     tenantId,
     conductorAuthorized,
     fromOverride,

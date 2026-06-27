@@ -40,6 +40,7 @@ import {
   type ExtractedFact,
 } from "../lib/knowledge";
 import { publishClassroomSnapshot } from "../lib/classroomPublish";
+import { rebrandText } from "../lib/brandSafety";
 import { professorClient, PROFESSOR_MODEL } from "../lib/grokClient";
 
 /**
@@ -258,7 +259,7 @@ async function ingestAndRespond(
               tenantId: opts.tenantId,
               sessionId: session!.id,
               documentId: doc.id,
-              sourceLabel: doc.title,
+              sourceLabel: rebrandText(doc.title).text,
               statement: f.statement,
               category: f.category,
               status: "draft",

@@ -17,6 +17,9 @@
     },
     {
       "path": "./lib/ai-router"
+    },
+    {
+      "path": "./lib/brand-safety"
     }
   ]
 }

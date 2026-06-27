@@ -182,6 +182,9 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
+      '@workspace/brand-safety':
+        specifier: workspace:*
+        version: link:../../lib/brand-safety
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
@@ -870,6 +873,12 @@ importers:
         specifier: 'catalog:'
         version: 3.25.76
 
+  lib/brand-safety:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
   lib/db:
     dependencies:
       drizzle-orm:
@@ -897,6 +906,9 @@ importers:
 
   scripts:
     dependencies:
+      '@workspace/brand-safety':
+        specifier: workspace:*
+        version: link:../lib/brand-safety
       pg:
         specifier: ^8.20.0
         version: 8.20.0

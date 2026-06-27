@@ -9,6 +9,7 @@
     "seed-stripe-products": "tsx ./src/seed-stripe-products.ts",
     "provision-tenant-schemas": "tsx ./src/provision-tenant-schemas.ts",
     "backfill-tenant-schemas": "tsx ./src/backfill-tenant-schemas.ts",
+    "rebrand-backfill": "tsx ./src/rebrand-backfill.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
@@ -17,6 +18,7 @@
     "tsx": "catalog:"
   },
   "dependencies": {
+    "@workspace/brand-safety": "workspace:*",
     "pg": "^8.20.0",
     "stripe": "^22.2.1",
     "stripe-replit-sync": "^1.0.0"
