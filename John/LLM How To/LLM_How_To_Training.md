@@ -138,7 +138,7 @@ If you remember nothing else: **the Student only knows what's been pushed to the
    - Creates a **new Classroom version.** Only the **current published version** is visible to the Student; older versions become `superseded` history.
 4. Verify: the accepted facts now show **`published`** status in the current Classroom version.
 
-**Checkpoint — did it actually take effect?** Ask the Student-facing path a test question (or watch a real inbound). If the Student still says "no matching knowledge," the fact is probably still in `draft` or was never pushed — repeat steps 2–3.
+**Checkpoint — did it actually take effect?** Ask the Student-facing path a test question (or watch a real inbound). If the answer still doesn't reflect the new fact (the Student stays out-of-scope), it's probably still in `draft` or was never pushed — repeat steps 2–3.
 
 > **⚠️ Safety:** Accepting a fact is a *truth decision.* Double-check pricing and compliance facts against the source material before accepting — once published, the Student may quote them.
 
@@ -180,7 +180,7 @@ If you remember nothing else: **the Student only knows what's been pushed to the
 4. **Push to Classroom** again to publish the resolution.
 5. Confirm the `conflict` flag is gone and the Classroom now holds a single correct fact for that topic.
 
-> **Tip:** A sudden burst of "Conflicting knowledge" handbacks usually means a recent push introduced a contradicting price or policy. Resolve at the source rather than just rejecting one side blindly.
+> **Tip:** A burst of `conflict` flags after a push usually means it introduced a contradicting price or policy. Resolve at the source (keep the correct fact) rather than rejecting one side blindly. Conflicts are a **Classroom curation flag** — they no longer produce an inbox handback.
 
 ---
 
@@ -249,7 +249,7 @@ There are two levels:
 **Monitoring an Auto-Pilot (🟢) conversation:**
 1. On a Classroom match, the AI **sends a grounded reply verbatim** (status `auto_sent`) and stays green. No action needed — just monitor.
 2. When it can't ground a turn, it sends a graceful **acknowledgement** and stays green — the customer is never left hanging. If a conversation keeps coming up empty, the **circuit breaker** trips: it sends a final ack and **steps the conversation down to Blue.** Pick it up manually (§10) and re-enable Auto-Pilot once you've trained the missing knowledge.
-3. A genuine **compliance/opt-out** hold or a failed send surfaces Blue for that turn (status `refused` / `failed`) with a reason chip — handle it manually (§10).
+3. A **failed send** surfaces Blue for that turn (status `failed`) with the "Auto-send failed…" chip — handle it manually (§10). A **compliance/opt-out** hold is different: it's a **silent suppress** — nothing is sent, **no chip, no draft** — so just treat the inbound like any normal message.
 
 **Stepping into any conversation (works in any mode):**
 1. Open the conversation and just send a message yourself.
@@ -274,8 +274,8 @@ There are two levels:
 | `idle` | Nothing pending | Normal |
 | `drafted` | A draft is waiting (Co-Pilot or handback) | Review, edit, send |
 | `auto_sent` | Auto-Pilot sent it verbatim | Nothing — monitor |
-| `refused` | The AI held back this turn (e.g. a compliance hold) | Read the chip, send manually |
-| `failed` | The model or the send failed | Read the chip, send manually |
+| `refused` | Auto-Pilot was paused by the breaker (stepped down to manual) | Read the chip, send manually |
+| `failed` | A decided auto-send couldn't be delivered | Read the chip, send manually |
 | `human_handled` | A human took this turn | Done — returns to green next turn |
 | `superseded` | A newer inbound replaced this | Ignore (historical) |
 
@@ -285,19 +285,18 @@ There are two levels:
 
 ## 10. How to handle a handback or a step-down
 
-Since the **2026-06-27** fail-open change, Auto-Pilot **rarely** hands a single message back — on a knowledge miss it sends a graceful **acknowledgement** and stays green. You'll now see Blue in three situations:
+Since the **2026-06-27** fail-open change, Auto-Pilot **rarely** hands a single message back — on a knowledge miss it sends a graceful **acknowledgement** and stays green. There are now exactly **two** Blue handback chips you can see:
 
-| What you see | What it means | What to do |
-|---|---|---|
-| Chip: **"Auto-Pilot paused after repeated out-of-scope messages…"** | The **circuit breaker** tripped — the conversation kept coming up empty, so Auto-Pilot sent a final ack and stepped it down to Blue | Reply manually, then teach the missing knowledge (§3–§5). **Re-enable Auto-Pilot** once it's covered — the step-down is *not* auto-cleared. |
-| Chip: **"Compliance hold — needs your review"** | A compliance/opt-out check blocked the send (a hard guard, re-checked at send time) | Verify consent/opt-out status, then reply manually if appropriate |
-| Chip: **"Auto-send failed — please send manually"** | A send the AI decided to make didn't complete | Send manually; the system already freed the retry lock and recorded **no** breaker event |
+| Chip you see | Status | What it means | What to do |
+|---|---|---|---|
+| **"Auto-Pilot paused after repeated out-of-scope messages…"** | `refused` | The **circuit breaker** tripped — the conversation kept coming up empty, so Auto-Pilot sent a final ack and stepped it down to Blue | Reply manually, then teach the missing knowledge (§3–§5). **Re-enable Auto-Pilot** once it's covered — the step-down is *not* auto-cleared. |
+| **"Auto-send failed — please send manually"** | `failed` | A send the AI decided to make couldn't be delivered (an infrastructure failure, **not** a knowledge miss) | Send manually; the system already freed the retry lock and recorded **no** breaker event. Any stitched answer is kept as a draft for you. |
 
-Two more chips appear when the AI provider is down (the role stubs out — SMS still records):
-- **"AI couldn't draft a reply"** — the Student produced nothing usable; reply manually.
-- **"AI is offline"** — the AI provider is unavailable; reply manually and tell a Conductor to check `GROK_KEYS` (§13).
+**Two things that do *not* produce a chip:**
+- **Compliance / opt-out hold.** A blocked send is a **silent suppress** — no chip, no draft. The turn is recorded for audit (neutral to the breaker), the conversation simply isn't auto-answered, and you handle it like any normal inbound. (Opt-outs are enforced upstream and re-checked at send.)
+- **AI provider down.** If the Student's provider is unconfigured, Auto-Pilot **fails open** and still sends its fallback acknowledgement (stays green) — it does **not** show an "offline" chip. SMS always records. A Conductor restores live drafting by setting `GROK_KEYS` (§13).
 
-> **Gone since 2026-06-27:** the old per-message handbacks for *"Sensitive topic,"* *"Not confident enough,"* and (in Auto-Pilot) *"No matching knowledge"* / *"Conflicting knowledge."* Those came from the retired fail-closed gates. Auto-Pilot is now closed-book and fail-open: an unknown question gets an out-of-scope **ack** (green), not a handback, until the breaker steps in.
+> **Gone since 2026-06-27:** the old per-message handback chips for *"Sensitive topic,"* *"Not confident enough,"* *"No matching knowledge,"* *"Conflicting knowledge,"* *"Compliance hold,"* and *"AI is offline."* They came from the retired fail-closed gates and are no longer emitted. Auto-Pilot is now closed-book and fail-open: an unknown question gets an out-of-scope **ack** (green), not a handback, until the breaker steps in.
 
 ---
 
@@ -340,13 +339,13 @@ Opt-outs are handled **automatically before the AI ever runs** — but staff mus
 
 ## 13. Troubleshooting playbooks
 
-**"The AI isn't replying at all — every conversation is Blue / 'AI is offline'."**
-→ A Conductor should check that the AI key (`GROK_KEYS`) is set. With no key, the AI safely stubs out by design and **SMS still works** — messages are still recorded.
+**"The AI isn't drafting or answering."**
+→ A Conductor should check that the AI key (`GROK_KEYS`) is set. With no key, the Student stubs out by design — Co-Pilot can't draft and Auto-Pilot **fails open** to its fallback ack — but **SMS still works** and messages are recorded.
 
 **"Should Auto-Pilot really be answering pricing / compliance questions on its own?"**
 → Since 2026-06-27, category no longer blocks an auto-send — if a human **published** the fact, Auto-Pilot (closed-book) may quote it. The only hard send-time guard is **compliance/opt-out**. To keep a topic always human-reviewed, run that conversation in **Co-Pilot** (or don't publish that fact).
 
-**"It says 'No matching knowledge' for something we definitely told it."**
+**"The AI doesn't know something we definitely told it."**
 → The fact is probably still in `draft`, or it's in the Library but was never absorbed/pushed. Run a Professor session, accept the fact, and push to the Classroom (§4–§5).
 
 **"Two of our facts contradict (a 'conflict' flag)."**
@@ -375,7 +374,7 @@ Opt-outs are handled **automatically before the AI ever runs** — but staff mus
 2. **Compliance / opt-out is the only hard send-time guard** — re-checked at the moment of sending. Category no longer blocks an auto-send (changed 2026-06-27); use Co-Pilot to force human review of a topic.
 3. **Auto-Pilot is closed-book and fail-open.** It answers from the approved Classroom or sends a graceful ack — never a guess — and a **circuit breaker** steps a stuck conversation down to a human (Blue).
 4. **No conversation learns at runtime.** Knowledge enters the Classroom only through human-approved curation (a Professor session or a Brain pull).
-5. **A missing AI key must never break SMS.** Messages still record; the AI just goes quiet.
+5. **A missing AI key must never break SMS.** Messages still record; the Student just stops producing knowledge-grounded replies — Co-Pilot drafts nothing, while Auto-Pilot **fails open** to its fallback ack.
 6. **Compliance is re-checked at the moment of sending**, not just when drafting.
 7. **One conversation = one AI state**, and a human can take over at any moment without being overwritten by a slow background AI write.
 8. **Respect every opt-out.** Never message an opted-out contact.

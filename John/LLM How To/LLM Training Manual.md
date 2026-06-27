@@ -52,7 +52,7 @@ The two roles run on **different providers** (both speak the OpenAI-compatible c
 | Knowledge it can use | **Only the published Classroom** (+ legacy blob fallback) | The whole **Library** + its own general expertise |
 | Can it "learn"? | No — never persists facts | No runtime learning — facts enter only via **human-approved curation** (Professor sessions or Brain pull) |
 
-> **Stub / offline behavior:** Each role degrades to a harmless stub when **its own provider** is unconfigured — the **Student** when `GROK_KEYS` is unset, the **Professor** when the **OpenRouter integration** isn't connected. Inbound SMS keeps working and messages still record regardless. This is intentional — **a missing provider must never break message delivery.** Note the split: the **Student** powers *all* live customer replies (drafts and Auto-Pilot answers), so "AI is offline" on the inbox means `GROK_KEYS` is unset. The **Professor's** OpenRouter integration only powers **Conductor curation** (Professor sessions and Brain adjudication) — a Professor outage never affects live replies.
+> **Stub / offline behavior:** Each role degrades to a harmless stub when **its own provider** is unconfigured — the **Student** when `GROK_KEYS` is unset, the **Professor** when the **OpenRouter integration** isn't connected. Inbound SMS keeps working and messages still record regardless. This is intentional — **a missing provider must never break message delivery.** Note the split: the **Student** powers *all* live customer replies (drafts and Auto-Pilot answers), so an unset `GROK_KEYS` means the Student stubs out — Co-Pilot can't draft a grounded reply and in Auto-Pilot the conversation **fails open** to a fallback acknowledgement (there is **no** "offline" chip). The **Professor's** OpenRouter integration only powers **Conductor curation** (Professor sessions and Brain adjudication) — a Professor outage never affects live replies.
 
 > **A third, lightweight role — the Router.** In **Co-Pilot only**, a cheap pre-retrieval **triage Router** (same Grok provider/model as the Student; override `SAMA_ROUTER_MODEL`) classifies each inbound against the tenant's **Brand Scope** *before* any knowledge lookup. It never sends and never learns — it only decides which drafting path Co-Pilot takes (Section 7). Like the Student it stubs out when `GROK_KEYS` is unset, and it **fails open** to the normal grounded pipeline on any miss.
 
@@ -104,14 +104,14 @@ Accepted facts are **pushed to the Classroom**, which creates a new **Classroom 
 
 Pushing isn't a blind copy — the **Librarian** adjudicates it first (Section 8).
 
-#### Fact categories (memorize these — the gates depend on them)
-| Category | Examples | Auto-send safe? |
+#### Fact categories (these tag each fact for retrieval & curation)
+| Category | Examples | Notes |
 |---|---|---|
-| `general` | Hours, location, general info | ✅ Safe |
-| `features` | What the product does | ✅ Safe |
-| `pricing` | Prices, discounts, billing | ❌ **Always needs a human** |
-| `compliance` | Legal, TCPA, consent, refunds | ❌ **Always needs a human** |
-| `technical_setup` | Install/config steps that can break things | ❌ **Always needs a human** |
+| `general` | Hours, location, general info | Everyday |
+| `features` | What the product does | Everyday |
+| `pricing` | Prices, discounts, billing | High-stakes — verify before publishing |
+| `compliance` | Legal, TCPA, consent, refunds | High-stakes — verify before publishing |
+| `technical_setup` | Install/config steps that can break things | High-stakes — verify before publishing |
 
 > **Why these categories matter:** money, law, and breakage. Give `pricing` / `compliance` / `technical_setup` facts extra scrutiny **before you publish** them — once a fact is published, Auto-Pilot may quote it verbatim (Auto-Pilot is *closed-book*: it only ever sends what a human approved). Categories also make the Librarian dedup these topics more tightly. **Note (changed 2026-06-27):** category no longer *blocks* auto-send — the legacy "never auto-send risky categories" gate was retired. The only hard runtime guard is **compliance/opt-out** (Section 10). If a topic must always be human-reviewed, keep that conversation in **Co-Pilot**.
 
@@ -278,35 +278,35 @@ Each conversation has exactly one AI-state row. Its status, combined with the ef
 | `idle` | Nothing pending | Normal |
 | `drafted` | A draft is waiting (Co-Pilot, or a handback draft) | Review, edit, send |
 | `auto_sent` | Auto-Pilot sent it verbatim | Nothing — monitor |
-| `refused` | The AI held back this turn (e.g. a compliance hold, or it couldn't ground) | Read the chip, send manually |
-| `failed` | The model or the send failed | Read the chip, send manually |
+| `refused` | Auto-Pilot was paused by the breaker (stepped down to manual) | Read the chip, send manually |
+| `failed` | A decided auto-send couldn't be delivered | Read the chip, send manually |
 | `human_handled` | A human took over this turn | Done — returns to green next turn |
 | `superseded` | A newer inbound replaced this state | Ignore (historical) |
 
 > **Co-Pilot draft provenance.** A `drafted` Co-Pilot suggestion can come from several sources, and the inbox labels which: the **Student** (the normal grounded draft, or its own best draft when ungrounded), a **Router decline** (off-scope), a **general "flash"** answer, or the tenant's **fallback holding phrase**. They all behave the same for you — review, edit, send — and **none of them ever learns.** (There is no longer a Professor "rescue" draft — that path was removed 2026-06-27.)
 
 ### Handback chip text (what the customer-agent sees on a Blue handback)
-The most important reason wins. Common chips:
-- "AI couldn't draft a reply" · "Auto-send failed — please send manually"
-- "Compliance hold — needs your review" · "Sensitive topic — needs a human"
-- "Conflicting knowledge — needs your review" · "Not confident enough to auto-send"
-- "No matching knowledge" · "AI is offline"
+As of 2026-06-27 the fail-open Auto-Pilot emits exactly **two** handback chips:
+- **"Auto-Pilot paused after repeated out-of-scope messages…"** — the circuit breaker stepped this conversation down to Blue (status `refused`).
+- **"Auto-send failed — please send manually"** — a decided send couldn't be delivered (status `failed`).
+
+A **compliance/opt-out** hold sends nothing and shows **no chip** (silent suppress). The older fail-closed chips ("No matching knowledge," "Sensitive topic," "Not confident enough," "Conflicting knowledge," "Compliance hold," "AI is offline") are **retired** and no longer emitted.
 
 ---
 
 ## 12. Staff playbooks (troubleshooting)
 
-**"The AI isn't replying at all (every conversation is Blue / 'AI is offline')."**
-→ Live replies come from the **Student** — check the `GROK_KEYS` secret. (The **Professor's** OpenRouter integration only powers Conductor *curation* — Professor sessions and Brain adjudication — so a Professor outage never stops live replies.) With a provider missing, that role stubs out by design (SMS still records).
+**"The AI isn't drafting or answering."**
+→ Live replies come from the **Student** — check the `GROK_KEYS` secret. (The **Professor's** OpenRouter integration only powers Conductor *curation* — Professor sessions and Brain adjudication — so a Professor outage never stops live replies.) With the Student's provider missing it stubs out by design: Co-Pilot can't draft a grounded reply and Auto-Pilot **fails open** to its fallback acknowledgement. SMS still records throughout.
 
 **"The AI keeps handing back pricing/compliance questions."**
 → In **Co-Pilot**, *every* reply is drafted for you to send — so you always review pricing/compliance yourself; that's expected. In **Auto-Pilot** the AI is closed-book and **will** auto-send a *published* pricing/compliance fact (categories no longer block auto-send, changed 2026-06-27), so if a topic must always be human-reviewed, keep that conversation in **Co-Pilot** or don't publish it. A genuine **compliance/opt-out** hold is always a hard stop, re-checked at send.
 
-**"It says 'No matching knowledge' for something we definitely told it."**
+**"The AI doesn't know something we definitely told it."**
 → The fact may still be in `draft` (not pushed to the Classroom), or it lives in the Knowledge Base/Library but was never absorbed into a published fact. Open the Professor page, absorb/accept the fact, and push to the Classroom.
 
-**"It says 'Conflicting knowledge'."**
-→ Two published facts contradict each other (often two different prices). Resolve the conflict in the Classroom; automation re-enables for that topic once resolved.
+**"Two of our published facts contradict (a `conflict` flag)."**
+→ Two published facts contradict each other (often two different prices), so the Librarian flagged them for a human. Resolve the conflict in the Classroom so the Student grounds on a single correct fact.
 
 **"A customer got a duplicate text."**
 → Should be impossible via the AI path (idempotency on inbound SID). If it happened, check whether an automation rule and a campaign both fired, or whether a human also sent manually.
@@ -331,7 +331,7 @@ The most important reason wins. Common chips:
 2. **Compliance / opt-out is the hard send-time guard.** It is absolute and re-checked at the moment of sending. (Category alone — pricing/compliance/setup — no longer blocks auto-send, changed 2026-06-27.)
 3. **Auto-Pilot is fail-OPEN.** It always answers or acknowledges; a **circuit breaker** steps a conversation that keeps missing down to Blue (a human re-enables it). It never silently stalls.
 4. **No conversation learns at runtime.** Knowledge enters only via human-approved curation (a Professor session or a Brain pull).
-5. **A missing AI provider must never break SMS.** Whether the Student's `GROK_KEYS` or the Professor's OpenRouter integration is absent, messages still record; the affected role just goes quiet.
+5. **A missing AI provider must never break SMS.** Whether the Student's `GROK_KEYS` or the Professor's OpenRouter integration is absent, messages still record; the affected role just stubs out — Co-Pilot drafts nothing, Auto-Pilot **fails open** to its fallback ack, and Professor curation pauses.
 6. **Compliance is re-checked at send time**, not just at draft time.
 7. **One conversation = one AI state**, and a human can take the wheel at any moment without being overwritten by a slow background AI write.
 
