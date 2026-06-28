@@ -30,3 +30,9 @@ id = "E5eWHmDiDKKyRcoiXNRCO"
 uri = "file://John/LLM How To/Brand_Fortress.md"
 type = "text"
 title = "Brand Fortress — Training Manual"
+
+[[outputs]]
+id = "Vnf1KRs3VsIqfTixXWNLT"
+uri = "file://John/A Migration Tenant/Migration_How_To.md"
+type = "text"
+title = "Migration How-To — TextLine → Textitie (Staff Training Manual)"
