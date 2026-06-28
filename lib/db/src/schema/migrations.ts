@@ -31,9 +31,12 @@ import { tenantsTable } from "./tenants";
 
 // Canonical job lifecycle (plain text, no DB enum/check so a bad value can
 // never 500 a list query — same rule as engagement modes / fact status):
-//   pending -> extracting -> extracted -> verifying -> verified
-//     -> review (waiting on the operator) -> hydrating -> complete
+//   pending -> extracting -> extracted -> verifying -> review
+//     (waiting on the operator) -> hydrating -> complete
 //   (any stage) -> failed ; review/complete -> discarded
+// NOTE: the verify pass gates STRAIGHT to 'review' — there is no live 'verified'
+// transition. 'verified' is a retained LEGACY value (still tolerated by the UI
+// status list + the discard set) but the runtime never sets it.
 export const migrationJobsTable = pgTable(
   "migration_jobs",
   {

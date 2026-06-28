@@ -10,8 +10,8 @@ import {
   migrationRawDataTable,
 } from "@workspace/db";
 import { randomUUID } from "node:crypto";
-import { hydrateCustomersBatch } from "./migrationStore";
-import { transformCustomersPage } from "./migrationTransform";
+import { hydrateCustomersBatch, readAgentsPayload } from "./migrationStore";
+import { transformCustomersPage, buildAgentMap } from "./migrationTransform";
 import type { NormalizedContact } from "./migrationTransform";
 
 // DB-backed tests for the TextLine Smasher address-book (customers) import: the
@@ -393,5 +393,69 @@ describe("hydrateCustomersBatch — lease fence", () => {
     expect(await contactsForJob(jobId)).toHaveLength(0);
     // Cursor untouched.
     expect((await jobRow(jobId))?.pageCursor).toBe(0);
+  });
+});
+
+describe("readAgentsPayload — 0-based staged agents key (agents:p0)", () => {
+  async function stageAgents(
+    tenantId: number,
+    jobId: number,
+    recordKey: string,
+    payload: unknown,
+  ): Promise<void> {
+    await db.insert(migrationRawDataTable).values({
+      jobId,
+      tenantId,
+      entity: "agents",
+      page: recordKey.endsWith("p0") ? 0 : 1,
+      recordKey,
+      payload: payload as object,
+      recordCount: 1,
+    });
+  }
+
+  it("reads agents staged under the canonical 0-based key and buildAgentMap resolves them", async () => {
+    const tenantId = await makeTenant();
+    const jobId = await makeJob(tenantId, { status: "verifying" });
+    await stageAgents(tenantId, jobId, "agents:p0", {
+      agents: [{ id: "ag-1", name: "Grace Hopper", email: "grace@example.com" }],
+    });
+
+    const payload = await readAgentsPayload(jobId);
+    expect(payload).not.toBeNull();
+    const map = buildAgentMap(payload);
+    expect(map.get("ag-1")).toMatchObject({ name: "Grace Hopper" });
+  });
+
+  it("falls back to the legacy 1-based key (agents:p1) for in-flight jobs", async () => {
+    const tenantId = await makeTenant();
+    const jobId = await makeJob(tenantId, { status: "verifying" });
+    await stageAgents(tenantId, jobId, "agents:p1", {
+      agents: [{ id: "legacy-1", name: "Legacy Agent" }],
+    });
+
+    const payload = await readAgentsPayload(jobId);
+    const map = buildAgentMap(payload);
+    expect(map.get("legacy-1")).toMatchObject({ name: "Legacy Agent" });
+  });
+
+  it("prefers the 0-based blob when both keys exist", async () => {
+    const tenantId = await makeTenant();
+    const jobId = await makeJob(tenantId, { status: "verifying" });
+    await stageAgents(tenantId, jobId, "agents:p1", {
+      agents: [{ id: "dup", name: "Old" }],
+    });
+    await stageAgents(tenantId, jobId, "agents:p0", {
+      agents: [{ id: "dup", name: "New" }],
+    });
+
+    const map = buildAgentMap(await readAgentsPayload(jobId));
+    expect(map.get("dup")).toMatchObject({ name: "New" });
+  });
+
+  it("returns null when no agents page is staged", async () => {
+    const tenantId = await makeTenant();
+    const jobId = await makeJob(tenantId, { status: "verifying" });
+    expect(await readAgentsPayload(jobId)).toBeNull();
   });
 });

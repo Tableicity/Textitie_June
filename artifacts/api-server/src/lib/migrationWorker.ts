@@ -19,6 +19,7 @@ import {
   fetchListPage,
   fetchConversationDetail,
   extractConversationIds,
+  PAGE_START,
   TextlineRateLimitedError,
   TextlineAuthError,
   TextlineError,
@@ -137,7 +138,10 @@ async function processClaimedJob(job: ClaimedMigrationJob): Promise<void> {
   let entity: Entity = isEntity(job.currentEntity)
     ? job.currentEntity
     : ENTITY_ORDER[0];
-  let page = job.pageCursor > 0 ? job.pageCursor : 1;
+  // Pagination is 0-based (page=0..n). A fresh job's page_cursor defaults to 0
+  // (== PAGE_START), so it begins at the first page; a resume uses the saved
+  // cursor verbatim. Clamp below PAGE_START defensively.
+  let page = Math.max(job.pageCursor, PAGE_START);
   const deadline = Date.now() + TICK_BUDGET_MS;
 
   try {
@@ -174,7 +178,7 @@ async function processClaimedJob(job: ClaimedMigrationJob): Promise<void> {
             return;
           }
           entity = next;
-          page = 1;
+          page = PAGE_START;
           if (!(await saveProgress(job, entity, page))) return;
           continue;
         }
@@ -206,7 +210,7 @@ async function processClaimedJob(job: ClaimedMigrationJob): Promise<void> {
           return;
         }
         entity = next;
-        page = 1;
+        page = PAGE_START;
         if (!(await saveProgress(job, entity, page))) return;
       }
     }
@@ -267,8 +271,10 @@ async function runPostsStep(
   page: number,
   deadline: number,
 ): Promise<PostsOutcome> {
+  // getMaxStagedPage returns -1 when no conversations were staged. Pages are
+  // 0-based, so 0 is a VALID page and cannot double as the "none" sentinel.
   const maxConvPage = await getMaxStagedPage(job.id, "conversations");
-  if (maxConvPage === 0 || page > maxConvPage) {
+  if (maxConvPage < 0 || page > maxConvPage) {
     return { done: true, yielded: false, failed: false, nextPage: page };
   }
 

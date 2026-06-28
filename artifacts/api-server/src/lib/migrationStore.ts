@@ -7,7 +7,7 @@ import {
   messagesTable,
   contactsTable,
 } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type {
   NormalizedConversation,
   NormalizedContact,
@@ -275,18 +275,22 @@ export async function getStagedPage(
   return row ? { payload: row.payload, recordCount: Number(row.recordCount ?? 0) } : null;
 }
 
-/** Highest staged page number for an entity (0 when none) — posts-stage bound. */
+/**
+ * Highest staged page number for an entity, or -1 when none — the posts-stage
+ * bound. Pages are 0-based, so 0 is a valid page and CANNOT be the "none"
+ * sentinel; callers must test `< 0` (not `=== 0`) for "nothing staged".
+ */
 export async function getMaxStagedPage(
   jobId: number,
   entity: string,
 ): Promise<number> {
   const result = await db.execute(sql`
-    SELECT COALESCE(MAX(page), 0) AS max_page
+    SELECT COALESCE(MAX(page), -1) AS max_page
     FROM migration_raw_data
     WHERE job_id = ${jobId} AND entity = ${entity}
   `);
   const row = rows(result)[0];
-  return row ? Number(row.max_page ?? 0) : 0;
+  return row ? Number(row.max_page ?? -1) : -1;
 }
 
 /**
@@ -457,19 +461,29 @@ export async function claimNextPhase3Job(
   };
 }
 
-/** The single staged agents blob (agents:p1), for sender-role attribution. */
+/**
+ * The single staged agents blob, for sender-role attribution. Agents are a
+ * non-paginated entity staged at the first page (PAGE_START=0) → `agents:p0`.
+ * Falls back to the legacy 1-based key `agents:p1` for any job staged before the
+ * 0-based pagination conversion, so an in-flight resume never loses attribution.
+ */
 export async function readAgentsPayload(jobId: number): Promise<unknown | null> {
-  const [row] = await db
-    .select({ payload: migrationRawDataTable.payload })
+  const rows = await db
+    .select({
+      recordKey: migrationRawDataTable.recordKey,
+      payload: migrationRawDataTable.payload,
+    })
     .from(migrationRawDataTable)
     .where(
       and(
         eq(migrationRawDataTable.jobId, jobId),
-        eq(migrationRawDataTable.recordKey, "agents:p1"),
+        inArray(migrationRawDataTable.recordKey, ["agents:p0", "agents:p1"]),
       ),
-    )
-    .limit(1);
-  return row ? row.payload : null;
+    );
+  if (rows.length === 0) return null;
+  // Prefer the canonical 0-based key; fall back to the legacy 1-based blob.
+  const preferred = rows.find((r) => r.recordKey === "agents:p0") ?? rows[0];
+  return preferred.payload;
 }
 
 /**

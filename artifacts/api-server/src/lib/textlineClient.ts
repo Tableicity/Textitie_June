@@ -20,8 +20,9 @@
  *            GET api/groups                       -> { groups: [...] }
  *            GET api/customers?page=N             -> { customers: [...] }
  *   Detail:  GET api/conversations/:uuid          -> { ..., comments: [...] }
- *   Paging:  page-number (1-based). We also stop on the first EMPTY page, so an
- *            unknown pagination scheme still terminates safely.
+ *   Paging:  page-number, 0-based (page=0..n). Extraction starts at PAGE_START
+ *            (0) and walks up until an EMPTY page — the empty-page signal is the
+ *            robust primary terminator, so an unknown scheme still ends safely.
  */
 
 const TEXTLINE_BASE_URL = "https://application.textline.com/";
@@ -36,6 +37,8 @@ const DEFAULT_RETRY_AFTER_MS = 30_000;
 const MAX_RETRY_AFTER_MS = 10 * 60_000;
 const RETRY_JITTER_MS = 1_000;
 const PER_PAGE = 100;
+// List pagination is 0-based: extraction requests page=0 first and walks up.
+export const PAGE_START = 0;
 
 let lastRequestAt = 0;
 
@@ -157,7 +160,8 @@ export function detectHasMore(
     if (typeof hasMore === "boolean") return hasMore;
     const totalPages =
       num(meta["total_pages"]) ?? num(meta["pages"]) ?? num(meta["page_count"]);
-    if (totalPages != null) return page < totalPages;
+    // Pages are 0-based, so the last valid index is totalPages - 1.
+    if (totalPages != null) return page < totalPages - 1;
     const nextPage = meta["next_page"] ?? meta["nextPage"];
     if (nextPage !== undefined) return Boolean(nextPage);
   }

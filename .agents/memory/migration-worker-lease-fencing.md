@@ -37,3 +37,23 @@ returns false/`held=false` — BEFORE advancing the cursor / heartbeating / stag
 single job row (no lock-order inversion; claim uses SKIP LOCKED so it never waits) → no
 deadlock. The posts step parks the job 'failed' if a non-empty conversations page yields
 0 extractable ids (silent-extraction-success guard).
+
+## List pagination is 0-based; the page index leaks into staged record keys
+The TextLine list API is **0-based** (`page=0..n` until empty) — start at page 0 or you
+**skip the first page = silent data loss**. The single source of truth is
+`PAGE_START=0` in `textlineClient.ts`; the worker inits/resets every entity to
+`PAGE_START`. Coupled sites that broke when flipping 1→0-based:
+- `getMaxStagedPage` must return **-1** for "no rows" (0 is now a valid page; it used
+  to double as the "none" sentinel). `runPostsStep` guard becomes `maxConvPage < 0`.
+- `detectHasMore` `total_pages` branch is `page < totalPages - 1` (last index =
+  total-1) so it doesn't over-fetch/stage an empty trailing page. Unknown metadata
+  still fetches until an empty page (safe; never skips).
+- **Hidden trap:** the page index is baked into staged `record_key`s
+  (`${entity}:p${page}`). A non-paginated entity (e.g. **agents**) now stages at
+  `agents:p0`, so any reader hardcoding `agents:p1` silently reads null (lost
+  sender/agent attribution). Grep every literal `:p1`/`:pN` record-key lookup when
+  changing the page base; `readAgentsPayload` reads `agents:p0` with a legacy
+  `agents:p1` fallback for in-flight resumes.
+**Why:** Phase 3 reads staged rows by `ORDER BY id OFFSET/LIMIT` (insulated), so the
+page base only matters in extraction + the literal record-key readers — the easy ones
+to miss.
