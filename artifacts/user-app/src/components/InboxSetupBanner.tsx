@@ -1,11 +1,9 @@
-import { useState } from "react";
 import { Link } from "wouter";
 import {
   Building2,
   PhoneCall,
   BadgeCheck,
   Check,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -23,23 +21,17 @@ interface SetupStep {
   state: StepState;
 }
 
-const DISMISS_KEY = "inbox-setup-banner-dismissed";
-
-function readDismissed(): boolean {
-  try {
-    return localStorage.getItem(DISMISS_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Getting-started "bubble step" banner. Runs full-width along the very top of
  * the Inbox (above the conversation list + conversation pane), mirroring
- * Textline's setup prompt. Brand-blue background (#3e6996) with white text; the
- * bubble stepper sits inline to the right of the heading. A dismiss "X" on the
- * far right collapses the banner back to the normal inbox view (persisted in
- * localStorage so it stays hidden).
+ * Textline's setup prompt. Brand-blue background (#3e6996) with white text.
+ *
+ * Two-column layout — this banner is a fixed asset reused across scenarios:
+ *   - Left column: reserved for company branding. It spans from the left edge
+ *     to the right edge of the conversation-list panel (w-80 / 320px), capped
+ *     by a thin grey vertical divider.
+ *   - Right column: the "Ready to start texting…" heading + the bubble stepper,
+ *     centered, keeping their original format.
  *
  * The first two bubbles track real tenant state (a department exists; a number
  * is assigned). Once both are present the tenant can text, so the banner
@@ -48,7 +40,6 @@ function readDismissed(): boolean {
  * tracked here.
  */
 export default function InboxSetupBanner() {
-  const [dismissed, setDismissed] = useState<boolean>(readDismissed);
   const {
     data: departments,
     isLoading: loadingDepts,
@@ -60,9 +51,6 @@ export default function InboxSetupBanner() {
     isError: numbersError,
   } = useListPhoneNumbers();
 
-  // User collapsed it — return to the normal inbox view.
-  if (dismissed) return null;
-
   // Don't flash the banner before we know the setup state, and don't show a
   // false "incomplete" state if a setup query fails.
   if (loadingDepts || loadingNumbers) return null;
@@ -73,15 +61,6 @@ export default function InboxSetupBanner() {
 
   // Functional "ready to text" gate: a department + an assigned number.
   if (hasDepartment && hasNumber) return null;
-
-  const handleDismiss = () => {
-    try {
-      localStorage.setItem(DISMISS_KEY, "1");
-    } catch {
-      // ignore storage failures — still collapse for this session.
-    }
-    setDismissed(true);
-  };
 
   const steps: SetupStep[] = [
     {
@@ -112,80 +91,81 @@ export default function InboxSetupBanner() {
       className="flex-shrink-0 bg-[#3e6996] px-6 py-2.5"
       data-testid="inbox-setup-banner"
     >
-      <div className="flex items-center gap-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2">
-          {/* Heading — mirrors Textline's getting-started prompt */}
-          <p className="text-sm font-semibold text-white">
-            Ready to start texting your customers?
-          </p>
-
-          {/* Bubble stepper — inline to the right of the heading */}
-          <ol
-            className="flex items-start"
-            data-testid="setup-stepper"
-            aria-label="Setup steps"
-          >
-            {steps.map((step, i) => {
-              const Icon = step.icon;
-              const prevComplete = i > 0 && steps[i - 1].state === "complete";
-              return (
-                <li key={step.key} className="flex items-start">
-                  {i > 0 && (
-                    <span
-                      className={`mt-[14px] h-0.5 w-6 sm:w-10 ${
-                        prevComplete ? "bg-white" : "bg-white/30"
-                      }`}
-                      aria-hidden
-                    />
-                  )}
-                  <Link
-                    href={step.href}
-                    className="group flex flex-col items-center gap-1 px-1"
-                    data-testid={`setup-step-${step.key}`}
-                    aria-current={step.state === "active" ? "step" : undefined}
-                  >
-                    <span
-                      className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
-                        step.state === "complete"
-                          ? "bg-white text-[#3e6996]"
-                          : step.state === "active"
-                            ? "bg-white text-[#3e6996] ring-2 ring-white/50"
-                            : "border-2 border-white/60 bg-white/10 text-white group-hover:bg-white/20"
-                      }`}
-                    >
-                      {step.state === "complete" ? (
-                        <Check className="h-3.5 w-3.5" />
-                      ) : (
-                        <Icon className="h-3.5 w-3.5" />
-                      )}
-                    </span>
-                    <span
-                      className={`whitespace-nowrap text-[11px] leading-none ${
-                        step.state === "upcoming"
-                          ? "text-white/70"
-                          : "font-medium text-white"
-                      }`}
-                    >
-                      {step.label}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ol>
+      <div className="flex items-stretch">
+        {/* Column 1 — reserved for company branding. Ends at the conversation-
+            list panel edge (w-80 / 320px) with a thin grey vertical divider. */}
+        <div
+          className="flex w-[296px] flex-shrink-0 items-center border-r border-slate-300/50 pr-6"
+          data-testid="banner-branding-column"
+          aria-hidden
+        >
+          {/* Company branding goes here */}
         </div>
 
-        {/* Dismiss / collapse back to the normal inbox view */}
-        <button
-          type="button"
-          onClick={handleDismiss}
-          className="ml-auto flex-shrink-0 rounded-md p-1 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
-          data-testid="button-dismiss-setup-banner"
-          aria-label="Dismiss setup banner"
-          title="Dismiss"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        {/* Column 2 — getting-started prompt + bubble stepper, centered. */}
+        <div className="flex flex-1 items-center justify-center pl-6">
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2">
+            {/* Heading — mirrors Textline's getting-started prompt */}
+            <p className="text-sm font-semibold text-white">
+              Ready to start texting your customers?
+            </p>
+
+            {/* Bubble stepper */}
+            <ol
+              className="flex items-start"
+              data-testid="setup-stepper"
+              aria-label="Setup steps"
+            >
+              {steps.map((step, i) => {
+                const Icon = step.icon;
+                const prevComplete = i > 0 && steps[i - 1].state === "complete";
+                return (
+                  <li key={step.key} className="flex items-start">
+                    {i > 0 && (
+                      <span
+                        className={`mt-[14px] h-0.5 w-6 sm:w-10 ${
+                          prevComplete ? "bg-white" : "bg-white/30"
+                        }`}
+                        aria-hidden
+                      />
+                    )}
+                    <Link
+                      href={step.href}
+                      className="group flex flex-col items-center gap-1 px-1"
+                      data-testid={`setup-step-${step.key}`}
+                      aria-current={step.state === "active" ? "step" : undefined}
+                    >
+                      <span
+                        className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                          step.state === "complete"
+                            ? "bg-white text-[#3e6996]"
+                            : step.state === "active"
+                              ? "bg-white text-[#3e6996] ring-2 ring-white/50"
+                              : "border-2 border-white/60 bg-white/10 text-white group-hover:bg-white/20"
+                        }`}
+                      >
+                        {step.state === "complete" ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <Icon className="h-3.5 w-3.5" />
+                        )}
+                      </span>
+                      <span
+                        className={`whitespace-nowrap text-[11px] leading-none ${
+                          step.state === "upcoming"
+                            ? "text-white/70"
+                            : "font-medium text-white"
+                        }`}
+                      >
+                        {step.label}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        </div>
       </div>
     </div>
   );
