@@ -1077,14 +1077,14 @@ export default function Inbox() {
                     disabled={setOverrideMut.isPending}
                   >
                     <SelectTrigger
-                      className="h-8 w-[150px] text-xs font-medium gap-1.5 border-violet-200 text-violet-700 hover:bg-violet-50"
+                      className="h-8 w-[160px] text-xs font-medium gap-1.5 border-violet-200 text-violet-700 hover:bg-violet-50"
                       data-testid="select-engagement-override"
                     >
-                      <span className="flex items-center gap-1.5">
-                        <Sparkles className="w-3 h-3" />
-                        <span className={`h-2 w-2 rounded-full ${modeChip.dot}`} />
-                        <span>Mode: Haylo Ai</span>
-                      </span>
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <Sparkles className="w-3 h-3 shrink-0" />
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${modeChip.dot}`} />
+                        <span className="truncate">Mode: Haylo Ai</span>
+                      </div>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="inherit">Mode: Inherit</SelectItem>
