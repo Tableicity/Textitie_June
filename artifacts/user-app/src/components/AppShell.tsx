@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, useSearch, Redirect } from "wouter";
-import textitieLogo from "@assets/textitie-logo-blue.png";
 import { useQueryClient } from "@tanstack/react-query";
 import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall, User } from "lucide-react";
 import HipaaBanner from "@/components/HipaaBanner";
@@ -151,10 +150,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen bg-slate-900 text-slate-300 overflow-hidden font-sans">
       {/* Sidebar Navigation */}
       <nav className="w-16 flex flex-col items-center py-4 border-r border-slate-800 bg-slate-900 z-20 flex-shrink-0">
-        <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center mb-8 shadow-sm overflow-hidden p-1">
-          <img src={textitieLogo} alt="Textitie" className="w-full h-full object-contain" />
-        </div>
-
         <div className="flex flex-col gap-4 flex-1 w-full px-2">
           <Link
             href="/inbox"
