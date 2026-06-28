@@ -2550,6 +2550,36 @@ export const DismissReminderResponse = zod.object({
 });
 
 /**
+ * @summary Update a reminder (reschedule / snooze / edit note)
+ */
+export const UpdateReminderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateReminderBody = zod
+  .object({
+    remindAt: zod.coerce.date().optional(),
+    note: zod.string().nullish(),
+  })
+  .describe(
+    "Reschedule (snooze) and\/or edit a reminder. Provide at least one field. A future remindAt re-arms the reminder (clears its fired state). note=null clears the note; omit a field to leave it unchanged.",
+  );
+
+export const UpdateReminderResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  conversationId: zod.number(),
+  userId: zod.number(),
+  remindAt: zod.coerce.date(),
+  note: zod.string().nullable(),
+  firedAt: zod.coerce.date().nullable(),
+  dismissedAt: zod.coerce.date().nullable(),
+  createdAt: zod.coerce.date(),
+  contactPhone: zod.string().nullish(),
+  contactName: zod.string().nullish(),
+});
+
+/**
  * @summary Delete a reminder
  */
 export const DeleteReminderParams = zod.object({

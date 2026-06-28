@@ -192,6 +192,7 @@ export * from "./updateConversationInputEngagementModeOverride";
 export * from "./updateConversationInputStatus";
 export * from "./updateDepartmentInput";
 export * from "./updateDispositionInput";
+export * from "./updateReminderInput";
 export * from "./updateShortcutInput";
 export * from "./updateTagsInput";
 export * from "./updateTenantInput";

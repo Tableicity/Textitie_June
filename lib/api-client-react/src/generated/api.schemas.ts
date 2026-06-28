@@ -1533,6 +1533,15 @@ export interface CreateReminderInput {
   note?: string | null;
 }
 
+/**
+ * Reschedule (snooze) and/or edit a reminder. Provide at least one field. A future remindAt re-arms the reminder (clears its fired state). note=null clears the note; omit a field to leave it unchanged.
+ */
+export interface UpdateReminderInput {
+  remindAt?: string;
+  /** @nullable */
+  note?: string | null;
+}
+
 export interface SuccessResponse {
   success: boolean;
 }

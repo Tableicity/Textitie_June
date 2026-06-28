@@ -14,7 +14,7 @@ import {
   usePostWhisper,
   useUpdateConversation,
   useListDispositions,
-  useCreateReminder,
+  useListReminders,
   useListContacts,
   useCreateContact,
   useUpdateContact,
@@ -36,9 +36,13 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } fr
 import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
 import InboxSetupBanner from "@/components/InboxSetupBanner";
 import ReminderBell from "@/components/ReminderBell";
+import ConversationReminderPopover from "@/components/ConversationReminderPopover";
+import { ALL_REMINDERS_PARAMS, isReminderDue } from "@/lib/reminders";
 import { format } from "date-fns";
 import {
   Search,
+  Bell,
+  BellRing,
   Send,
   Clock,
   User,
@@ -195,9 +199,6 @@ export default function Inbox() {
   const [showResolve, setShowResolve] = useState(false);
   const [resolveDispId, setResolveDispId] = useState<string>("");
   const [resolveNote, setResolveNote] = useState("");
-  const [showRemind, setShowRemind] = useState(false);
-  const [remindAt, setRemindAt] = useState("");
-  const [remindNote, setRemindNote] = useState("");
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [showBuyGas, setShowBuyGas] = useState(false);
   const [newPhone, setNewPhone] = useState("");
@@ -577,16 +578,27 @@ export default function Inbox() {
     }
   };
 
-  const createReminder = useCreateReminder({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListRemindersQueryKey() });
-        setShowRemind(false);
-        setRemindAt("");
-        setRemindNote("");
-      },
+  // Shared agent-wide reminders query (status=all). Powers the left-pane row
+  // bells; deduped by React Query with the same query in each popover/header.
+  const { data: allReminders } = useListReminders(ALL_REMINDERS_PARAMS, {
+    query: {
+      queryKey: getListRemindersQueryKey(ALL_REMINDERS_PARAMS),
+      refetchInterval: 30000,
     },
   });
+  const reminderStateByConv = useMemo(() => {
+    const map = new Map<number, { hasPending: boolean; hasDue: boolean }>();
+    for (const r of allReminders ?? []) {
+      const cur = map.get(r.conversationId) ?? {
+        hasPending: false,
+        hasDue: false,
+      };
+      if (isReminderDue(r)) cur.hasDue = true;
+      else cur.hasPending = true;
+      map.set(r.conversationId, cur);
+    }
+    return map;
+  }, [allReminders]);
 
   const claimMutation = useClaimConversation({
     mutation: { onSuccess: invalidateConv },
@@ -919,10 +931,21 @@ export default function Inbox() {
                 const cityState = cityStateForPhone(conv.contactPhone);
                 const isSelected = selectedId === conv.id;
                 return (
-                <button
+                <div
                   key={conv.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedId(conv.id)}
-                  className={`w-full text-left p-4 hover:bg-blue-50/50 transition-colors border-b ${
+                  onKeyDown={(e) => {
+                    if (
+                      (e.key === "Enter" || e.key === " ") &&
+                      e.target === e.currentTarget
+                    ) {
+                      e.preventDefault();
+                      setSelectedId(conv.id);
+                    }
+                  }}
+                  className={`w-full text-left p-4 hover:bg-blue-50/50 transition-colors border-b cursor-pointer ${
                     isSelected
                       ? "bg-blue-50 border-l-4 border-l-blue-500 border-b-blue-500"
                       : "border-l-4 border-l-transparent border-b-slate-200"
@@ -943,11 +966,42 @@ export default function Inbox() {
                   </div>
                   <div className="flex items-center justify-between text-xs text-slate-500">
                     <span className="truncate pr-4">{formatPhone(conv.contactPhone)}</span>
-                    {conv.status === "open" ? (
-                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                    ) : (
-                      <CheckCircle2 className="w-3 h-3 text-slate-400" />
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {(() => {
+                        const rs = reminderStateByConv.get(conv.id);
+                        if (!rs) return null;
+                        return (
+                          <ConversationReminderPopover
+                            conversationId={conv.id}
+                            side="right"
+                            align="start"
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`inline-flex items-center justify-center h-6 w-6 rounded-md transition-colors ${
+                                rs.hasDue
+                                  ? "text-red-500 hover:bg-red-50"
+                                  : "text-slate-400 hover:bg-slate-100"
+                              }`}
+                              title={rs.hasDue ? "Reminder due" : "Reminder scheduled"}
+                              data-testid={`button-row-reminder-${conv.id}`}
+                            >
+                              {rs.hasDue ? (
+                                <BellRing className="w-3.5 h-3.5" />
+                              ) : (
+                                <Bell className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </ConversationReminderPopover>
+                        );
+                      })()}
+                      {conv.status === "open" ? (
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                      ) : (
+                        <CheckCircle2 className="w-3 h-3 text-slate-400" />
+                      )}
+                    </div>
                   </div>
                   {cityState && (
                     <div className="text-[11px] text-slate-400 mt-0.5 truncate">
@@ -974,7 +1028,7 @@ export default function Inbox() {
                         </div>
                       )}
                   </div>
-                </button>
+                </div>
                 );
               })}
             </div>
@@ -1614,6 +1668,22 @@ export default function Inbox() {
                         </div>
                       </PopoverContent>
                     </Popover>
+                    {selectedId && (
+                      <ConversationReminderPopover
+                        conversationId={selectedId}
+                        side="top"
+                        align="start"
+                      >
+                        <button
+                          type="button"
+                          className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                          title="Set a reminder"
+                          data-testid="button-composer-reminder"
+                        >
+                          <Bell className="w-4 h-4" />
+                        </button>
+                      </ConversationReminderPopover>
+                    )}
                   </div>
                   <div className="flex items-end gap-2">
                     <div className="flex-1 relative">
@@ -1889,93 +1959,6 @@ export default function Inbox() {
         </DialogContent>
       </Dialog>
 
-      {/* Reminder dialog */}
-      <Dialog open={showRemind} onOpenChange={setShowRemind}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Set a reminder</DialogTitle>
-            <DialogDescription>
-              We'll surface this conversation in your reminder bell when due.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="mb-1.5 block">Remind me at</Label>
-              <Input
-                type="datetime-local"
-                value={remindAt}
-                onChange={(e) => setRemindAt(e.target.value)}
-                data-testid="input-remind-at"
-              />
-              <div className="flex gap-1.5 mt-2">
-                {[
-                  { label: "+15m", min: 15 },
-                  { label: "+1h", min: 60 },
-                  { label: "+4h", min: 240 },
-                  { label: "Tomorrow 9am", min: -1 },
-                ].map((q) => (
-                  <Button
-                    key={q.label}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => {
-                      const d =
-                        q.min === -1
-                          ? (() => {
-                              const t = new Date();
-                              t.setDate(t.getDate() + 1);
-                              t.setHours(9, 0, 0, 0);
-                              return t;
-                            })()
-                          : new Date(Date.now() + q.min * 60 * 1000);
-                      const pad = (n: number) => String(n).padStart(2, "0");
-                      setRemindAt(
-                        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
-                      );
-                    }}
-                  >
-                    {q.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <Label className="mb-1.5 block">Note (optional)</Label>
-              <Textarea
-                value={remindNote}
-                onChange={(e) => setRemindNote(e.target.value)}
-                placeholder="Follow up about pricing..."
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRemind(false)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700"
-              disabled={createReminder.isPending || !remindAt || !selectedId}
-              onClick={() => {
-                if (!selectedId || !remindAt) return;
-                createReminder.mutate({
-                  data: {
-                    conversationId: selectedId,
-                    remindAt: new Date(remindAt).toISOString(),
-                    note: remindNote.trim() || null,
-                  },
-                });
-              }}
-              data-testid="button-confirm-remind"
-            >
-              {createReminder.isPending && <Loader2 className="w-3 h-3 animate-spin mr-2" />}
-              Set reminder
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Contact info card / edit (opened by clicking the conversation header) */}
       <Sheet open={showContactCard} onOpenChange={setShowContactCard}>

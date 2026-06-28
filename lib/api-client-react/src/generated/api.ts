@@ -150,6 +150,7 @@ import type {
   UpdateConversationInput,
   UpdateDepartmentInput,
   UpdateDispositionInput,
+  UpdateReminderInput,
   UpdateShortcutInput,
   UpdateTagsInput,
   UpdateTenantInput,
@@ -9234,6 +9235,93 @@ export const useDismissReminder = <
   TContext
 > => {
   return useMutation(getDismissReminderMutationOptions(options));
+};
+
+/**
+ * @summary Update a reminder (reschedule / snooze / edit note)
+ */
+export const getUpdateReminderUrl = (id: number) => {
+  return `/api/reminders/${id}`;
+};
+
+export const updateReminder = async (
+  id: number,
+  updateReminderInput: UpdateReminderInput,
+  options?: RequestInit,
+): Promise<Reminder> => {
+  return customFetch<Reminder>(getUpdateReminderUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateReminderInput),
+  });
+};
+
+export const getUpdateReminderMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateReminder>>,
+    TError,
+    { id: number; data: BodyType<UpdateReminderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateReminder>>,
+  TError,
+  { id: number; data: BodyType<UpdateReminderInput> },
+  TContext
+> => {
+  const mutationKey = ["updateReminder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateReminder>>,
+    { id: number; data: BodyType<UpdateReminderInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateReminder(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateReminderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateReminder>>
+>;
+export type UpdateReminderMutationBody = BodyType<UpdateReminderInput>;
+export type UpdateReminderMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Update a reminder (reschedule / snooze / edit note)
+ */
+export const useUpdateReminder = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateReminder>>,
+    TError,
+    { id: number; data: BodyType<UpdateReminderInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateReminder>>,
+  TError,
+  { id: number; data: BodyType<UpdateReminderInput> },
+  TContext
+> => {
+  return useMutation(getUpdateReminderMutationOptions(options));
 };
 
 /**

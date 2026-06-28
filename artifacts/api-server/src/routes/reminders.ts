@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, remindersTable, conversationsTable } from "@workspace/db";
-import { and, eq, desc, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, asc, isNull, isNotNull, lte, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
 
@@ -17,6 +17,13 @@ router.get("/reminders", requireTenantAuth, async (req, res) => {
       eq(remindersTable.userId, userId),
       isNull(remindersTable.dismissedAt),
     ];
+    // Filter by status in SQL (not in-memory after a LIMIT) so a backlog of
+    // future reminders can never push the due ones out of the result window.
+    if (status === "due") {
+      conditions.push(isNotNull(remindersTable.firedAt));
+    } else if (status === "pending") {
+      conditions.push(isNull(remindersTable.firedAt));
+    }
 
     const rows = await db
       .select({
@@ -35,17 +42,10 @@ router.get("/reminders", requireTenantAuth, async (req, res) => {
       .from(remindersTable)
       .innerJoin(conversationsTable, eq(remindersTable.conversationId, conversationsTable.id))
       .where(and(...conditions))
-      .orderBy(desc(remindersTable.remindAt))
+      .orderBy(asc(remindersTable.remindAt))
       .limit(100);
 
-    let filtered = rows;
-    if (status === "due") {
-      filtered = rows.filter((r) => r.firedAt !== null);
-    } else if (status === "pending") {
-      filtered = rows.filter((r) => r.firedAt === null);
-    }
-
-    res.json(filtered);
+    res.json(rows);
   } catch (err) {
     logger.error({ err }, "List reminders error");
     res.status(500).json({ error: "Internal server error" });
@@ -120,6 +120,80 @@ router.patch("/reminders/:id/dismiss", requireTenantAuth, async (req, res) => {
     res.json(rows[0]);
   } catch (err) {
     logger.error({ err }, "Dismiss reminder error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/reminders/:id", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const userId = req.tenantUser!.tenantUserId;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid reminder id" });
+    return;
+  }
+
+  const { remindAt, note } = req.body ?? {};
+  const hasRemindAt = remindAt !== undefined;
+  const hasNote = note !== undefined;
+  if (!hasRemindAt && !hasNote) {
+    res.status(400).json({ error: "Provide remindAt and/or note to update" });
+    return;
+  }
+
+  const update: { remindAt?: Date; firedAt?: null; note?: string | null } = {};
+
+  if (hasRemindAt) {
+    if (typeof remindAt !== "string") {
+      res.status(400).json({ error: "remindAt must be an ISO timestamp" });
+      return;
+    }
+    const when = new Date(remindAt);
+    if (Number.isNaN(when.getTime())) {
+      res.status(400).json({ error: "remindAt must be a valid ISO timestamp" });
+      return;
+    }
+    if (when.getTime() < Date.now() - 60_000) {
+      res.status(400).json({ error: "remindAt must be in the future" });
+      return;
+    }
+    update.remindAt = when;
+    // Re-arm: moving the time forward clears the fired flag so it surfaces
+    // again when due (this is the snooze path).
+    update.firedAt = null;
+  }
+
+  if (hasNote) {
+    if (note === null) {
+      update.note = null;
+    } else if (typeof note === "string") {
+      update.note = note.trim().length > 0 ? note.trim() : null;
+    } else {
+      res.status(400).json({ error: "note must be a string or null" });
+      return;
+    }
+  }
+
+  try {
+    const rows = await db
+      .update(remindersTable)
+      .set(update)
+      .where(
+        and(
+          eq(remindersTable.id, id),
+          eq(remindersTable.tenantId, tenantId),
+          eq(remindersTable.userId, userId),
+          isNull(remindersTable.dismissedAt),
+        ),
+      )
+      .returning();
+    if (rows.length === 0) {
+      res.status(404).json({ error: "Reminder not found" });
+      return;
+    }
+    res.json(rows[0]);
+  } catch (err) {
+    logger.error({ err }, "Update reminder error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

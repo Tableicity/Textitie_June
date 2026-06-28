@@ -2615,6 +2615,41 @@ paths:
                 $ref: "#/components/schemas/ApiError"
 
   /reminders/{id}:
+    patch:
+      operationId: updateReminder
+      tags: [reminders]
+      summary: Update a reminder (reschedule / snooze / edit note)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReminderInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reminder"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
     delete:
       operationId: deleteReminder
       tags: [reminders]
@@ -5666,6 +5701,16 @@ components:
         remindAt: { type: string, format: date-time }
         note: { type: ["string", "null"] }
       required: [conversationId, remindAt]
+
+    UpdateReminderInput:
+      type: object
+      description: >-
+        Reschedule (snooze) and/or edit a reminder. Provide at least one field.
+        A future remindAt re-arms the reminder (clears its fired state). note=null
+        clears the note; omit a field to leave it unchanged.
+      properties:
+        remindAt: { type: string, format: date-time }
+        note: { type: ["string", "null"] }
 
     SuccessResponse:
       type: object
