@@ -32,7 +32,7 @@ import {
 } from "@workspace/api-client-react";
 import type { UpdateConversationInputEngagementModeOverride } from "@workspace/api-client-react";
 import { useSearch, useLocation } from "wouter";
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
 import ReminderBell from "@/components/ReminderBell";
 import { format } from "date-fns";
@@ -205,6 +205,7 @@ export default function Inbox() {
   // "0" = Unassigned; otherwise a department id as a string.
   const [newDept, setNewDept] = useState<string>("0");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastScrolledConvRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Tracks the last Co-Pilot draft we auto-inserted, so we prefill a draft once
   // per distinct draft and never re-fight an agent who cleared or edited it.
@@ -621,11 +622,19 @@ export default function Inbox() {
     mutation: { onSuccess: invalidateConv },
   });
 
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages]);
+  useLayoutEffect(() => {
+    const end = messagesEndRef.current;
+    if (!end) return;
+    // Jump instantly (before paint) when first landing on or switching
+    // conversations so the latest message is already in view with no visible
+    // scroll motion. Smooth-scroll only for new messages in the open thread.
+    const isConversationSwitch = lastScrolledConvRef.current !== selectedId;
+    end.scrollIntoView({
+      behavior: isConversationSwitch ? "auto" : "smooth",
+      block: "end",
+    });
+    lastScrolledConvRef.current = selectedId;
+  }, [messages, selectedId]);
 
   const filteredShortcuts = useMemo(() => {
     if (!shortcuts || !shortcutFilter) return shortcuts || [];
