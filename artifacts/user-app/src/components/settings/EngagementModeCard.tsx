@@ -38,7 +38,7 @@ const ENGAGEMENT_MODE_OPTIONS: ReadonlyArray<{
     label: "Auto-Pilot",
     dot: "bg-emerald-500",
     description:
-      "The AI may send safe, high-confidence answers automatically and learn from them. Anything it isn't sure about hands back to your agent (no learning) until you step in.",
+      "The AI automatically sends safe, high-confidence answers grounded in your published knowledge. If it isn't sure, it sends a brief out-of-scope reply and keeps going; after repeated misses it steps down to Manual so an agent can take over. It never learns from these replies.",
   },
 ];
 
