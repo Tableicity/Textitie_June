@@ -8,6 +8,7 @@ import Profile from "./Profile";
 import Organization from "./Organization";
 import Agents from "./Agents";
 import Departments from "./Departments";
+import ProvisionDepartment from "./ProvisionDepartment";
 import Integrations from "./Integrations";
 import Security from "./Security";
 import HayloAi from "./HayloAi";
@@ -48,6 +49,7 @@ export default function OnboardingRoutes() {
         <Route path="/organization" component={Organization} />
         <Route path="/agents" component={Agents} />
         <Route path="/departments" component={Departments} />
+        <Route path="/provision-department" component={ProvisionDepartment} />
         <Route path="/integrations" component={Integrations} />
         <Route path="/security" component={Security} />
         <Route path="/haylo-ai" component={HayloAi} />

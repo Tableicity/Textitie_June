@@ -67,14 +67,14 @@ export default function InboxSetupBanner() {
     {
       key: "department",
       label: "Department",
-      href: "/onboarding/departments",
+      href: "/onboarding/provision-department",
       icon: Building2,
       state: hasDepartment ? "complete" : "active",
     },
     {
       key: "number",
       label: "Phone Number",
-      href: "/settings?tab=phone-numbers",
+      href: "/onboarding/departments",
       icon: PhoneCall,
       state: hasNumber ? "complete" : hasDepartment ? "active" : "upcoming",
     },
