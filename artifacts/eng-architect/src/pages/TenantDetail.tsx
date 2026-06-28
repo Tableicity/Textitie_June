@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useSearch, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -54,9 +54,32 @@ const phoneSchema = z.object({
     .regex(/^\+[1-9]\d{6,14}$|^$/, "Must be E.164 format (e.g. +19094904265) or empty"),
 });
 
+const TENANT_TABS = ["migrations", "brand-safety", "overview"] as const;
+type TenantTab = (typeof TENANT_TABS)[number];
+
+function isTenantTab(value: string | null): value is TenantTab {
+  return value !== null && (TENANT_TABS as readonly string[]).includes(value);
+}
+
 export default function TenantDetail() {
   const params = useParams();
   const tenantId = params.id ? parseInt(params.id, 10) : 0;
+
+  // Tab selection is URL-addressable via ?tab=; an unknown/absent value falls
+  // back to "migrations". Switching tabs preserves every other query param and
+  // never leaves a dangling "?".
+  const search = useSearch();
+  const [location, setLocation] = useLocation();
+  const activeTab: TenantTab = (() => {
+    const t = new URLSearchParams(search).get("tab");
+    return isTenantTab(t) ? t : "migrations";
+  })();
+  const handleTabChange = (value: string) => {
+    const next = new URLSearchParams(search);
+    next.set("tab", value);
+    const qs = next.toString();
+    setLocation(qs ? `${location}?${qs}` : location, { replace: true });
+  };
 
   const { data: tenant, isLoading } = useGetTenant(tenantId, {
     query: {
@@ -456,7 +479,7 @@ export default function TenantDetail() {
         <p className="text-muted-foreground mt-2 font-mono text-sm">{tenant.slug}.sama.io</p>
       </div>
 
-      <Tabs defaultValue="migrations" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList>
           <TabsTrigger value="migrations">Migrations</TabsTrigger>
           <TabsTrigger value="brand-safety">Brand Safety</TabsTrigger>

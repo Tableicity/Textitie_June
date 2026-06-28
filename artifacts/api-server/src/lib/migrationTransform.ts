@@ -47,6 +47,22 @@ export interface NormalizedConversation {
   anomalies: Anomaly[];
 }
 
+/**
+ * A standalone address-book contact (from the TextLine `customers` list). Unlike
+ * a conversation contact this may have NO conversation history — it is imported
+ * purely so the tenant keeps their full contact list + tags. Dedupe key is the
+ * normalized phone (`phone:<normalizedPhone>`), the same key conversation hydrate
+ * uses, so a customer that ALSO has a conversation collapses onto one contact.
+ */
+export interface NormalizedContact {
+  externalId: string | null;
+  phone: string | null;
+  name: string | null;
+  email: string | null;
+  tags: string[];
+  anomalies: Anomaly[];
+}
+
 export interface Anomaly {
   type: string;
   /** A non-PII external-id reference, never a message body. */
@@ -378,12 +394,66 @@ export function transformConversationDetail(
   };
 }
 
+/**
+ * Transform ONE staged address-book (customers) page payload into normalized
+ * standalone contacts. PURE + tolerant: each record is run through the same
+ * extractCustomer() seam used for conversation contacts, so the wire-shape
+ * assumptions live in exactly one place. A record with no extractable phone is
+ * still emitted (carrying a non-PII anomaly) so verify can count it; hydrate
+ * drops it (the contacts.phone column is NOT NULL). Never throws.
+ */
+export function transformCustomersPage(payload: unknown): NormalizedContact[] {
+  const records = extractArray(payload, [
+    "customers",
+    "contacts",
+    "address_book",
+    "people",
+    "items",
+    "data",
+  ]);
+  const out: NormalizedContact[] = [];
+  for (const r of records) {
+    const o = obj(r);
+    if (!o) continue;
+    const c = extractCustomer(o);
+    const anomalies: Anomaly[] = [];
+    if (!c.phone) {
+      anomalies.push({
+        type: "customer_missing_phone",
+        ref: c.externalId,
+        detail: "Address-book contact has no extractable phone number; not imported.",
+      });
+    }
+    out.push({
+      externalId: c.externalId,
+      phone: c.phone,
+      name: c.name,
+      email: c.email,
+      tags: c.tags,
+      anomalies,
+    });
+  }
+  return out;
+}
+
 // --- Verify summary -----------------------------------------------------------
 
 export interface MigrationSummary {
   conversations: { imported: number; flagged: number };
   messages: { imported: number; skippedMms: number };
-  contacts: { uniquePhones: number; aliasCollapsed: number; missingPhone: number };
+  contacts: {
+    uniquePhones: number;
+    aliasCollapsed: number;
+    missingPhone: number;
+    /** Total address-book records seen (with or without a phone). */
+    addressBook: number;
+    /** Address-book contacts that introduced a NEW phone (no conversation). */
+    standalone: number;
+    /** Address-book records with no extractable phone (cannot be imported). */
+    addressBookMissingPhone: number;
+    /** Address-book records whose phone was already seen (collapsed). */
+    addressBookDuplicate: number;
+  };
   anomalies: Anomaly[];
   anomalyCount: number;
   generatedAt: string;
@@ -404,6 +474,14 @@ export interface SummaryAccumulator {
   /** distinct (phone) already counted -> how many extra contacts collapsed in. */
   aliasCollapsed: number;
   missingPhone: number;
+  /** Total address-book (customers) records folded. */
+  addressBook: number;
+  /** Address-book contacts whose phone was NEW (no conversation owned it). */
+  standalone: number;
+  /** Address-book records with no extractable phone. */
+  addressBookMissingPhone: number;
+  /** Address-book records whose phone was already seen (collapsed, not new). */
+  addressBookDuplicate: number;
   anomalies: Anomaly[];
   anomalyCount: number;
 }
@@ -417,6 +495,10 @@ export function newSummaryAccumulator(): SummaryAccumulator {
     phones: new Set<string>(),
     aliasCollapsed: 0,
     missingPhone: 0,
+    addressBook: 0,
+    standalone: 0,
+    addressBookMissingPhone: 0,
+    addressBookDuplicate: 0,
     anomalies: [],
     anomalyCount: 0,
   };
@@ -443,6 +525,32 @@ export function foldIntoSummary(
   }
 }
 
+/**
+ * Fold one transformed address-book contact into the running verify summary.
+ * MUST be called AFTER every conversation is folded so a contact's phone is only
+ * counted as `standalone` (a contact with NO conversation history) when no
+ * conversation already introduced it. Shares the same `phones` Set as
+ * conversations so uniquePhones stays a true global distinct-phone count.
+ */
+export function foldContactIntoSummary(
+  acc: SummaryAccumulator,
+  contact: NormalizedContact,
+): void {
+  acc.addressBook += 1;
+  if (!contact.phone) {
+    acc.addressBookMissingPhone += 1;
+  } else if (acc.phones.has(contact.phone)) {
+    acc.addressBookDuplicate += 1;
+  } else {
+    acc.phones.add(contact.phone);
+    acc.standalone += 1;
+  }
+  for (const a of contact.anomalies) {
+    acc.anomalyCount += 1;
+    if (acc.anomalies.length < MAX_ANOMALIES) acc.anomalies.push(a);
+  }
+}
+
 export function finalizeSummary(acc: SummaryAccumulator): MigrationSummary {
   return {
     conversations: { imported: acc.conversations, flagged: acc.flaggedConversations },
@@ -451,6 +559,10 @@ export function finalizeSummary(acc: SummaryAccumulator): MigrationSummary {
       uniquePhones: acc.phones.size,
       aliasCollapsed: acc.aliasCollapsed,
       missingPhone: acc.missingPhone,
+      addressBook: acc.addressBook,
+      standalone: acc.standalone,
+      addressBookMissingPhone: acc.addressBookMissingPhone,
+      addressBookDuplicate: acc.addressBookDuplicate,
     },
     anomalies: acc.anomalies,
     anomalyCount: acc.anomalyCount,

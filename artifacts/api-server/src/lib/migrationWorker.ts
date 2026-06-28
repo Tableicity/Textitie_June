@@ -33,7 +33,9 @@ import {
 //
 // Entities are pulled in a fixed order so the later (Phase 3) verify pass has
 // the agent/group role maps before it threads conversations:
-//   agents -> groups -> conversations -> conversation_posts
+//   agents -> groups -> customers -> conversations -> conversation_posts
+// `customers` is the TextLine address book; staging it lets hydrate import
+// standalone contacts (and their tags) that have NO conversation history.
 // Flat lists page by page_cursor; conversation_posts is diff/idempotency-driven
 // (one staged conversations page at a time; per-conversation detail keyed by
 // `conversation_posts:<id>`, skipped if already staged so a resume never
@@ -60,6 +62,7 @@ const BASE_BACKOFF_MS = 5_000;
 const ENTITY_ORDER = [
   "agents",
   "groups",
+  "customers",
   "conversations",
   "conversation_posts",
 ] as const;
@@ -67,7 +70,7 @@ type Entity = (typeof ENTITY_ORDER)[number];
 
 // Auxiliary lists: a 404 here means TextLine doesn't expose that entity for this
 // account — treat as "no data" and move on rather than failing the whole import.
-const AUXILIARY_ENTITIES = new Set<Entity>(["agents", "groups"]);
+const AUXILIARY_ENTITIES = new Set<Entity>(["agents", "groups", "customers"]);
 
 // One migration in flight per process; DB lease handles multi-instance/crash.
 let running = false;

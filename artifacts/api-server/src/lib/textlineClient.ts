@@ -18,6 +18,7 @@
  *   List:    GET api/conversations?page=N        -> { conversations: [...] }
  *            GET api/agents                       -> { agents: [...] }
  *            GET api/groups                       -> { groups: [...] }
+ *            GET api/customers?page=N             -> { customers: [...] }
  *   Detail:  GET api/conversations/:uuid          -> { ..., comments: [...] }
  *   Paging:  page-number (1-based). We also stop on the first EMPTY page, so an
  *            unknown pagination scheme still terminates safely.
@@ -240,6 +241,13 @@ const LIST_ENDPOINTS: Record<string, ListEndpoint> = {
   conversations: {
     path: "api/conversations",
     keys: ["conversations", "items", "data"],
+    paginated: true,
+  },
+  // Address book / standalone contacts. Paginated like conversations. Auxiliary
+  // in the worker, so an account that doesn't expose it (404) skips gracefully.
+  customers: {
+    path: "api/customers",
+    keys: ["customers", "contacts", "address_book", "people"],
     paginated: true,
   },
 };

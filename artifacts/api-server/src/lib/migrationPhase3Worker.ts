@@ -4,9 +4,12 @@ import {
   readAgentsPayload,
   readConversationPostsBatch,
   countConversationPosts,
+  countStagedEntityRows,
+  readStagedEntityPayloads,
   markMigrationReview,
   markMigrationComplete,
   hydrateConversationBatch,
+  hydrateCustomersBatch,
   heartbeatMigrationLease,
   releaseMigrationLease,
   backoffMigrationJob,
@@ -16,8 +19,10 @@ import {
 import {
   buildAgentMap,
   transformConversationDetail,
+  transformCustomersPage,
   newSummaryAccumulator,
   foldIntoSummary,
+  foldContactIntoSummary,
   finalizeSummary,
   type AgentMap,
 } from "./migrationTransform";
@@ -56,6 +61,9 @@ const TICK_BUDGET_MS = 8_000;
 const VERIFY_BATCH = 200;
 // Hydrate writes a bounded number of conversations per advisory-locked txn.
 const HYDRATE_BATCH = 25;
+// Hydrate promotes a few address-book PAGES per advisory-locked txn (each page is
+// ~100 contacts, so this keeps the write burst — and the lock hold — bounded).
+const CUSTOMER_PAGE_BATCH = 2;
 const MAX_ATTEMPTS = 5;
 const BASE_BACKOFF_MS = 5_000;
 
@@ -123,6 +131,30 @@ async function runVerify(job: ClaimedMigrationJob): Promise<void> {
       }
     }
 
+    // Fold the staged address book AFTER every conversation, so a contact's phone
+    // is only counted as `standalone` (no conversation history) when no
+    // conversation already introduced it. Each staged row is a page of contacts.
+    let custOffset = 0;
+    for (;;) {
+      const pages = await readStagedEntityPayloads(
+        job.id,
+        "customers",
+        custOffset,
+        VERIFY_BATCH,
+      );
+      if (pages.length === 0) break;
+      for (const payload of pages) {
+        for (const contact of transformCustomersPage(payload)) {
+          foldContactIntoSummary(acc, contact);
+        }
+      }
+      custOffset += pages.length;
+      if (!(await heartbeatMigrationLease(job.id, job.leaseToken, LEASE_MS))) {
+        leaseLost(job.id, "heartbeatMigrationLease(verify-customers)");
+        return;
+      }
+    }
+
     const summary = finalizeSummary(acc);
     if (!(await markMigrationReview(job.id, job.leaseToken, summary))) {
       leaseLost(job.id, "markMigrationReview");
@@ -145,55 +177,97 @@ async function runVerify(job: ClaimedMigrationJob): Promise<void> {
 }
 
 /**
- * HYDRATE: promote conversations into QUARANTINED live rows in bounded,
- * cursor-resumable batches. Each batch's writes + cursor advance commit
- * atomically (and lease-fenced) inside hydrateConversationBatch. When the cursor
- * reaches the staged total, gate to 'complete'.
+ * HYDRATE: promote conversations AND the standalone address book into QUARANTINED
+ * live rows in bounded, cursor-resumable batches. A SINGLE monotonic cursor walks
+ * a combined space [0, convTotal + custTotal): the first `convTotal` units are
+ * conversation rows (HYDRATE_BATCH per txn); the rest are address-book PAGES
+ * (CUSTOMER_PAGE_BATCH per txn). Each batch's writes + cursor advance commit
+ * atomically (and lease-fenced) inside its hydrate*Batch helper, so a crash just
+ * re-does the in-flight batch. When the cursor reaches the grand total, gate to
+ * 'complete'. The phases are ordered conversations-first so a contact created by
+ * conversation hydrate is already present when the customers phase merges its tags.
  */
 async function runHydrate(job: ClaimedMigrationJob): Promise<void> {
   try {
     const agentMap: AgentMap = buildAgentMap(await readAgentsPayload(job.id));
-    const total = await countConversationPosts(job.id);
+    const convTotal = await countConversationPosts(job.id);
+    const custTotal = await countStagedEntityRows(job.id, "customers");
+    const grandTotal = convTotal + custTotal;
     let offset = job.pageCursor > 0 ? job.pageCursor : 0;
     const deadline = Date.now() + TICK_BUDGET_MS;
 
     while (Date.now() < deadline) {
-      if (offset >= total) {
+      if (offset >= grandTotal) {
         if (!(await markMigrationComplete(job.id, job.leaseToken))) {
           leaseLost(job.id, "markMigrationComplete");
           return;
         }
-        logger.info({ jobId: job.id, conversations: total }, "Migration hydrate complete");
+        logger.info(
+          { jobId: job.id, conversations: convTotal, customerPages: custTotal },
+          "Migration hydrate complete",
+        );
         return;
       }
 
-      const batch = await readConversationPostsBatch(job.id, offset, HYDRATE_BATCH);
-      if (batch.length === 0) {
-        // Cursor < total but nothing read (defensive) — treat as finished.
-        if (!(await markMigrationComplete(job.id, job.leaseToken))) {
-          leaseLost(job.id, "markMigrationComplete(empty)");
+      if (offset < convTotal) {
+        // --- conversations phase ---
+        const limit = Math.min(HYDRATE_BATCH, convTotal - offset);
+        const batch = await readConversationPostsBatch(job.id, offset, limit);
+        if (batch.length === 0) {
+          // Defensive short read (staged rows are immutable, so this shouldn't
+          // happen): jump to the customers-phase boundary rather than completing.
+          offset = convTotal;
+          continue;
+        }
+        const conversations = batch.map((p) => transformConversationDetail(p, agentMap));
+        const newCursor = offset + batch.length;
+        const { held, stats } = await hydrateConversationBatch({
+          tenantId: job.tenantId,
+          jobId: job.id,
+          leaseToken: job.leaseToken,
+          newCursor,
+          leaseMs: LEASE_MS,
+          conversations,
+        });
+        if (!held) {
+          leaseLost(job.id, "hydrateConversationBatch");
           return;
         }
-        logger.info({ jobId: job.id, offset, total }, "Migration hydrate finished (short read)");
-        return;
+        offset = newCursor;
+        logger.debug(
+          { jobId: job.id, offset, grandTotal, stats },
+          "Migration hydrate conversation batch committed",
+        );
+      } else {
+        // --- address-book (customers) phase ---
+        const custOffset = offset - convTotal;
+        const limit = Math.min(CUSTOMER_PAGE_BATCH, custTotal - custOffset);
+        const pages = await readStagedEntityPayloads(job.id, "customers", custOffset, limit);
+        if (pages.length === 0) {
+          // Defensive short read — nothing left to promote; finish.
+          offset = grandTotal;
+          continue;
+        }
+        const contacts = pages.flatMap((p) => transformCustomersPage(p));
+        const newCursor = offset + pages.length;
+        const { held, stats } = await hydrateCustomersBatch({
+          tenantId: job.tenantId,
+          jobId: job.id,
+          leaseToken: job.leaseToken,
+          newCursor,
+          leaseMs: LEASE_MS,
+          contacts,
+        });
+        if (!held) {
+          leaseLost(job.id, "hydrateCustomersBatch");
+          return;
+        }
+        offset = newCursor;
+        logger.debug(
+          { jobId: job.id, offset, grandTotal, stats },
+          "Migration hydrate customers batch committed",
+        );
       }
-
-      const conversations = batch.map((p) => transformConversationDetail(p, agentMap));
-      const newCursor = offset + batch.length;
-      const { held, stats } = await hydrateConversationBatch({
-        tenantId: job.tenantId,
-        jobId: job.id,
-        leaseToken: job.leaseToken,
-        newCursor,
-        leaseMs: LEASE_MS,
-        conversations,
-      });
-      if (!held) {
-        leaseLost(job.id, "hydrateConversationBatch");
-        return;
-      }
-      offset = newCursor;
-      logger.debug({ jobId: job.id, offset, total, stats }, "Migration hydrate batch committed");
     }
 
     // Budget exhausted — the cursor is already durably persisted in the last

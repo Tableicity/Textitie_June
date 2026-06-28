@@ -8,7 +8,11 @@ import {
   contactsTable,
 } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
-import type { NormalizedConversation, MigrationSummary } from "./migrationTransform";
+import type {
+  NormalizedConversation,
+  NormalizedContact,
+  MigrationSummary,
+} from "./migrationTransform";
 
 /**
  * Advisory-lock key for migration write bursts (hydrate batches, flip-live,
@@ -468,33 +472,57 @@ export async function readAgentsPayload(jobId: number): Promise<unknown | null> 
   return row ? row.payload : null;
 }
 
-/** Total staged conversation_posts rows — the verify/hydrate completion bound. */
-export async function countConversationPosts(jobId: number): Promise<number> {
+/**
+ * Total staged ROWS for an entity (a COUNT of migration_raw_data rows, NOT the
+ * SUM of record_count). For conversation_posts one row = one conversation; for
+ * customers one row = one address-book PAGE. This row granularity is the unit the
+ * verify/hydrate OFFSET cursor advances by, so the count must match it.
+ */
+export async function countStagedEntityRows(
+  jobId: number,
+  entity: string,
+): Promise<number> {
   const result = await db.execute(sql`
     SELECT COUNT(*)::int AS n
     FROM migration_raw_data
-    WHERE job_id = ${jobId} AND entity = 'conversation_posts'
+    WHERE job_id = ${jobId} AND entity = ${entity}
   `);
   return Number(rows(result)[0]?.n ?? 0);
 }
 
 /**
- * A stable, ordered window of staged conversation-detail payloads. Ordered by id
- * so the OFFSET cursor is deterministic across ticks/resumes.
+ * A stable, ordered window of staged payloads for an entity. Ordered by id so the
+ * OFFSET cursor is deterministic across ticks/resumes — staged rows are immutable
+ * after extraction, so the order never shifts under a resuming cursor.
  */
-export async function readConversationPostsBatch(
+export async function readStagedEntityPayloads(
   jobId: number,
+  entity: string,
   offset: number,
   limit: number,
 ): Promise<unknown[]> {
   const result = await db.execute(sql`
     SELECT payload
     FROM migration_raw_data
-    WHERE job_id = ${jobId} AND entity = 'conversation_posts'
+    WHERE job_id = ${jobId} AND entity = ${entity}
     ORDER BY id ASC
     LIMIT ${limit} OFFSET ${offset}
   `);
   return rows(result).map((r) => r.payload);
+}
+
+/** Total staged conversation_posts rows — the verify/hydrate conversation bound. */
+export async function countConversationPosts(jobId: number): Promise<number> {
+  return countStagedEntityRows(jobId, "conversation_posts");
+}
+
+/** A stable, ordered window of staged conversation-detail payloads. */
+export async function readConversationPostsBatch(
+  jobId: number,
+  offset: number,
+  limit: number,
+): Promise<unknown[]> {
+  return readStagedEntityPayloads(jobId, "conversation_posts", offset, limit);
 }
 
 /**
@@ -568,6 +596,26 @@ function emptyHydrateStats(): HydrateBatchStats {
     contactsLinkedLive: 0,
     conversationsUpserted: 0,
     messagesInserted: 0,
+    skippedNoPhone: 0,
+  };
+}
+
+export interface HydrateContactsStats {
+  /** New quarantined contacts inserted (no prior phone-keyed row). */
+  contactsCreated: number;
+  /** Existing phone-keyed quarantined contacts whose tags/name/email were merged. */
+  contactsMerged: number;
+  /** Phones already owned by a LIVE contact -> skipped (no quarantined dup). */
+  contactsLinkedLive: number;
+  /** Address-book records with no phone -> cannot import (contacts.phone NOT NULL). */
+  skippedNoPhone: number;
+}
+
+function emptyContactsStats(): HydrateContactsStats {
+  return {
+    contactsCreated: 0,
+    contactsMerged: 0,
+    contactsLinkedLive: 0,
     skippedNoPhone: 0,
   };
 }
@@ -741,6 +789,127 @@ export async function hydrateConversationBatch(opts: {
           });
         stats.messagesInserted += conv.messages.length;
       }
+    }
+
+    await tx.execute(sql`
+      UPDATE migration_jobs
+      SET page_cursor = ${newCursor},
+          leased_until = now() + make_interval(secs => ${leaseMs} / 1000.0),
+          attempts = 0,
+          last_error = NULL,
+          updated_at = now()
+      WHERE id = ${jobId} AND lease_token = ${leaseToken}
+    `);
+    return { held: true, stats };
+  });
+}
+
+/**
+ * Promote one bounded batch of normalized address-book contacts into QUARANTINED
+ * live `contacts` rows, in a single advisory-locked, lease-fenced transaction
+ * that also advances the resume cursor — exactly mirroring hydrateConversationBatch
+ * so the two phases share the same crash/stale-worker safety. Per contact:
+ *   - no phone           -> skip (contacts.phone is NOT NULL); counted.
+ *   - LIVE contact owns the phone -> link semantics: skip (never create a
+ *     quarantined dup, never touch the live row); counted as contactsLinkedLive.
+ *   - else upsert ONE quarantined contact keyed by import_external_id
+ *     `phone:<phone>` — the SAME key conversation hydrate uses, so a customer that
+ *     ALSO has a conversation collapses onto one row. First write inserts; a later
+ *     run (or a conversation that already created the row) NON-destructively merges:
+ *     COALESCE keeps any existing name/email, tags are UNIONed (deduped). Tags are
+ *     only rewritten when the address book carries tags, preserving the NULL-when-
+ *     empty convention. Idempotent: a re-run merges the same data to a fixed point.
+ */
+export async function hydrateCustomersBatch(opts: {
+  tenantId: number;
+  jobId: number;
+  leaseToken: string;
+  newCursor: number;
+  leaseMs: number;
+  contacts: NormalizedContact[];
+}): Promise<{ held: boolean; stats: HydrateContactsStats }> {
+  const { tenantId, jobId, leaseToken, newCursor, leaseMs, contacts } = opts;
+  return await db.transaction(async (tx) => {
+    const lease = await tx.execute(sql`
+      SELECT 1 AS ok
+      FROM migration_jobs
+      WHERE id = ${jobId} AND lease_token = ${leaseToken} AND status = 'hydrating'
+      FOR UPDATE
+    `);
+    if (rows(lease).length === 0) {
+      return { held: false, stats: emptyContactsStats() };
+    }
+    // Same per-tenant migration write lock conversation hydrate uses, so the two
+    // phases (and flip-live/discard) never interleave. Transaction-scoped.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${tenantId}, ${MIGRATION_LOCK})`);
+
+    const stats = emptyContactsStats();
+    for (const contact of contacts) {
+      const phone = contact.phone;
+      if (!phone) {
+        stats.skippedNoPhone += 1;
+        continue;
+      }
+
+      const live = await tx
+        .select({ id: contactsTable.id })
+        .from(contactsTable)
+        .where(
+          and(
+            eq(contactsTable.tenantId, tenantId),
+            eq(contactsTable.phone, phone),
+            eq(contactsTable.isQuarantined, false),
+          ),
+        )
+        .limit(1);
+      if (live[0]) {
+        stats.contactsLinkedLive += 1;
+        continue;
+      }
+
+      const importId = `phone:${phone}`;
+      const inserted = await tx
+        .insert(contactsTable)
+        .values({
+          tenantId,
+          phone,
+          name: contact.name,
+          email: contact.email,
+          tags: contact.tags.length ? contact.tags : null,
+          isQuarantined: true,
+          migrationJobId: jobId,
+          importExternalId: importId,
+        })
+        .onConflictDoNothing({
+          target: [contactsTable.tenantId, contactsTable.importExternalId],
+        })
+        .returning({ id: contactsTable.id });
+      if (inserted[0]) {
+        stats.contactsCreated += 1;
+        continue;
+      }
+
+      // Row already exists (conversation hydrate or a prior customers run).
+      // Non-destructively merge: keep existing name/email, UNION the tags. Only
+      // touch `tags` when the address book actually carries some, so a tagless
+      // customer never clobbers an existing NULL into an empty array.
+      const tagUnion = contact.tags.length
+        ? sql`tags = ARRAY(
+              SELECT DISTINCT e
+              FROM unnest(COALESCE(tags, ARRAY[]::text[]) || ${contact.tags}::text[]) AS e
+            ),`
+        : sql``;
+      await tx.execute(sql`
+        UPDATE contacts
+        SET name = COALESCE(name, ${contact.name}::text),
+            email = COALESCE(email, ${contact.email}::text),
+            ${tagUnion}
+            updated_at = now()
+        WHERE tenant_id = ${tenantId}
+          AND import_external_id = ${importId}
+          AND is_quarantined = true
+      `);
+      stats.contactsMerged += 1;
     }
 
     await tx.execute(sql`

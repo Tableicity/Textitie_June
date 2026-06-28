@@ -69,6 +69,10 @@ type SummaryView = {
     aliasCollapsed?: number;
     missingPhone?: number;
     mergedIntoLive?: number;
+    addressBook?: number;
+    standalone?: number;
+    addressBookMissingPhone?: number;
+    addressBookDuplicate?: number;
   };
   anomalies?: { type: string; ref: string | null; detail: string }[];
   anomalyCount?: number;
@@ -151,6 +155,16 @@ function SummaryReview({ summary }: { summary: SummaryView }) {
     { label: "alias collapsed", value: summary.contacts?.aliasCollapsed },
     { label: "missing phone", value: summary.contacts?.missingPhone },
     { label: "merged into live", value: summary.contacts?.mergedIntoLive },
+    { label: "address book", value: summary.contacts?.addressBook },
+    { label: "standalone", value: summary.contacts?.standalone },
+    {
+      label: "address book no phone",
+      value: summary.contacts?.addressBookMissingPhone,
+    },
+    {
+      label: "address book dupes",
+      value: summary.contacts?.addressBookDuplicate,
+    },
   ].filter((s) => typeof s.value === "number");
 
   const anomalies = summary.anomalies ?? [];
