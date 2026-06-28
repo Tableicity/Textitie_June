@@ -436,4 +436,100 @@ describe("runInboundAiPipeline — Co-Pilot triage router", () => {
     );
     expect(live).toHaveLength(0);
   });
+
+  // -------------------------------------------------------------------------
+  // CO-PILOT pending-inbound window. A customer who stacks several messages
+  // faster than the agent sends used to lose every draft but the last (one
+  // ai-state row per conversation; a newer turn overwrites the older drafted
+  // row). The Co-Pilot path now composes its draft from EVERY unanswered inbound
+  // since the last outbound reply, so the single surviving draft addresses them
+  // all. Auto-Pilot is untouched (it answers only the newest inbound).
+  // -------------------------------------------------------------------------
+  it("Co-Pilot folds every unanswered inbound since the last outbound into one draft body", async () => {
+    // beforeEach already seeded an inbound "hello" (older). Add a NEWER inbound;
+    // with no outbound between them, BOTH are unanswered and must fold together.
+    const [newer] = await db
+      .insert(messagesTable)
+      .values({
+        conversationId,
+        direction: "inbound",
+        body: "second question",
+        read: false,
+      })
+      .returning({ id: messagesTable.id });
+
+    await run({ inboundMessageId: newer.id, messageBody: "second question" });
+
+    const expectedBody = "hello\nsecond question";
+    // The folded window flows into triage, retrieval, AND the Student draft.
+    expect(triageInbound).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(triageInbound).mock.calls[0][0].inboundBody).toBe(
+      expectedBody,
+    );
+    expect(vi.mocked(retrieveClassroomFactsWithMatch).mock.calls[0][1]).toBe(
+      expectedBody,
+    );
+    expect(vi.mocked(studentWhisper).mock.calls[0][0].inboundBody).toBe(
+      expectedBody,
+    );
+  });
+
+  it("Co-Pilot excludes inbounds already answered by a prior outbound (floor = last outbound); single pending body is byte-identical", async () => {
+    // The older "hello" is ANSWERED by an outbound. Only inbounds AFTER that
+    // outbound are pending, so the window collapses to the single newest inbound
+    // and falls back to the verbatim body (byte-for-byte single-question path).
+    await db.insert(messagesTable).values({
+      conversationId,
+      direction: "outbound",
+      body: "answered hello",
+      read: true,
+    });
+    const [newer] = await db
+      .insert(messagesTable)
+      .values({
+        conversationId,
+        direction: "inbound",
+        body: "new question",
+        read: false,
+      })
+      .returning({ id: messagesTable.id });
+
+    await run({ inboundMessageId: newer.id, messageBody: "new question" });
+
+    expect(vi.mocked(triageInbound).mock.calls[0][0].inboundBody).toBe(
+      "new question",
+    );
+    expect(vi.mocked(studentWhisper).mock.calls[0][0].inboundBody).toBe(
+      "new question",
+    );
+  });
+
+  it("Auto-Pilot is unaffected by the Co-Pilot pending window (answers only the newest inbound)", async () => {
+    // A stacked older inbound must NOT fold into Auto-Pilot's input: it answers
+    // closed-book from the single newest inbound only.
+    const [newer] = await db
+      .insert(messagesTable)
+      .values({
+        conversationId,
+        direction: "inbound",
+        body: "newest autopilot q",
+        read: false,
+      })
+      .returning({ id: messagesTable.id });
+
+    await run({
+      tenant: { ...tenant, engagementMode: "autopilot" },
+      inboundMessageId: newer.id,
+      messageBody: "newest autopilot q",
+    });
+
+    expect(triageInbound).not.toHaveBeenCalled();
+    // Auto-Pilot classifies the RAW newest inbound (line: classifyQueryCategory
+    // (messageBody)) — never a folded ("\n"-joined) Co-Pilot window.
+    const classifyBodies = vi
+      .mocked(classifyQueryCategory)
+      .mock.calls.map(([b]) => b);
+    expect(classifyBodies).toContain("newest autopilot q");
+    expect(classifyBodies.every((b) => !b.includes("\n"))).toBe(true);
+  });
 });

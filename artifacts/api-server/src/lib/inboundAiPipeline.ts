@@ -1,12 +1,13 @@
 import {
   db,
   conversationsTable,
+  messagesTable,
   auditLogsTable,
   aiAutoRepliesTable,
   type ClassroomFact,
   type Tenant,
 } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gt, lt, lte, desc } from "drizzle-orm";
 import { postChatwootMessage } from "./chatwoot";
 import { studentWhisper, studentFlashDraft } from "@workspace/ai-student";
 import {
@@ -51,6 +52,89 @@ import { logger } from "./logger";
 // freshly read upstream.
 function extrasFor(tenant: Tenant): string[] {
   return parseCompetitorNames(tenant.competitorNamesExtra);
+}
+
+// Max unanswered inbound messages folded into a single Co-Pilot draft. "Since the
+// last outbound reply" already bounds this in normal use; the cap only defends a
+// pathological all-inbound thread from bloating the prompt.
+const COPILOT_PENDING_WINDOW_MAX = 12;
+
+/**
+ * Co-Pilot draft input = every UNANSWERED inbound message since the last outbound
+ * reply, through (and including) this turn's newest inbound, joined oldest→newest.
+ *
+ * Why: `conversation_ai_states` holds ONE draft per conversation, and a newer
+ * inbound turn is allowed to overwrite an older `drafted` row (the streaming
+ * fence permits it). When a customer stacks questions faster than the agent sends,
+ * each new turn clobbered the prior draft, so earlier questions silently went
+ * unanswered. Composing from the full pending window makes the single surviving
+ * (newest-turn) draft address them all.
+ *
+ * Best-effort: ANY failure falls back to the single newest body so a draft is
+ * never blocked, and a single pending inbound (the common case) returns
+ * `fallbackBody` unchanged so one-question behavior is byte-for-byte identical.
+ * Co-Pilot only — Auto-Pilot's input is never routed through here.
+ */
+async function buildCopilotPendingBody(
+  conversationId: number,
+  inboundMessageId: number,
+  fallbackBody: string,
+  tenantSlug: string,
+): Promise<string> {
+  try {
+    // Floor = the most recent OUTBOUND message before this inbound (the last time
+    // the conversation was answered); 0 when the agent has never replied.
+    const lastOut = await db
+      .select({ id: messagesTable.id })
+      .from(messagesTable)
+      .where(
+        and(
+          eq(messagesTable.conversationId, conversationId),
+          eq(messagesTable.direction, "outbound"),
+          lt(messagesTable.id, inboundMessageId),
+        ),
+      )
+      .orderBy(desc(messagesTable.id))
+      .limit(1);
+    const floorId = lastOut[0]?.id ?? 0;
+    // The unanswered inbound window. Pull newest-first under the cap, then restore
+    // chronological order so a pathological all-inbound thread can't bloat the
+    // prompt yet a normal short burst still reads naturally.
+    const pendingDesc = await db
+      .select({ body: messagesTable.body })
+      .from(messagesTable)
+      .where(
+        and(
+          eq(messagesTable.conversationId, conversationId),
+          eq(messagesTable.direction, "inbound"),
+          gt(messagesTable.id, floorId),
+          lte(messagesTable.id, inboundMessageId),
+        ),
+      )
+      .orderBy(desc(messagesTable.id))
+      .limit(COPILOT_PENDING_WINDOW_MAX);
+    const bodies = pendingDesc
+      .map((m) => (m.body ?? "").trim())
+      .filter((b) => b.length > 0)
+      .reverse();
+    if (bodies.length <= 1) return fallbackBody;
+    logger.info(
+      { tenantSlug, conversationId, inboundMessageId, pendingCount: bodies.length },
+      "SAMA Co-Pilot: composing draft from pending inbound window",
+    );
+    return bodies.join("\n");
+  } catch (err) {
+    logger.warn(
+      {
+        tenantSlug,
+        conversationId,
+        inboundMessageId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "SAMA Co-Pilot: pending-window build failed; using single inbound body",
+    );
+    return fallbackBody;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -698,6 +782,25 @@ export async function runInboundAiPipeline(
       return;
     }
 
+    // CO-PILOT pending-window draft input. `conversation_ai_states` holds ONE
+    // draft per conversation, and a newer inbound turn may overwrite an older
+    // `drafted` row, so a customer who stacks questions faster than the agent
+    // sends used to lose every draft but the last — earlier questions went
+    // unanswered. Compose from EVERY unanswered inbound since the last outbound
+    // reply (through this newest inbound) so the single surviving draft addresses
+    // them all. The newest inbound still anchors latestInboundMessageId / the turn
+    // key / the fence. Auto-Pilot is untouched (it uses ctx.messageBody and
+    // returns at its seam below); only Co-Pilot pays the extra read.
+    const copilotBody =
+      engagementMode === "copilot"
+        ? await buildCopilotPendingBody(
+            conversationId,
+            inboundMessageId,
+            messageBody,
+            tenantSlug,
+          )
+        : messageBody;
+
     // Post a PRIVATE whisper draft to Chatwoot (when configured) for the
     // short-circuit Co-Pilot router branches, mirroring the whisper the main
     // draft path posts at the end of the pipeline so Chatwoot-side agents always
@@ -742,7 +845,7 @@ export async function runInboundAiPipeline(
           routerDecision = await triageInbound({
             tenant,
             brandScope,
-            inboundBody: messageBody,
+            inboundBody: copilotBody,
             fromNumber,
           });
         } catch (err) {
@@ -812,7 +915,7 @@ export async function runInboundAiPipeline(
           const flash = await studentFlashDraft({
             tenant,
             fromNumber,
-            inboundBody: messageBody,
+            inboundBody: copilotBody,
             brandScope,
           });
           const flashReply = rebrandAndLog(
@@ -875,7 +978,7 @@ export async function runInboundAiPipeline(
 
     // CO-PILOT path: retrieve Classroom grounding for the draft. (Auto-Pilot
     // returned at the seam above; Manual returned earlier.)
-    const queryCategory = classifyQueryCategory(messageBody);
+    const queryCategory = classifyQueryCategory(copilotBody);
     let facts: ClassroomFact[] = [];
     // A real FTS hit (every non-stopword term present in a Classroom fact) is a
     // deterministic grounding signal we trust over the Student's brittle
@@ -886,7 +989,7 @@ export async function runInboundAiPipeline(
     try {
       const retrieval = await retrieveClassroomFactsWithMatch(
         tenant.id,
-        messageBody,
+        copilotBody,
         { category: queryCategory },
       );
       facts = retrieval.facts;
@@ -911,7 +1014,7 @@ export async function runInboundAiPipeline(
     const draft = await studentWhisper({
       tenant,
       fromNumber,
-      inboundBody: messageBody,
+      inboundBody: copilotBody,
       classroomContext,
     });
     logger.info(

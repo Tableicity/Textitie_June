@@ -209,6 +209,10 @@ export default function Inbox() {
   // Tracks the last Co-Pilot draft we auto-inserted, so we prefill a draft once
   // per distinct draft and never re-fight an agent who cleared or edited it.
   const appliedDraftKeyRef = useRef<string | null>(null);
+  // The exact draft body we last auto-inserted, so a newer turn's draft can
+  // replace an UNTOUCHED auto-draft (a customer who stacks messages supersedes
+  // the older one) without ever clobbering text the agent typed or edited.
+  const appliedDraftBodyRef = useRef<string | null>(null);
   const COMPOSE_MAX_CHARS = 1000;
   const COMMON_EMOJIS = [
     "😀","😂","😉","😍","🥰","😎","🤔","🙏",
@@ -493,6 +497,7 @@ export default function Inbox() {
     mutation: {
       onSuccess: () => {
         setComposeText("");
+        appliedDraftBodyRef.current = null;
         if (selectedId) {
           // Mark the inbound turn we just answered as consumed. A slow Co-Pilot
           // finalize/stage can land a draft for this same turn a beat after the
@@ -754,12 +759,14 @@ export default function Inbox() {
 
   const insertAiDraft = useCallback(() => {
     if (!aiState?.draftBody || !selectedId) return;
-    setComposeText(aiState.draftBody.slice(0, COMPOSE_MAX_CHARS));
+    const next = aiState.draftBody.slice(0, COMPOSE_MAX_CHARS);
+    setComposeText(next);
     appliedDraftKeyRef.current = aiTurnKey(
       selectedId,
       aiState.latestInboundMessageId,
       aiState.updatedAt,
     );
+    appliedDraftBodyRef.current = next;
     inputRef.current?.focus();
   }, [
     aiState?.draftBody,
@@ -782,9 +789,18 @@ export default function Inbox() {
       aiState?.updatedAt,
     );
     if (appliedDraftKeyRef.current === key) return;
-    if (composeText.trim().length > 0) return;
-    setComposeText(aiDraftBody.slice(0, COMPOSE_MAX_CHARS));
+    // Replace an UNTOUCHED auto-applied draft when a newer inbound turn supersedes
+    // it (a customer who stacks questions), but NEVER overwrite text the agent
+    // typed or edited: only an empty composer, or one still exactly equal to the
+    // last draft we auto-inserted, is safe to swap.
+    const isReplaceable =
+      composeText.trim().length === 0 ||
+      composeText === appliedDraftBodyRef.current;
+    if (!isReplaceable) return;
+    const next = aiDraftBody.slice(0, COMPOSE_MAX_CHARS);
+    setComposeText(next);
     appliedDraftKeyRef.current = key;
+    appliedDraftBodyRef.current = next;
   }, [
     selectedId,
     aiDraftReady,

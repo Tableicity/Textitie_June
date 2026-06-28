@@ -43,3 +43,24 @@ Co-Pilot path to the unconditional upsert.
 human replies before ANY row exists — the human-handled mark is UPDATE-only
 (mirrors supersede's "don't create a meaningless row"), so the early INSERT can
 still surface a draft. Co-Pilot-only (no auto-send), next inbound supersedes it.
+
+## Stacked inbounds → compose the Co-Pilot draft from the full pending window
+Same one-row-per-conversation cause, different symptom: when a customer sends
+several inbounds faster than the agent sends a reply, each new turn's draft
+overwrites the prior `drafted` row, so EARLIER questions silently lose their draft
+("first message never got an answer"). The fence is working as designed — it's the
+single-row model, not a bug.
+**Rule:** the Co-Pilot draft input is composed from EVERY unanswered inbound since
+the last outbound reply (floor = last outbound id; window = inbound ids in
+(floor, currentInbound], capped, chronological), so the single surviving
+newest-turn draft answers them all. The newest inbound still owns
+`latestInboundMessageId` / the turn key / the fence — do NOT re-anchor it.
+**Why:** preserves all the concurrency invariants above (one live draft, fenced)
+while making that draft cover the backlog. **Auto-Pilot is excluded** — it answers
+only the newest inbound (closed-book, per-turn breaker accounting); folding a
+window into it would corrupt breaker/idempotency semantics.
+**How to apply:** keep the window build Co-Pilot-only, best-effort (any failure →
+single newest body), and byte-identical for the 1-pending common case. On the
+client, an UNTOUCHED auto-applied draft (composer empty OR exactly equal to the
+last auto-inserted body) may be replaced by a newer turn's draft, but agent-typed/
+edited text is never clobbered.
