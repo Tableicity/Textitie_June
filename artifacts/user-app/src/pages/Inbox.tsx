@@ -34,6 +34,7 @@ import type { UpdateConversationInputEngagementModeOverride } from "@workspace/a
 import { useSearch, useLocation } from "wouter";
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
+import InboxSetupBanner from "@/components/InboxSetupBanner";
 import ReminderBell from "@/components/ReminderBell";
 import { format } from "date-fns";
 import {
@@ -995,6 +996,9 @@ export default function Inbox() {
 
       {/* Right Panel: Selected Conversation */}
       <div className="flex-1 flex flex-col bg-white min-w-0">
+        {/* Getting-started bubble stepper — sits above the conversation header
+            until the tenant has a department + an assigned number. */}
+        <InboxSetupBanner />
         {selectedId ? (
           <>
             {/* Header */}
