@@ -4,6 +4,7 @@ import {
   PhoneCall,
   BadgeCheck,
   Check,
+  BrainCircuit,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -95,11 +96,22 @@ export default function InboxSetupBanner() {
         {/* Column 1 — reserved for company branding. Ends at the conversation-
             list panel edge (w-80 / 320px) with a thin grey vertical divider. */}
         <div
-          className="flex w-[296px] flex-shrink-0 items-center border-r border-slate-300/50 pr-6"
+          className="flex w-[296px] flex-shrink-0 items-center gap-3 border-r border-slate-300/50 pr-6"
           data-testid="banner-branding-column"
-          aria-hidden
         >
-          {/* Company branding goes here */}
+          <BrainCircuit
+            className="h-9 w-9 flex-shrink-0 text-[#00d2ff]"
+            aria-hidden
+          />
+          <div className="flex min-w-0 flex-col leading-none">
+            <span className="text-2xl font-bold leading-[1.2]">
+              <span className="text-white">Text</span>
+              <span className="text-[#00d2ff]">Itie</span>
+            </span>
+            <span className="mt-0.5 whitespace-nowrap text-xs font-normal tracking-[0.5px] text-[#e2e8f0]">
+              Agentic AI Smart Messaging
+            </span>
+          </div>
         </div>
 
         {/* Column 2 — getting-started prompt + bubble stepper, left-aligned to
