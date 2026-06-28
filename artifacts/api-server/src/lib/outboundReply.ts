@@ -5,6 +5,7 @@ import { guardOutboundFrom } from "./outboundFrom";
 import { getSender } from "./senders";
 import type { SendStatus } from "./senders/types";
 import { rebrandAndLog } from "./brandSafety";
+import { getTenantExtraCompetitors } from "./brandSafetyStore";
 
 type MessageRow = typeof messagesTable.$inferSelect;
 
@@ -69,13 +70,20 @@ export async function sendConversationReply(opts: {
     conductorAuthorized,
   } = opts;
   const runCompliance = opts.runComplianceCheck ?? true;
-  const outboundBody = (opts.scrubBrand ?? false)
-    ? rebrandAndLog(body, {
+  let outboundBody = body;
+  if (opts.scrubBrand ?? false) {
+    const extraCompetitors = await getTenantExtraCompetitors(tenantId);
+    outboundBody = rebrandAndLog(
+      body,
+      {
         tenantId,
         conversationId,
+        surface: "ai_reply",
         site: "sendConversationReply",
-      })
-    : body;
+      },
+      { extraCompetitors },
+    );
+  }
 
   if (runCompliance) {
     const compliance = await checkOutboundCompliance(tenantId, tenantSlug, contactPhone);

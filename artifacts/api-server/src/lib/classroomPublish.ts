@@ -11,7 +11,8 @@ import {
 } from "@workspace/db";
 import { adjudicateForPush } from "./librarian";
 import { CLASSROOM_PUSH_LOCK, estimateTokens } from "./knowledge";
-import { rebrandText } from "./brandSafety";
+import { rebrandText, rebrandAndLog } from "./brandSafety";
+import { getTenantExtraCompetitors } from "./brandSafetyStore";
 
 /**
  * Shared Classroom snapshot publisher.
@@ -66,6 +67,9 @@ export async function publishClassroomSnapshot(opts: {
 }): Promise<PublishClassroomOutcome> {
   const { tenantId, factsToPublish, markSessions } = opts;
   const summary = opts.summary ?? null;
+  // Per-tenant EXTRA competitor names layered on the platform-base list, so the
+  // groundable Classroom is scrubbed against this tenant's own competitors too.
+  const extraCompetitors = await getTenantExtraCompetitors(tenantId);
 
   // Brand-safety GATE (Layer 2): rewrite competitor names to the canonical brand
   // BEFORE Librarian adjudication, so dedup/conflict logic compares canonical
@@ -75,8 +79,8 @@ export async function publishClassroomSnapshot(opts: {
   // the agent has read-only access to).
   const cleanedFacts = factsToPublish.map((f) => ({
     ...f,
-    statement: rebrandText(f.statement).text,
-    sourceLabel: rebrandText(f.sourceLabel).text,
+    statement: rebrandText(f.statement, extraCompetitors).text,
+    sourceLabel: rebrandText(f.sourceLabel, extraCompetitors).text,
   }));
 
   // Librarian pass — collapse near-duplicate/refinement facts and FLAG
@@ -99,8 +103,15 @@ export async function publishClassroomSnapshot(opts: {
   // ever carry a competitor name. Recompute token counts when the statement
   // actually changed so the version aggregate + per-fact counts stay accurate.
   const publish = verdict.publish.map((f) => {
-    const statement = rebrandText(f.statement).text;
-    const sourceLabel = rebrandText(f.sourceLabel).text;
+    // Record the catch ONLY here (the final, published statement that the
+    // closed-book Classroom grounds on) so the pre-adjudication scrub above does
+    // not double-count the same dirty fact in the leak feed.
+    const statement = rebrandAndLog(
+      f.statement,
+      { tenantId, surface: "knowledge", site: "classroom_publish" },
+      { extraCompetitors },
+    );
+    const sourceLabel = rebrandText(f.sourceLabel, extraCompetitors).text;
     const tokenCount =
       statement === f.statement ? (f.tokenCount ?? 0) : estimateTokens(statement);
     return { ...f, statement, sourceLabel, tokenCount };

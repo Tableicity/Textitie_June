@@ -41,6 +41,7 @@ import {
 } from "../lib/knowledge";
 import { publishClassroomSnapshot } from "../lib/classroomPublish";
 import { rebrandText } from "../lib/brandSafety";
+import { getTenantExtraCompetitors } from "../lib/brandSafetyStore";
 import { professorClient, PROFESSOR_MODEL } from "../lib/grokClient";
 
 /**
@@ -249,9 +250,11 @@ async function ingestAndRespond(
     session = await getSession(opts.tenantId, opts.sessionId);
     if (session && session.status === "active") {
       try {
+        const extraCompetitors = await getTenantExtraCompetitors(opts.tenantId);
         const { facts, tokensUsed } = await extractFacts(
           opts.extractedText,
           doc.title,
+          extraCompetitors,
         );
         if (facts.length > 0) {
           await db.insert(absorbedFactsTable).values(
@@ -259,7 +262,7 @@ async function ingestAndRespond(
               tenantId: opts.tenantId,
               sessionId: session!.id,
               documentId: doc.id,
-              sourceLabel: rebrandText(doc.title).text,
+              sourceLabel: rebrandText(doc.title, extraCompetitors).text,
               statement: f.statement,
               category: f.category,
               status: "draft",

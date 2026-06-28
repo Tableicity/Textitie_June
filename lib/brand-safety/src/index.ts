@@ -12,12 +12,17 @@
  * scripts. The server wraps it with structured leak logging in
  * `artifacts/api-server/src/lib/brandSafety.ts`.
  *
- * Config (both optional, read live from the environment):
- *   - SAMA_BRAND_NAME       canonical brand (default "Textitie").
- *   - SAMA_COMPETITOR_NAMES comma-separated names to rewrite
+ * Config:
+ *   - SAMA_BRAND_NAME       canonical brand (default "Textitie"), read live from
+ *                           the environment. Platform-wide.
+ *   - SAMA_COMPETITOR_NAMES comma-separated PLATFORM-BASE names to rewrite
  *                           (default "TextLine,TextLines"). Matching is
  *                           case-insensitive, so a single "TextLine" entry
  *                           already covers "textline", "TEXTLINE", etc.
+ *   - extraCompetitors      optional PER-TENANT names layered on top of the base
+ *                           list, passed by the caller (e.g. a tenant that
+ *                           migrated from a different competitor). Merged with
+ *                           the base list, deduped case-insensitively.
  */
 
 const DEFAULT_BRAND = "Textitie";
@@ -31,16 +36,40 @@ export function brandName(): string {
   return v && v.length > 0 ? v : DEFAULT_BRAND;
 }
 
+/**
+ * Parse a comma-separated competitor list into a trimmed, non-empty string
+ * array. Shared by the env reader and the per-tenant CSV column reader so both
+ * normalize identically. Safe on null/undefined.
+ */
+export function parseCompetitorNames(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 export function competitorNames(): string[] {
-  const raw = process.env["SAMA_COMPETITOR_NAMES"]?.trim();
-  if (raw && raw.length > 0) {
-    const list = raw
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    if (list.length > 0) return list;
+  const list = parseCompetitorNames(process.env["SAMA_COMPETITOR_NAMES"]);
+  return list.length > 0 ? list : DEFAULT_COMPETITORS;
+}
+
+/**
+ * Merge the platform-base competitor list with optional per-tenant extras,
+ * deduped case-insensitively (the base wins on a casing tie).
+ */
+function mergeCompetitors(extra?: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const name of [...competitorNames(), ...(extra ?? [])]) {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
   }
-  return DEFAULT_COMPETITORS;
+  return out;
 }
 
 function escapeRegex(s: string): string {
@@ -53,10 +82,8 @@ function escapeRegex(s: string): string {
  * between `rebrandText` and `containsCompetitor`) and null when there are no
  * competitor names configured.
  */
-function buildPattern(): RegExp | null {
-  const names = competitorNames()
-    .map((n) => n.trim())
-    .filter((n) => n.length > 0)
+function buildPattern(extra?: string[]): RegExp | null {
+  const names = mergeCompetitors(extra)
     // Longest-first so a more specific variant (e.g. "TextLines") is tried
     // before a prefix of it ("TextLine") at the same position.
     .sort((a, b) => b.length - a.length)
@@ -72,15 +99,19 @@ function buildPattern(): RegExp | null {
  * Word-boundaried and case-insensitive; the trailing possessive/punctuation is
  * preserved ("TextLine's" → "Textitie's"). Idempotent. Safe on null/undefined.
  *
+ * @param extraCompetitors optional per-tenant names layered on the base list.
  * @returns the rewritten text and the number of substitutions made (0 = clean).
  */
-export function rebrandText(input: string | null | undefined): {
+export function rebrandText(
+  input: string | null | undefined,
+  extraCompetitors?: string[],
+): {
   text: string;
   replacements: number;
 } {
   const original = input ?? "";
   if (original.length === 0) return { text: original, replacements: 0 };
-  const pattern = buildPattern();
+  const pattern = buildPattern(extraCompetitors);
   if (!pattern) return { text: original, replacements: 0 };
   const brand = brandName();
   let replacements = 0;
@@ -92,10 +123,13 @@ export function rebrandText(input: string | null | undefined): {
 }
 
 /** True if `input` still contains a configured competitor name. */
-export function containsCompetitor(input: string | null | undefined): boolean {
+export function containsCompetitor(
+  input: string | null | undefined,
+  extraCompetitors?: string[],
+): boolean {
   const text = input ?? "";
   if (text.length === 0) return false;
-  const pattern = buildPattern();
+  const pattern = buildPattern(extraCompetitors);
   if (!pattern) return false;
   return pattern.test(text);
 }

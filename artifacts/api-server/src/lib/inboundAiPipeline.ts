@@ -38,10 +38,20 @@ import {
 } from "./aiStateStore";
 import { sendConversationReply } from "./outboundReply";
 import { rebrandText, rebrandAndLog } from "./brandSafety";
+import { parseCompetitorNames } from "@workspace/brand-safety";
 import { checkOutboundCompliance } from "./compliance";
 import { recordMessageUsage } from "./stripe-stub";
 import { eventBus } from "./eventBus";
 import { logger } from "./logger";
+
+// Per-tenant EXTRA competitor names (layered on the platform-base list), parsed
+// from the tenant row the worker already loaded — so brand-safety scrubbing of
+// every AI draft/reply in this pipeline also catches names specific to this
+// tenant (e.g. the competitor they migrated from). No extra query: `tenant` is
+// freshly read upstream.
+function extrasFor(tenant: Tenant): string[] {
+  return parseCompetitorNames(tenant.competitorNamesExtra);
+}
 
 // ---------------------------------------------------------------------------
 // The inbound AI engagement pipeline (Manual / Co-Pilot / Auto-Pilot), lifted
@@ -214,11 +224,17 @@ async function runAutoPilotFailOpenTurn(
         inboundBody: messageBody,
         classroomContext,
       });
-      const reply = rebrandAndLog(draft.draftReply.trim(), {
-        tenantSlug,
-        conversationId,
-        site: "autopilot_answer",
-      });
+      const reply = rebrandAndLog(
+        draft.draftReply.trim(),
+        {
+          tenantId: tenant.id,
+          tenantSlug,
+          conversationId,
+          surface: "ai_reply",
+          site: "autopilot_answer",
+        },
+        { extraCompetitors: extrasFor(tenant) },
+      );
       if (draft.status === "drafted" && reply.length > 0) {
         answerText = reply;
       } else {
@@ -757,7 +773,14 @@ export async function runInboundAiPipeline(
           // a human to review/send. Nothing grounded, nothing learned.
           const declineBody = rebrandAndLog(
             routerDecision!.declineMessage.trim(),
-            { tenantSlug, conversationId, site: "router_decline" },
+            {
+              tenantId: tenant.id,
+              tenantSlug,
+              conversationId,
+              surface: "ai_reply",
+              site: "router_decline",
+            },
+            { extraCompetitors: extrasFor(tenant) },
           );
           const written = await stageCopilotDraftForInbound({
             tenantId: tenant.id,
@@ -792,11 +815,17 @@ export async function runInboundAiPipeline(
             inboundBody: messageBody,
             brandScope,
           });
-          const flashReply = rebrandAndLog(flash.draftReply.trim(), {
-            tenantSlug,
-            conversationId,
-            site: "student_flash",
-          });
+          const flashReply = rebrandAndLog(
+            flash.draftReply.trim(),
+            {
+              tenantId: tenant.id,
+              tenantSlug,
+              conversationId,
+              surface: "ai_reply",
+              site: "student_flash",
+            },
+            { extraCompetitors: extrasFor(tenant) },
+          );
           const written = await stageCopilotDraftForInbound({
             tenantId: tenant.id,
             conversationId,
@@ -810,7 +839,9 @@ export async function runInboundAiPipeline(
           if (written) {
             eventBus.publish(tenant.id, { type: "ai:state", conversationId });
           }
-          await postCopilotWhisper(rebrandText(flash.whisperBody).text);
+          await postCopilotWhisper(
+            rebrandText(flash.whisperBody, extrasFor(tenant)).text,
+          );
           logger.info(
             {
               tenantSlug,
@@ -911,7 +942,10 @@ export async function runInboundAiPipeline(
     // are untouched (Manual already returned above; Auto-Pilot runs on its own
     // dedicated fail-open path, runAutoPilotFailOpenTurn, dispatched earlier and
     // never reaches this Co-Pilot-only gate).
-    const fallbackPhrase = rebrandText((tenant.fallbackPhrase ?? "").trim()).text;
+    const fallbackPhrase = rebrandText(
+      (tenant.fallbackPhrase ?? "").trim(),
+      extrasFor(tenant),
+    ).text;
     const ungrounded = !draft.kbMatched && !classroomGrounded;
     if (
       engagementMode === "copilot" &&
@@ -945,14 +979,20 @@ export async function runInboundAiPipeline(
     // Conductor) and no longer runs on live inbound traffic, so an ungrounded
     // Co-Pilot inbound simply keeps the Student's (Grok) own draft for a human
     // to review in the composer. Co-Pilot NEVER auto-sends and NEVER learns.
-    const replyText = rebrandAndLog(draft.draftReply.trim(), {
-      tenantSlug,
-      conversationId,
-      site: "copilot_draft",
-    });
+    const replyText = rebrandAndLog(
+      draft.draftReply.trim(),
+      {
+        tenantId: tenant.id,
+        tenantSlug,
+        conversationId,
+        surface: "ai_reply",
+        site: "copilot_draft",
+      },
+      { extraCompetitors: extrasFor(tenant) },
+    );
     const draftSource: AiDraftSource = "student";
     const replyConfidence = draft.confidence;
-    const whisperToPost = rebrandText(draft.whisperBody).text;
+    const whisperToPost = rebrandText(draft.whisperBody, extrasFor(tenant)).text;
 
     // ============ CO-PILOT ============
     // Draft into the composer for a human to edit + send. NEVER auto-sends and

@@ -19,6 +19,7 @@ import {
 import { normalizeCategory, estimateTokens } from "../lib/knowledge";
 import { publishClassroomSnapshot } from "../lib/classroomPublish";
 import { rebrandText } from "../lib/brandSafety";
+import { getTenantExtraCompetitors } from "../lib/brandSafetyStore";
 
 /**
  * Brain ("Beast") manual-pull routes — the "Brain + Human" avenue that mirrors
@@ -147,6 +148,7 @@ router.post(
       );
     const seen = new Set(existing.map((r) => dedupeKey(r.statement)));
 
+    const extraCompetitors = await getTenantExtraCompetitors(tenantId);
     const toInsert: (typeof absorbedFactsTable.$inferInsert)[] = [];
     for (const c of harvest.items) {
       const key = dedupeKey(c.statement);
@@ -157,8 +159,10 @@ router.post(
         sessionId: null,
         messageId: null,
         documentId: null,
-        sourceLabel: c.title ? `[BRAIN] ${rebrandText(c.title).text}` : "[BRAIN]",
-        statement: rebrandText(c.statement).text,
+        sourceLabel: c.title
+          ? `[BRAIN] ${rebrandText(c.title, extraCompetitors).text}`
+          : "[BRAIN]",
+        statement: rebrandText(c.statement, extraCompetitors).text,
         category: normalizeCategory(c.categoryRaw),
         status: "draft",
         source: "brain",

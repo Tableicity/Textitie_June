@@ -83,6 +83,8 @@ afterAll(async () => {
   await db
     .delete(absorbedFactsTable)
     .where(eq(absorbedFactsTable.tenantId, tenantId));
+  // brand_safety_events rows the publish gate recorded cascade-delete with the
+  // tenant, so no explicit cleanup is needed here.
   await db.delete(tenantsTable).where(eq(tenantsTable.id, tenantId));
 });
 

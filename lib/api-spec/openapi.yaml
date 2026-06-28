@@ -3523,6 +3523,87 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/{tenantId}/brand-safety/config:
+    get:
+      operationId: getBrandSafetyConfig
+      tags: [brand-safety]
+      summary: Get the brand-safety config for a tenant (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Platform brand + base competitors, plus this tenant's extras
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandSafetyConfig"
+        "404":
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateBrandSafetyConfig
+      tags: [brand-safety]
+      summary: Update a tenant's extra competitor list (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBrandSafetyConfigInput"
+      responses:
+        "200":
+          description: Updated brand-safety config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrandSafetyConfig"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/brand-safety/events:
+    get:
+      operationId: listBrandSafetyEvents
+      tags: [brand-safety]
+      summary: Recent brand-safety leak events for a tenant, newest first (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Brand-safety leak events, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BrandSafetyEvent"
+
 components:
   schemas:
     HealthStatus:
@@ -3538,6 +3619,59 @@ components:
         error:
           type: string
       required: [error]
+
+    BrandSafetyConfig:
+      type: object
+      properties:
+        brandName:
+          type: string
+          description: Platform-wide canonical brand (read-only; from env)
+        baseCompetitors:
+          type: array
+          items:
+            type: string
+          description: Platform-wide base competitor list (read-only; from env)
+        extraCompetitors:
+          type: array
+          items:
+            type: string
+          description: This tenant's extra competitor names, layered on the base list
+      required: [brandName, baseCompetitors, extraCompetitors]
+
+    UpdateBrandSafetyConfigInput:
+      type: object
+      properties:
+        extraCompetitors:
+          type: array
+          items:
+            type: string
+          description: Replacement list of this tenant's extra competitor names
+      required: [extraCompetitors]
+
+    BrandSafetyEvent:
+      type: object
+      description: One "caught a competitor name" leak event (raw row).
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: integer
+        surface:
+          type: string
+          description: Where the name was caught ("ai_reply" | "knowledge")
+        detail:
+          type: ["string", "null"]
+          description: Short sub-site label (e.g. "copilot_draft", "classroom_publish")
+        replacements:
+          type: integer
+          description: How many competitor names were rewritten
+        residue:
+          type: boolean
+          description: True if a competitor name still remained after scrubbing
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, tenantId, surface, detail, replacements, residue, createdAt]
 
     Region:
       type: string

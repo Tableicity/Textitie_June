@@ -13,6 +13,40 @@ export interface ApiError {
   error: string;
 }
 
+export interface BrandSafetyConfig {
+  /** Platform-wide canonical brand (read-only; from env) */
+  brandName: string;
+  /** Platform-wide base competitor list (read-only; from env) */
+  baseCompetitors: string[];
+  /** This tenant's extra competitor names, layered on the base list */
+  extraCompetitors: string[];
+}
+
+export interface UpdateBrandSafetyConfigInput {
+  /** Replacement list of this tenant's extra competitor names */
+  extraCompetitors: string[];
+}
+
+/**
+ * One "caught a competitor name" leak event (raw row).
+ */
+export interface BrandSafetyEvent {
+  id: number;
+  tenantId: number;
+  /** Where the name was caught ("ai_reply" | "knowledge") */
+  surface: string;
+  /**
+   * Short sub-site label (e.g. "copilot_draft", "classroom_publish")
+   * @nullable
+   */
+  detail: string | null;
+  /** How many competitor names were rewritten */
+  replacements: number;
+  /** True if a competitor name still remained after scrubbing */
+  residue: boolean;
+  createdAt: string;
+}
+
 /**
  * Sovereign data residency region
  */

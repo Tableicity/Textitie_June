@@ -16,6 +16,11 @@ export const tenantsTable = pgTable("tenants", {
   // nullable text (NO DB CHECK) + app-level handling; null = router fails open
   // to the existing Classroom/Professor draft path.
   brandScope: text("brand_scope"),
+  // Per-tenant EXTRA competitor names for the brand-safety scrubber, layered on
+  // top of the platform-base list (SAMA_COMPETITOR_NAMES env). Comma-separated
+  // free text (NO DB CHECK); null/empty = base list only. Managed from the
+  // Conductor's per-tenant Brand Safety tab. See lib/brand-safety.
+  competitorNamesExtra: text("competitor_names_extra"),
   // Conductor-set Co-Pilot holding-phrase draft. When an inbound is
   // tenant-specific but UNGROUNDED (no Classroom/KB match), the inbound pipeline
   // drafts this verbatim into the composer instead of letting the

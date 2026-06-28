@@ -729,6 +729,7 @@ function parseFacts(text: string): ExtractedFact[] {
 export async function extractFacts(
   sourceText: string,
   sourceLabel: string,
+  extraCompetitors: string[] = [],
 ): Promise<{ facts: ExtractedFact[]; tokensUsed: number }> {
   const oai = professorClient();
   if (!oai) return { facts: [], tokensUsed: 0 };
@@ -755,7 +756,7 @@ Maximum 15 facts. Omit fluff, marketing, and navigation text.`,
   // candidate facts (brand-safety Layer 2, ingestion side).
   const facts = parseFacts(text).map((f) => ({
     ...f,
-    statement: rebrandText(f.statement).text,
+    statement: rebrandText(f.statement, extraCompetitors).text,
   }));
   return { facts, tokensUsed: resp.usage?.total_tokens ?? 0 };
 }

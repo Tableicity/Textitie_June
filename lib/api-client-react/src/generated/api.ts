@@ -46,6 +46,8 @@ import type {
   BrainPullInput,
   BrainPullResult,
   BrainPushInput,
+  BrandSafetyConfig,
+  BrandSafetyEvent,
   CampaignItem,
   CampaignMessageItem,
   CampaignSendResult,
@@ -143,6 +145,7 @@ import type {
   TransferInput,
   UpdateAgentInput,
   UpdateAutomationInput,
+  UpdateBrandSafetyConfigInput,
   UpdateContactInput,
   UpdateConversationInput,
   UpdateDepartmentInput,
@@ -11915,3 +11918,275 @@ export const useDiscardMigration = <
 > => {
   return useMutation(getDiscardMigrationMutationOptions(options));
 };
+
+/**
+ * @summary Get the brand-safety config for a tenant (Conductor-only)
+ */
+export const getGetBrandSafetyConfigUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/brand-safety/config`;
+};
+
+export const getBrandSafetyConfig = async (
+  tenantId: number,
+  options?: RequestInit,
+): Promise<BrandSafetyConfig> => {
+  return customFetch<BrandSafetyConfig>(getGetBrandSafetyConfigUrl(tenantId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBrandSafetyConfigQueryKey = (tenantId: number) => {
+  return [`/api/tenants/${tenantId}/brand-safety/config`] as const;
+};
+
+export const getGetBrandSafetyConfigQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBrandSafetyConfig>>,
+  TError = ErrorType<ApiError>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBrandSafetyConfig>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetBrandSafetyConfigQueryKey(tenantId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBrandSafetyConfig>>
+  > = ({ signal }) =>
+    getBrandSafetyConfig(tenantId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!tenantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBrandSafetyConfig>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBrandSafetyConfigQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBrandSafetyConfig>>
+>;
+export type GetBrandSafetyConfigQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Get the brand-safety config for a tenant (Conductor-only)
+ */
+
+export function useGetBrandSafetyConfig<
+  TData = Awaited<ReturnType<typeof getBrandSafetyConfig>>,
+  TError = ErrorType<ApiError>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBrandSafetyConfig>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBrandSafetyConfigQueryOptions(tenantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update a tenant's extra competitor list (Conductor-only)
+ */
+export const getUpdateBrandSafetyConfigUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/brand-safety/config`;
+};
+
+export const updateBrandSafetyConfig = async (
+  tenantId: number,
+  updateBrandSafetyConfigInput: UpdateBrandSafetyConfigInput,
+  options?: RequestInit,
+): Promise<BrandSafetyConfig> => {
+  return customFetch<BrandSafetyConfig>(
+    getUpdateBrandSafetyConfigUrl(tenantId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateBrandSafetyConfigInput),
+    },
+  );
+};
+
+export const getUpdateBrandSafetyConfigMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBrandSafetyConfig>>,
+    TError,
+    { tenantId: number; data: BodyType<UpdateBrandSafetyConfigInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateBrandSafetyConfig>>,
+  TError,
+  { tenantId: number; data: BodyType<UpdateBrandSafetyConfigInput> },
+  TContext
+> => {
+  const mutationKey = ["updateBrandSafetyConfig"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateBrandSafetyConfig>>,
+    { tenantId: number; data: BodyType<UpdateBrandSafetyConfigInput> }
+  > = (props) => {
+    const { tenantId, data } = props ?? {};
+
+    return updateBrandSafetyConfig(tenantId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateBrandSafetyConfigMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateBrandSafetyConfig>>
+>;
+export type UpdateBrandSafetyConfigMutationBody =
+  BodyType<UpdateBrandSafetyConfigInput>;
+export type UpdateBrandSafetyConfigMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Update a tenant's extra competitor list (Conductor-only)
+ */
+export const useUpdateBrandSafetyConfig = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBrandSafetyConfig>>,
+    TError,
+    { tenantId: number; data: BodyType<UpdateBrandSafetyConfigInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateBrandSafetyConfig>>,
+  TError,
+  { tenantId: number; data: BodyType<UpdateBrandSafetyConfigInput> },
+  TContext
+> => {
+  return useMutation(getUpdateBrandSafetyConfigMutationOptions(options));
+};
+
+/**
+ * @summary Recent brand-safety leak events for a tenant, newest first (Conductor-only)
+ */
+export const getListBrandSafetyEventsUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/brand-safety/events`;
+};
+
+export const listBrandSafetyEvents = async (
+  tenantId: number,
+  options?: RequestInit,
+): Promise<BrandSafetyEvent[]> => {
+  return customFetch<BrandSafetyEvent[]>(
+    getListBrandSafetyEventsUrl(tenantId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListBrandSafetyEventsQueryKey = (tenantId: number) => {
+  return [`/api/tenants/${tenantId}/brand-safety/events`] as const;
+};
+
+export const getListBrandSafetyEventsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listBrandSafetyEvents>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBrandSafetyEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListBrandSafetyEventsQueryKey(tenantId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listBrandSafetyEvents>>
+  > = ({ signal }) =>
+    listBrandSafetyEvents(tenantId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!tenantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listBrandSafetyEvents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListBrandSafetyEventsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listBrandSafetyEvents>>
+>;
+export type ListBrandSafetyEventsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recent brand-safety leak events for a tenant, newest first (Conductor-only)
+ */
+
+export function useListBrandSafetyEvents<
+  TData = Awaited<ReturnType<typeof listBrandSafetyEvents>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBrandSafetyEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListBrandSafetyEventsQueryOptions(tenantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

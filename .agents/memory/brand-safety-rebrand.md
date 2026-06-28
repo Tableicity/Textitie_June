@@ -31,3 +31,29 @@ Human sends default `scrubBrand:false`.
 **Why:** never override an agent's deliberate wording; only the autonomous
 paths need the safety net. Co-Pilot drafts/whispers are scrubbed at compose
 time so the human sees clean text before sending.
+
+## Per-tenant EXTRA competitor names must be threaded into EVERY scrub site
+A per-tenant CSV (`tenants.competitorNamesExtra`) layers on the env base list
+for tenants who migrated from some other competitor. The engine merges
+base+extra case-insensitively; the server caches the parsed extras ~60s and
+invalidates on the Conductor PATCH.
+**Why:** a tenant-specific name is only caught if it is in scope AT THAT SITE —
+a single scrub call that forgets the extras is a silent tenant-specific leak.
+**How to apply:** any NEW scrub call (`rebrandText`/`rebrandAndLog`) must read
+the tenant extras and pass them — inbound AI pipeline, outbound ai_reply
+backstop, Classroom publish, Brain/knowledge ingestion, and extractFacts all do.
+
+## Leak feed records ONLY at customer-reaching gates; best-effort, NOT metrics-grade
+`rebrandAndLog` persists a `brand_safety_events` row on (replacements>0 ||
+residue) when the tenant is known, ONLY for surface=`ai_reply` and
+surface=`knowledge` (Classroom publish). Ingestion paths (Brain/knowledge/
+extractFacts) scrub but DON'T record (not customer-reaching). The write is
+fire-and-forget (never throws); the FK cascades on tenant delete (like
+`audit_logs`); `detail` is a machine sub-site label only — never raw customer
+text (PII).
+**Why:** the feed answers "which tenants keep naming a competitor", an
+operational signal — it is NOT idempotent (carrier retries/reprocessing can
+duplicate rows; Auto-Pilot records at compose time, before a later compliance
+suppress could drop the send).
+**How to apply:** if the counts ever need to be authoritative, add an event key
+and record only after a confirmed send.

@@ -3286,3 +3286,80 @@ export const DiscardMigrationResponse = zod.object({
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
+
+/**
+ * @summary Get the brand-safety config for a tenant (Conductor-only)
+ */
+export const GetBrandSafetyConfigParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const GetBrandSafetyConfigResponse = zod.object({
+  brandName: zod
+    .string()
+    .describe("Platform-wide canonical brand (read-only; from env)"),
+  baseCompetitors: zod
+    .array(zod.string())
+    .describe("Platform-wide base competitor list (read-only; from env)"),
+  extraCompetitors: zod
+    .array(zod.string())
+    .describe("This tenant's extra competitor names, layered on the base list"),
+});
+
+/**
+ * @summary Update a tenant's extra competitor list (Conductor-only)
+ */
+export const UpdateBrandSafetyConfigParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const UpdateBrandSafetyConfigBody = zod.object({
+  extraCompetitors: zod
+    .array(zod.string())
+    .describe("Replacement list of this tenant's extra competitor names"),
+});
+
+export const UpdateBrandSafetyConfigResponse = zod.object({
+  brandName: zod
+    .string()
+    .describe("Platform-wide canonical brand (read-only; from env)"),
+  baseCompetitors: zod
+    .array(zod.string())
+    .describe("Platform-wide base competitor list (read-only; from env)"),
+  extraCompetitors: zod
+    .array(zod.string())
+    .describe("This tenant's extra competitor names, layered on the base list"),
+});
+
+/**
+ * @summary Recent brand-safety leak events for a tenant, newest first (Conductor-only)
+ */
+export const ListBrandSafetyEventsParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const ListBrandSafetyEventsResponseItem = zod
+  .object({
+    id: zod.number(),
+    tenantId: zod.number(),
+    surface: zod
+      .string()
+      .describe('Where the name was caught (\"ai_reply\" | \"knowledge\")'),
+    detail: zod
+      .string()
+      .nullable()
+      .describe(
+        'Short sub-site label (e.g. \"copilot_draft\", \"classroom_publish\")',
+      ),
+    replacements: zod
+      .number()
+      .describe("How many competitor names were rewritten"),
+    residue: zod
+      .boolean()
+      .describe("True if a competitor name still remained after scrubbing"),
+    createdAt: zod.coerce.date(),
+  })
+  .describe('One \"caught a competitor name\" leak event (raw row).');
+export const ListBrandSafetyEventsResponse = zod.array(
+  ListBrandSafetyEventsResponseItem,
+);
