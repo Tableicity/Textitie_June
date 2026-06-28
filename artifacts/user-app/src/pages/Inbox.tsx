@@ -821,7 +821,7 @@ export default function Inbox() {
   return (
     <div className="flex h-full bg-white divide-x divide-slate-200">
       {/* Left Panel: Conversation List */}
-      <div className="w-80 flex flex-col bg-slate-50 flex-shrink-0">
+      <div className="relative w-80 flex flex-col bg-slate-50 flex-shrink-0">
         <div className="p-4 border-b border-slate-200 bg-white space-y-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -901,7 +901,7 @@ export default function Inbox() {
               No conversations found.
             </div>
           ) : (
-            <div>
+            <div className="pb-24">
               {conversations?.map((conv) => {
                 const cityState = cityStateForPhone(conv.contactPhone);
                 const isSelected = selectedId === conv.id;
@@ -967,6 +967,22 @@ export default function Inbox() {
             </div>
           )}
         </ScrollArea>
+
+        {/* Floating compose button — pinned to the bottom of the conversation
+            list, floats over the scrolling list (mirrors the competitor UI). */}
+        <button
+          type="button"
+          onClick={() => {
+            setNewPhone("");
+            setNewName("");
+            setShowNewMessage(true);
+          }}
+          data-testid="button-new-contact-floating"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-blue-700 shadow-lg ring-1 ring-slate-200 hover:bg-blue-50 hover:shadow-xl transition-all"
+        >
+          <PencilLine className="w-4 h-4" />
+          New Contact
+        </button>
       </div>
 
       {/* Right Panel: Selected Conversation */}
@@ -1066,7 +1082,9 @@ export default function Inbox() {
                     </SelectContent>
                   </Select>
                 )}
-                {/* Order: Claim → Resolve → New Message → Halo AI → Buy Gas */}
+                {/* Order: Claim → Resolve → Halo AI → Buy Gas
+                    (compose lives in the conversation-list column as a
+                    floating "New Contact" button). */}
                 {!selectedConv?.assignedUserId && (
                   <Button
                     variant="outline"
@@ -1099,20 +1117,6 @@ export default function Inbox() {
                     <CheckSquare className="w-3 h-3" /> Resolve
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs font-medium gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
-                  onClick={() => {
-                    setNewPhone("");
-                    setNewName("");
-                    setShowNewMessage(true);
-                  }}
-                  data-testid="button-new-message-header"
-                >
-                  <PencilLine className="w-3 h-3" />
-                  New Message
-                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1641,10 +1645,10 @@ export default function Inbox() {
                 setNewName("");
                 setShowNewMessage(true);
               }}
-              data-testid="button-new-message-empty"
+              data-testid="button-new-contact-empty"
             >
               <PencilLine className="w-3 h-3" />
-              New Message
+              New Contact
             </Button>
           </div>
         )}
@@ -1791,7 +1795,7 @@ export default function Inbox() {
       <Dialog open={showNewMessage} onOpenChange={setShowNewMessage}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New message</DialogTitle>
+            <DialogTitle>New Contact</DialogTitle>
             <DialogDescription>
               Enter the recipient's phone number to start a new conversation. If an open
               conversation already exists for this number, you'll be taken to it.
