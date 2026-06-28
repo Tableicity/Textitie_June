@@ -4,7 +4,6 @@ import {
   PhoneCall,
   BadgeCheck,
   Check,
-  Info,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -23,9 +22,10 @@ interface SetupStep {
 }
 
 /**
- * Getting-started "bubble step" banner that sits ABOVE the Inbox conversation
- * header, mirroring Textline's department/phone-number setup prompt. Sized to
- * match the composer at the bottom of the same pane so the two strips balance.
+ * Getting-started "bubble step" banner. Runs full-width along the very top of
+ * the Inbox (above the conversation list + conversation pane), mirroring
+ * Textline's setup prompt. SAMA-orange background (hsl(24 100% 50%) = #FF6600)
+ * with white text; the bubble stepper sits inline to the right of the heading.
  *
  * The first two bubbles track real tenant state (a department exists; a number
  * is assigned). Once both are present the tenant can text, so the banner
@@ -82,29 +82,18 @@ export default function InboxSetupBanner() {
 
   return (
     <div
-      className="flex-shrink-0 border-b border-slate-200 bg-sky-50/60 px-6 py-4"
+      className="flex-shrink-0 bg-[#FF6600] px-6 py-2.5"
       data-testid="inbox-setup-banner"
     >
-      <div className="flex min-h-[115px] flex-wrap items-center justify-between gap-x-6 gap-y-4">
-        {/* Message — mirrors Textline's getting-started prompt */}
-        <div className="flex max-w-sm items-start gap-3">
-          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-600">
-            <Info className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-900">
-              Ready to start texting your customers?
-            </p>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Create a department, add a phone number, and register it to get
-              started.
-            </p>
-          </div>
-        </div>
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+        {/* Heading — mirrors Textline's getting-started prompt */}
+        <p className="text-sm font-semibold text-white">
+          Ready to start texting your customers?
+        </p>
 
-        {/* Bubble stepper */}
+        {/* Bubble stepper — inline to the right of the heading */}
         <ol
-          className="flex flex-1 items-start justify-end"
+          className="flex items-start"
           data-testid="setup-stepper"
           aria-label="Setup steps"
         >
@@ -115,40 +104,38 @@ export default function InboxSetupBanner() {
               <li key={step.key} className="flex items-start">
                 {i > 0 && (
                   <span
-                    className={`mt-[18px] h-0.5 w-8 sm:w-12 ${
-                      prevComplete ? "bg-blue-500" : "bg-slate-200"
+                    className={`mt-[14px] h-0.5 w-6 sm:w-10 ${
+                      prevComplete ? "bg-white" : "bg-white/30"
                     }`}
                     aria-hidden
                   />
                 )}
                 <Link
                   href={step.href}
-                  className="group flex flex-col items-center gap-1.5 px-1"
+                  className="group flex flex-col items-center gap-1 px-1"
                   data-testid={`setup-step-${step.key}`}
                   aria-current={step.state === "active" ? "step" : undefined}
                 >
                   <span
-                    className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                    className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
                       step.state === "complete"
-                        ? "bg-blue-600 text-white"
+                        ? "bg-white text-[#FF6600]"
                         : step.state === "active"
-                          ? "bg-blue-600 text-white ring-4 ring-blue-100"
-                          : "border-2 border-slate-200 bg-white text-slate-400 group-hover:border-slate-300"
+                          ? "bg-white text-[#FF6600] ring-2 ring-white/50"
+                          : "border-2 border-white/60 bg-white/10 text-white group-hover:bg-white/20"
                     }`}
                   >
                     {step.state === "complete" ? (
-                      <Check className="h-4 w-4" />
+                      <Check className="h-3.5 w-3.5" />
                     ) : (
-                      <Icon className="h-4 w-4" />
+                      <Icon className="h-3.5 w-3.5" />
                     )}
                   </span>
                   <span
-                    className={`whitespace-nowrap text-xs ${
-                      step.state === "active"
-                        ? "font-medium text-blue-700"
-                        : step.state === "complete"
-                          ? "text-slate-700"
-                          : "text-slate-400"
+                    className={`whitespace-nowrap text-[11px] leading-none ${
+                      step.state === "upcoming"
+                        ? "text-white/70"
+                        : "font-medium text-white"
                     }`}
                   >
                     {step.label}

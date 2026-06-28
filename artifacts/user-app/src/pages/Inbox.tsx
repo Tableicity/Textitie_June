@@ -828,7 +828,11 @@ export default function Inbox() {
   };
 
   return (
-    <div className="flex h-full bg-white divide-x divide-slate-200">
+    <div className="flex flex-col h-full">
+      {/* Getting-started bubble stepper — full-width strip on top of the Inbox,
+          above the conversation list + conversation pane. */}
+      <InboxSetupBanner />
+      <div className="flex flex-1 min-h-0 bg-white divide-x divide-slate-200">
       {/* Left Panel: Conversation List */}
       <div className="relative w-80 flex flex-col bg-slate-50 flex-shrink-0">
         <div className="p-4 border-b border-slate-200 bg-white space-y-2">
@@ -996,9 +1000,6 @@ export default function Inbox() {
 
       {/* Right Panel: Selected Conversation */}
       <div className="flex-1 flex flex-col bg-white min-w-0">
-        {/* Getting-started bubble stepper — sits above the conversation header
-            until the tenant has a department + an assigned number. */}
-        <InboxSetupBanner />
         {selectedId ? (
           <>
             {/* Header */}
@@ -2308,6 +2309,7 @@ export default function Inbox() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </div>
   );
 }
