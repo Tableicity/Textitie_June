@@ -6,7 +6,7 @@ export default function HayloAi() {
     <div>
       <SectionHeader
         title="Haylo Ai"
-        subtitle="Choose how Haylo AI engages on inbound texts across your workspace. You can override this per conversation from the inbox."
+        subtitle="Set the default mode for new conversations across your workspace. Your agents can override it per contact from the inbox."
       />
 
       <div className="space-y-6">

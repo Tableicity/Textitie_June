@@ -66,15 +66,21 @@ export default function EngagementModeCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Shield className="w-5 h-5" />
-          AI Engagement Mode
+        <CardTitle className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="flex items-center gap-2">
+            <Shield className="w-5 h-5" />
+            Default AI Engagement Mode
+          </span>
+          <span className="text-xs font-normal text-slate-400">
+            — applies to new conversations
+          </span>
         </CardTitle>
         <CardDescription>
-          Choose how the AI engages on inbound texts. Auto-Pilot is gated — it only sends on
-          high-confidence answers grounded in your published knowledge, in safe topics, with no
-          unresolved conflicts, and only when outbound compliance passes. You can override this
-          per conversation from the inbox.
+          This is the starting mode for every new conversation. Your agents can override it for
+          any individual contact from the inbox — that per-contact choice always wins. Auto-Pilot
+          is gated — it only sends on high-confidence answers grounded in your published
+          knowledge, in safe topics, with no unresolved conflicts, and only when outbound
+          compliance passes.
         </CardDescription>
       </CardHeader>
       <CardContent>
