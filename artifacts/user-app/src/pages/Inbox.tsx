@@ -198,7 +198,6 @@ export default function Inbox() {
   const [remindAt, setRemindAt] = useState("");
   const [remindNote, setRemindNote] = useState("");
   const [showNewMessage, setShowNewMessage] = useState(false);
-  const [showHaloAi, setShowHaloAi] = useState(false);
   const [showBuyGas, setShowBuyGas] = useState(false);
   const [newPhone, setNewPhone] = useState("");
   const [newName, setNewName] = useState("");
@@ -1056,7 +1055,10 @@ export default function Inbox() {
               </button>
 
               <div className="flex items-center gap-1.5">
-                {/* Per-conversation AI engagement override (null = inherit tenant). */}
+                {/* Haylo Ai = per-conversation AI engagement selector (null = inherit
+                    the tenant default). Branded "Mode: Haylo Ai"; the colored dot
+                    reflects the active mode. Keeps the violet Haylo styling and sits
+                    to the LEFT of Claim. */}
                 {selectedConv && (
                   <Select
                     value={overrideValue ?? "inherit"}
@@ -1075,12 +1077,13 @@ export default function Inbox() {
                     disabled={setOverrideMut.isPending}
                   >
                     <SelectTrigger
-                      className="h-8 w-[150px] text-xs"
+                      className="h-8 w-[150px] text-xs font-medium gap-1.5 border-violet-200 text-violet-700 hover:bg-violet-50"
                       data-testid="select-engagement-override"
                     >
                       <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3" />
                         <span className={`h-2 w-2 rounded-full ${modeChip.dot}`} />
-                        <SelectValue />
+                        <span>Mode: Haylo Ai</span>
                       </span>
                     </SelectTrigger>
                     <SelectContent>
@@ -1091,7 +1094,7 @@ export default function Inbox() {
                     </SelectContent>
                   </Select>
                 )}
-                {/* Order: Claim → Resolve → Halo AI → Buy Gas
+                {/* Order: Mode (Haylo Ai) → Claim → Resolve → Buy Gas
                     (compose lives in the conversation-list column as a
                     floating "New Contact" button). */}
                 {!selectedConv?.assignedUserId && (
@@ -1126,16 +1129,6 @@ export default function Inbox() {
                     <CheckSquare className="w-3 h-3" /> Resolve
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs font-medium gap-1.5 border-violet-200 text-violet-700 hover:bg-violet-50"
-                  onClick={() => setShowHaloAi(true)}
-                  data-testid="button-halo-ai"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  Halo AI
-                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1737,25 +1730,6 @@ export default function Inbox() {
               {updateConv.isPending && <Loader2 className="w-3 h-3 animate-spin mr-2" />}
               Resolve
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Halo AI (placeholder) */}
-      <Dialog open={showHaloAi} onOpenChange={setShowHaloAi}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-violet-600" />
-              Halo AI
-            </DialogTitle>
-            <DialogDescription>
-              Halo AI is coming soon. We'll surface AI-assisted replies, summaries,
-              and lead intelligence right inside your conversations.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setShowHaloAi(false)}>Got it</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

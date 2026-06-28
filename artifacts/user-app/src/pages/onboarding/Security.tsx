@@ -106,7 +106,7 @@ export default function Security() {
           </CardContent>
         </Card>
 
-        <ComplianceSection />
+        <ComplianceSection showEngagementMode />
       </div>
     </div>
   );

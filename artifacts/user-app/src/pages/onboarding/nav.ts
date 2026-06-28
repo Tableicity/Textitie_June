@@ -20,6 +20,7 @@ export const ONBOARDING_NAV: OnboardingNavGroup[] = [
       { label: "Departments", href: "/departments" },
       { label: "Tools & Integrations", href: "/integrations" },
       { label: "Security", href: "/security" },
+      { label: "Haylo Ai", href: "/haylo-ai" },
     ],
   },
   {

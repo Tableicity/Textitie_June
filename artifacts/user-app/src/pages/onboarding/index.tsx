@@ -10,6 +10,7 @@ import Agents from "./Agents";
 import Departments from "./Departments";
 import Integrations from "./Integrations";
 import Security from "./Security";
+import HayloAi from "./HayloAi";
 import BillingOverview from "./BillingOverview";
 import PaymentBilling from "./PaymentBilling";
 import Credits from "./Credits";
@@ -49,6 +50,7 @@ export default function OnboardingRoutes() {
         <Route path="/departments" component={Departments} />
         <Route path="/integrations" component={Integrations} />
         <Route path="/security" component={Security} />
+        <Route path="/haylo-ai" component={HayloAi} />
         <Route path="/billing" component={BillingOverview} />
         <Route path="/billing/payments" component={PaymentBilling} />
         <Route path="/credits" component={Credits} />
