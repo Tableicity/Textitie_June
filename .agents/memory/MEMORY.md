@@ -9,6 +9,7 @@
 - [Prod schema provisioning & ownership](prod-schema-provisioning.md) — managed Postgres: prod schema is auto-migrated by Replit's Publish-time diff; never write prod migration scripts/deploy hooks/boot DDL; prod is read-only to the agent (writes via Conductor API).
 - [Canonical phone routing](phone-number-canonical-routing.md) — one global `phone_numbers` table (PK = number) is the single routing truth; resolver fails closed; all writes go through phoneNumberRegistry.
 - [Status tracking + scaffolding](regeneration-protocol.md) — `replit.md` is the single status source; don't recreate a gate ledger.
+- [Stale session_plan replay](stale-session-plan-replay.md) — a completed plan that keeps reappearing as a "Session Plan" is a stale .local/session_plan.md re-injected on restore; DELETE it when its work merges, don't re-execute.
 - [Twilio API from shell](twilio-api-from-shell.md) — verify message SIDs/line-type/TF-status by hitting Twilio REST from bash (creds in shell env, NOT code_execution sandbox); diagnose delivery disputes.
 - [Outbound From resolution](telephony-from-resolution.md) — From resolved live per-send per-tenant; tenant may only send on a number it OWNS (never the global default = a real tenant's number) or convos split; number doubles as inbound key (1 two-way tenant/number); unowned → Twilio 21660; 10DLC badge cosmetic.
 - [Two user systems](two-user-systems.md) — `users` (superusers @ /admin/) vs `tenant_users` (per-tenant agents/owner @ agent inbox); don't confuse them; never return passwordHash.
