@@ -35,11 +35,18 @@ export default function ConversationReminderPopover({
   children,
   side = "bottom",
   align = "end",
+  showRemove = true,
 }: {
   conversationId: number;
   children: ReactNode;
   side?: "top" | "right" | "bottom" | "left";
   align?: "start" | "center" | "end";
+  /**
+   * Whether to show the per-row remove (✕) control. Off in the composer card,
+   * where a stray ✕ reads like a "close panel" button and causes friction —
+   * the agent dismisses from the left-pane bell or header hub instead.
+   */
+  showRemove?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -277,11 +284,13 @@ export default function ConversationReminderPopover({
                             )}
                           </div>
                         </div>
-                        <ReminderRemoveButton
-                          due={due}
-                          pending={dismissMut.isPending}
-                          onRemove={() => dismissMut.mutate({ id: r.id })}
-                        />
+                        {showRemove && (
+                          <ReminderRemoveButton
+                            due={due}
+                            pending={dismissMut.isPending}
+                            onRemove={() => dismissMut.mutate({ id: r.id })}
+                          />
+                        )}
                       </div>
                     </div>
                   );

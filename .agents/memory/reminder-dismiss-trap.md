@@ -35,3 +35,8 @@ deletes it is data loss.
 not add a DB/timer path that clears scheduled reminders — both reintroduce the
 vanishing-bell bug. The grey/red bell itself already persists until dismiss;
 protect the dismiss affordance, not the render.
+
+**Composer card has NO ✕ at all** (`ConversationReminderPopover showRemove={false}`
+only on the composer toolbar instance): there the ✕ reads like a "close panel"
+button and is pure friction, so removal lives on the left-pane row bell + header
+hub instead. Do NOT re-add the ✕ to the composer card "for consistency."

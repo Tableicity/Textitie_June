@@ -1673,6 +1673,7 @@ export default function Inbox() {
                         conversationId={selectedId}
                         side="top"
                         align="start"
+                        showRemove={false}
                       >
                         <button
                           type="button"
