@@ -1490,142 +1490,160 @@ export default function Inbox() {
                     ))}
                   </div>
                 )}
-                {selectedConv && effectiveMode && !isWhisperMode && (
-                  <div
-                    className="flex flex-wrap items-center gap-2 mb-2 text-xs"
-                    data-testid="ai-engagement-status"
-                  >
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium ${modeChip.chip}`}
-                      data-testid="ai-mode-chip"
+                {selectedConv &&
+                  effectiveMode &&
+                  !isWhisperMode &&
+                  (isAiHandback ||
+                    aiState?.status === "auto_sent" ||
+                    draftProvenanceLabel ||
+                    (aiDraftReady && composeText.trim() !== aiDraftBody)) && (
+                    <div
+                      className="flex flex-wrap items-center gap-2 mb-2 text-xs"
+                      data-testid="ai-engagement-status"
                     >
-                      <span className={`h-2 w-2 rounded-full ${modeChip.dot}`} />
-                      {modeChip.label}
-                    </span>
-                    {isAiHandback && (
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700"
-                        data-testid="ai-handback-reason"
-                      >
-                        <AlertCircle className="h-3 w-3" />
-                        {aiState?.reasonText ||
-                          aiState?.reasonCode ||
-                          "Handed back to you"}
-                      </span>
-                    )}
-                    {aiState?.status === "auto_sent" && (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
-                        <Sparkles className="h-3 w-3" />
-                        Auto-Pilot replied
-                      </span>
-                    )}
-                    {draftProvenanceLabel && (
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600"
-                        data-testid="ai-draft-provenance"
-                      >
-                        <Sparkles className="h-3 w-3" />
-                        {draftProvenanceLabel}
-                      </span>
-                    )}
-                    {aiDraftReady && composeText.trim() !== aiDraftBody && (
-                      <button
-                        type="button"
-                        onClick={insertAiDraft}
-                        className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-yellow-50 px-2 py-0.5 text-yellow-800 hover:bg-yellow-100"
-                        data-testid="button-insert-ai-draft"
-                      >
-                        <Sparkles className="h-3 w-3" />
-                        Insert AI draft
-                      </button>
-                    )}
-                  </div>
-                )}
-                <form onSubmit={handleSend} className="flex items-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsWhisperMode((m) => !m)}
-                    className={`h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors ${
-                      isWhisperMode
-                        ? "bg-amber-100 border-2 border-amber-500 text-amber-700 ring-2 ring-amber-300"
-                        : "bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"
-                    }`}
-                    title={isWhisperMode ? "Whisper mode: only your team will see this" : "Click to leave an internal note"}
-                    data-testid="button-toggle-whisper"
-                  >
-                    <StickyNote className="w-5 h-5" />
-                  </button>
-                  <Popover open={showEmoji} onOpenChange={setShowEmoji}>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
-                        title="Insert emoji"
-                        data-testid="button-emoji"
-                      >
-                        <span className="text-2xl leading-none">😊</span>
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-64 p-2" align="start">
-                      <div className="grid grid-cols-8 gap-1">
-                        {COMMON_EMOJIS.map((emo) => (
-                          <button
-                            key={emo}
-                            type="button"
-                            className="text-xl rounded hover:bg-slate-100 h-7 w-7 flex items-center justify-center"
-                            onClick={() => {
-                              handleComposeChange(composeText + emo);
-                              setShowEmoji(false);
-                              inputRef.current?.focus();
-                            }}
-                          >
-                            {emo}
-                          </button>
-                        ))}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                  <button
-                    type="button"
-                    onClick={() => setShowAttach(true)}
-                    className="h-[66px] w-[66px] rounded-xl flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
-                    title="Attach photo or PDF"
-                    data-testid="button-attach"
-                  >
-                    <Paperclip className="w-5 h-5" />
-                  </button>
-                  <div className="flex-1 relative">
-                    <Textarea
-                      ref={inputRef}
-                      value={composeText}
-                      onChange={(e) => handleComposeChange(e.target.value)}
-                      onKeyDown={handleComposeKeyDown}
-                      maxLength={COMPOSE_MAX_CHARS}
-                      rows={2}
-                      placeholder={
-                        isWhisperMode
-                          ? "Internal note (only your team will see this)..."
-                          : 'Type a message... (type "/" for shortcuts)'
-                      }
-                      className={`pr-12 min-h-[66px] max-h-40 overflow-y-auto resize-none text-base focus-visible:ring-blue-500 rounded-xl py-3 ${
-                        isWhisperMode
-                          ? "bg-amber-50 border-2 border-amber-500 ring-2 ring-amber-300"
-                          : "bg-slate-50 border-slate-200"
-                      }`}
-                    />
-                    <div className="absolute bottom-1.5 right-3 text-[10px] text-slate-400 pointer-events-none select-none">
-                      {composeText.length}/{COMPOSE_MAX_CHARS}
+                      {isAiHandback && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700"
+                          data-testid="ai-handback-reason"
+                        >
+                          <AlertCircle className="h-3 w-3" />
+                          {aiState?.reasonText ||
+                            aiState?.reasonCode ||
+                            "Handed back to you"}
+                        </span>
+                      )}
+                      {aiState?.status === "auto_sent" && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                          <Sparkles className="h-3 w-3" />
+                          Auto-Pilot replied
+                        </span>
+                      )}
+                      {draftProvenanceLabel && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600"
+                          data-testid="ai-draft-provenance"
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          {draftProvenanceLabel}
+                        </span>
+                      )}
+                      {aiDraftReady && composeText.trim() !== aiDraftBody && (
+                        <button
+                          type="button"
+                          onClick={insertAiDraft}
+                          className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-yellow-50 px-2 py-0.5 text-yellow-800 hover:bg-yellow-100"
+                          data-testid="button-insert-ai-draft"
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          Insert AI draft
+                        </button>
+                      )}
                     </div>
-                  </div>
-                  <Button
-                    type="submit"
-                    size="icon"
-                    className={`rounded-xl h-[66px] w-[66px] shrink-0 ${sendButtonClass}`}
-                    disabled={!composeText.trim() || composerBusy}
-                    data-testid="button-send-message"
+                  )}
+                <form onSubmit={handleSend} className="space-y-2">
+                  {/* Toolbar above the message box, divided from it by a hairline.
+                      Order: Student (engagement) pill → internal note → paperclip
+                      → emoji. Sized ~half the height of the textarea below. */}
+                  <div
+                    className="flex items-center gap-2 pb-2 border-b border-slate-200"
+                    data-testid="composer-toolbar"
                   >
-                    <Send className="h-5 w-5" />
-                  </Button>
+                    {selectedConv && effectiveMode && !isWhisperMode && (
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${modeChip.chip}`}
+                        data-testid="ai-mode-chip"
+                      >
+                        <span className={`h-2 w-2 rounded-full ${modeChip.dot}`} />
+                        {modeChip.label}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsWhisperMode((m) => !m)}
+                      className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                        isWhisperMode
+                          ? "bg-amber-100 border border-amber-500 text-amber-700 ring-1 ring-amber-300"
+                          : "bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                      }`}
+                      title={isWhisperMode ? "Whisper mode: only your team will see this" : "Click to leave an internal note"}
+                      data-testid="button-toggle-whisper"
+                    >
+                      <StickyNote className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAttach(true)}
+                      className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                      title="Attach photo or PDF"
+                      data-testid="button-attach"
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </button>
+                    <Popover open={showEmoji} onOpenChange={setShowEmoji}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                          title="Insert emoji"
+                          data-testid="button-emoji"
+                        >
+                          <span className="text-base leading-none">😊</span>
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 p-2" align="start">
+                        <div className="grid grid-cols-8 gap-1">
+                          {COMMON_EMOJIS.map((emo) => (
+                            <button
+                              key={emo}
+                              type="button"
+                              className="text-xl rounded hover:bg-slate-100 h-7 w-7 flex items-center justify-center"
+                              onClick={() => {
+                                handleComposeChange(composeText + emo);
+                                setShowEmoji(false);
+                                inputRef.current?.focus();
+                              }}
+                            >
+                              {emo}
+                            </button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1 relative">
+                      <Textarea
+                        ref={inputRef}
+                        value={composeText}
+                        onChange={(e) => handleComposeChange(e.target.value)}
+                        onKeyDown={handleComposeKeyDown}
+                        maxLength={COMPOSE_MAX_CHARS}
+                        rows={2}
+                        placeholder={
+                          isWhisperMode
+                            ? "Internal note (only your team will see this)..."
+                            : 'Type a message... (type "/" for shortcuts)'
+                        }
+                        className={`pr-12 min-h-[66px] max-h-40 overflow-y-auto resize-none text-base focus-visible:ring-blue-500 rounded-xl py-3 ${
+                          isWhisperMode
+                            ? "bg-amber-50 border-2 border-amber-500 ring-2 ring-amber-300"
+                            : "bg-slate-50 border-slate-200"
+                        }`}
+                      />
+                      <div className="absolute bottom-1.5 right-3 text-[10px] text-slate-400 pointer-events-none select-none">
+                        {composeText.length}/{COMPOSE_MAX_CHARS}
+                      </div>
+                    </div>
+                    <Button
+                      type="submit"
+                      size="icon"
+                      className={`rounded-xl h-[66px] w-[66px] shrink-0 ${sendButtonClass}`}
+                      disabled={!composeText.trim() || composerBusy}
+                      data-testid="button-send-message"
+                    >
+                      <Send className="h-5 w-5" />
+                    </Button>
+                  </div>
                 </form>
               </div>
             </div>
