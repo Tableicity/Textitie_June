@@ -30,6 +30,7 @@ import {
   recordAutopilotTurnEvent,
   getAutopilotFallbackCounts,
 } from "./autopilotTurnEventStore";
+import { recordCopilotTurnEvent } from "./copilotTurnEventStore";
 import {
   upsertConversationAiState,
   supersedeConversationAiState,
@@ -749,6 +750,42 @@ export async function runInboundAiPipeline(
   } = ctx;
   const automationHandled = ctx.automationHandled ?? false;
 
+  // Best-effort Co-Pilot turn instrumentation. Append-only history (one row per
+  // inbound, idempotent on tenant+inbound) powering the "answered using
+  // Knowledge" vs "raced to Grok" report — `conversation_ai_states` keeps only
+  // the LATEST draft per conversation, so it cannot answer this historically.
+  // This is purely analytics: it must NEVER break the draft pipeline, so it
+  // swallows its own failures. `grounded` is passed explicitly (the real
+  // Classroom/KB match signal) because a "student" draftSource can be ungrounded.
+  const recordCopilotTurn = async (
+    draftSource: AiDraftSource,
+    grounded: boolean,
+    staged: boolean,
+    category: string | null,
+  ): Promise<void> => {
+    try {
+      await recordCopilotTurnEvent({
+        tenantId: tenant.id,
+        conversationId,
+        inboundMessageId,
+        inboundSid,
+        draftSource,
+        grounded,
+        staged,
+        queryCategory: category,
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          tenantSlug,
+          conversationId,
+        },
+        "SAMA Co-Pilot: turn-event record failed (best-effort)",
+      );
+    }
+  };
+
   try {
     const overrideRow = await db
       .select({ override: conversationsTable.engagementModeOverride })
@@ -898,6 +935,7 @@ export async function runInboundAiPipeline(
           if (written) {
             eventBus.publish(tenant.id, { type: "ai:state", conversationId });
           }
+          await recordCopilotTurn("router_decline", false, written, null);
           await postCopilotWhisper(
             `[SAMA Router — off-scope decline]\n${declineBody}`,
           );
@@ -942,6 +980,7 @@ export async function runInboundAiPipeline(
           if (written) {
             eventBus.publish(tenant.id, { type: "ai:state", conversationId });
           }
+          await recordCopilotTurn("student_flash", false, written, null);
           await postCopilotWhisper(
             rebrandText(flash.whisperBody, extrasFor(tenant)).text,
           );
@@ -1068,6 +1107,7 @@ export async function runInboundAiPipeline(
       if (written) {
         eventBus.publish(tenant.id, { type: "ai:state", conversationId });
       }
+      await recordCopilotTurn("fallback_phrase", false, written, queryCategory);
       await postCopilotWhisper(
         `[SAMA Fallback — ungrounded holding draft]\n${fallbackPhrase}\n(No Classroom/KB match for a tenant-specific question — edit/send this stall, then trigger the Professor + Human loop for the real answer.)`,
       );
@@ -1123,6 +1163,12 @@ export async function runInboundAiPipeline(
       if (draftWritten) {
         eventBus.publish(tenant.id, { type: "ai:state", conversationId });
       }
+      await recordCopilotTurn(
+        draftSource,
+        classroomGrounded || draft.kbMatched,
+        draftWritten,
+        queryCategory,
+      );
       logger.info(
         {
           tenantSlug,
