@@ -893,10 +893,18 @@ export async function hydrateCustomersBatch(opts: {
       // Non-destructively merge: keep existing name/email, UNION the tags. Only
       // touch `tags` when the address book actually carries some, so a tagless
       // customer never clobbers an existing NULL into an empty array.
+      // NOTE: bind the tags as a single JSON param and expand it with
+      // json_array_elements_text — drizzle's sql`` template flattens a raw JS
+      // array into comma-separated params (the inArray idiom), so
+      // `${contact.tags}::text[]` would bind a bare scalar and Postgres throws
+      // "malformed array literal". Going through JSON keeps it one param.
       const tagUnion = contact.tags.length
         ? sql`tags = ARRAY(
               SELECT DISTINCT e
-              FROM unnest(COALESCE(tags, ARRAY[]::text[]) || ${contact.tags}::text[]) AS e
+              FROM unnest(
+                COALESCE(tags, ARRAY[]::text[])
+                || ARRAY(SELECT json_array_elements_text(${JSON.stringify(contact.tags)}::json))
+              ) AS e
             ),`
         : sql``;
       await tx.execute(sql`

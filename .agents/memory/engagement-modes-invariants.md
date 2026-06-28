@@ -1,6 +1,6 @@
 ---
 name: Engagement-mode invariants (manual/copilot/autopilot)
-description: Cross-file invariants for the three engagement modes — alias normalization on every write path, the closed-book fail-OPEN Auto-Pilot + circuit breaker, the learning rule (now Co-Pilot-only), and the human-send → AI-state coupling.
+description: Cross-file invariants for the three engagement modes — alias normalization on every write path, the closed-book fail-OPEN Auto-Pilot + circuit breaker, the learning rule (NO mode learns at runtime), and the human-send → AI-state coupling.
 ---
 
 # Engagement-mode invariants
@@ -31,11 +31,18 @@ pricing/compliance/setup topics and self-learned provisional facts; closed-book 
 predictable, never-silent behavior. **How to apply:** the old fail-closed autopilot branch is RETAINED
 but DEAD — never re-wire autopilot through `evaluateAutoSend` / `evaluateProfessorEscalationSend`.
 
-## The learning rule (self-learning loop is now Co-Pilot ONLY)
-The live Professor escalation → screened fact persistence loop runs for **`copilot` only**; `autopilot`
-is closed-book (above) and `manual` skips. No path persists facts off a human-edited send. **Why:**
-edited/human text isn't model-attested truth and would poison the Library. **How to apply:** keep fact
-*screening* split from *persistence* in `knowledge.ts`; the autopilot path must never reach persist.
+## The learning rule (NO engagement mode learns at runtime)
+As of 2026-06-27 the live Professor escalation → screened fact persistence loop was **REMOVED from
+every inbound path**. `copilot` now drafts with the Student (Grok) only (no live Professor consult);
+`autopilot` is closed-book (above); `manual` skips. **No inbound path persists facts** — the only way
+facts enter the Classroom is a human-driven push (Human + Professor, or Brain + Human, via the
+Conductor). The Professor is now a **creation-only** tool. **Why:** the live escalation cost ~full
+reasoning-LLM latency on every ungrounded turn for what was draft polish (the "Professor tax") and
+could auto-publish self-attested facts; edited/human text also isn't model-attested truth and would
+poison the Library. **How to apply:** `professorEscalate`/`screenEscalatedFacts`/`persistEscalatedFacts`
+still EXIST (used by the Conductor creation flow) but nothing on the inbound path may call them — keep
+fact *screening* split from *persistence* in `knowledge.ts`, and never re-wire any mode through the
+deleted `evaluateProfessorEscalationSend` auto-send gate.
 
 ## Human send must hand the conversation back to green
 A human send marks the pending `drafted`/`refused`/`failed` `conversation_ai_states` row
