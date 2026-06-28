@@ -102,9 +102,10 @@ export default function InboxSetupBanner() {
           {/* Company branding goes here */}
         </div>
 
-        {/* Column 2 — getting-started prompt + bubble stepper, centered. */}
-        <div className="flex flex-1 items-center justify-center pl-6">
-          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2">
+        {/* Column 2 — getting-started prompt + bubble stepper, left-aligned to
+            match the conversation pane's avatar padding (header px-6). */}
+        <div className="flex flex-1 items-center justify-start pl-6">
+          <div className="flex flex-wrap items-center justify-start gap-x-8 gap-y-2">
             {/* Heading — mirrors Textline's getting-started prompt */}
             <p className="text-sm font-semibold text-white">
               Ready to start texting your customers?
