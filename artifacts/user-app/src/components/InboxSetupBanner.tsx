@@ -102,13 +102,13 @@ export default function InboxSetupBanner() {
           <img
             src={brainLogo}
             alt=""
-            className="h-10 w-auto flex-shrink-0"
+            className="h-12 w-auto flex-shrink-0"
             aria-hidden
           />
           <div className="flex min-w-0 flex-col leading-none">
             <span className="text-2xl font-bold leading-[1.2]">
               <span className="text-white">Text</span>
-              <span className="text-[#00d2ff]">Itie</span>
+              <span className="text-[#3febfa]">Itie</span>
             </span>
             <span className="mt-0.5 whitespace-nowrap text-xs font-normal tracking-[0.5px] text-[#e2e8f0]">
               Agentic AI Smart Messaging
