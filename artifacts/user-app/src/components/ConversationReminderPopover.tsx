@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { format } from "date-fns";
-import { Clock, X, Pencil, Plus, Loader2, AlarmClockOff } from "lucide-react";
+import { Clock, Pencil, Plus, Loader2, AlarmClockOff } from "lucide-react";
 import {
   useListReminders,
   useCreateReminder,
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import ReminderRemoveButton from "@/components/ReminderRemoveButton";
 import {
   ALL_REMINDERS_PARAMS,
   REMINDER_PRESETS,
@@ -276,16 +277,11 @@ export default function ConversationReminderPopover({
                             )}
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-slate-400 hover:text-slate-700 shrink-0"
-                          title="Dismiss"
-                          onClick={() => dismissMut.mutate({ id: r.id })}
-                          disabled={dismissMut.isPending}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
+                        <ReminderRemoveButton
+                          due={due}
+                          pending={dismissMut.isPending}
+                          onRemove={() => dismissMut.mutate({ id: r.id })}
+                        />
                       </div>
                     </div>
                   );
