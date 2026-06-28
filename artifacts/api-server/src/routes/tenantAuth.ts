@@ -9,6 +9,7 @@ import {
   contactsTable,
   conversationsTable,
   messagesTable,
+  dispositionsTable,
   ensureTenantSchema,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
@@ -23,6 +24,16 @@ const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
+
+// Default dispositions every new tenant starts with so the inbox Resolve dialog
+// is useful out of the box. Add new entries here to expand the seeded set — the
+// `sortOrder` controls their order in the dropdown. Colors match the user-app's
+// disposition palette (DISPOSITION_COLORS).
+const SEED_DISPOSITIONS: { label: string; color: string }[] = [
+  { label: "Active Lead", color: "#10b981" }, // green
+  { label: "Do Not Contact", color: "#ef4444" }, // red
+  { label: "No Longer Interested", color: "#f59e0b" }, // amber
+];
 
 function hashPassword(password: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -268,6 +279,17 @@ router.post("/tenant-auth/register", async (req, res) => {
         senderName: trimmedCompanyName,
         read: false,
       });
+
+      // Seed default dispositions so the inbox Resolve dialog is useful out of
+      // the box. The owner can edit/archive/add more in Settings → Dispositions.
+      await tx.insert(dispositionsTable).values(
+        SEED_DISPOSITIONS.map((d, i) => ({
+          tenantId: tenant.id,
+          label: d.label,
+          color: d.color,
+          sortOrder: i,
+        })),
+      );
 
       return { tenant, user };
     });

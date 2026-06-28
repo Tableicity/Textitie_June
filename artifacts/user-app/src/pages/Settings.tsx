@@ -54,6 +54,7 @@ import AuditLogSection from "@/components/settings/AuditLogSection";
 import ComplianceSection from "@/components/settings/ComplianceSection";
 import IntegrationsSection from "@/components/settings/IntegrationsSection";
 import SurveysSection from "@/components/settings/SurveysSection";
+import { DISPOSITION_COLORS as DEFAULT_COLORS } from "@/lib/dispositions";
 import { ScrollText, Shield, Plug, Star } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -1224,8 +1225,6 @@ function AgentCard({ agent, isAdmin }: { agent: AgentItem; isAdmin: boolean }) {
     </Card>
   );
 }
-
-const DEFAULT_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
 
 function DispositionsSection() {
   const queryClient = useQueryClient();

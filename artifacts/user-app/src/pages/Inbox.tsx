@@ -37,6 +37,7 @@ import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
 import InboxSetupBanner from "@/components/InboxSetupBanner";
 import ReminderBell from "@/components/ReminderBell";
 import ConversationReminderPopover from "@/components/ConversationReminderPopover";
+import CreateDispositionDialog from "@/components/CreateDispositionDialog";
 import { ALL_REMINDERS_PARAMS, isReminderDue } from "@/lib/reminders";
 import { format } from "date-fns";
 import {
@@ -62,6 +63,7 @@ import {
   StickyNote,
   CheckSquare,
   BellPlus,
+  Plus,
   X as XIcon,
   Sparkles,
   Fuel,
@@ -199,6 +201,7 @@ export default function Inbox() {
   const [showResolve, setShowResolve] = useState(false);
   const [resolveDispId, setResolveDispId] = useState<string>("");
   const [resolveNote, setResolveNote] = useState("");
+  const [showNewDisposition, setShowNewDisposition] = useState(false);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [showBuyGas, setShowBuyGas] = useState(false);
   const [newPhone, setNewPhone] = useState("");
@@ -1762,7 +1765,16 @@ export default function Inbox() {
           <div className="space-y-4 py-2">
             <div>
               <Label className="mb-1.5 block">Disposition (optional)</Label>
-              <Select value={resolveDispId} onValueChange={setResolveDispId}>
+              <Select
+                value={resolveDispId}
+                onValueChange={(v) => {
+                  if (v === "__new__") {
+                    setShowNewDisposition(true);
+                    return;
+                  }
+                  setResolveDispId(v);
+                }}
+              >
                 <SelectTrigger data-testid="select-disposition">
                   <SelectValue placeholder="No disposition" />
                 </SelectTrigger>
@@ -1779,6 +1791,16 @@ export default function Inbox() {
                       </div>
                     </SelectItem>
                   ))}
+                  <SelectItem
+                    value="__new__"
+                    className="text-blue-600 focus:text-blue-700"
+                    data-testid="select-new-disposition"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Plus className="w-3.5 h-3.5" />
+                      New disposition
+                    </div>
+                  </SelectItem>
                 </SelectContent>
               </Select>
               {dispositions?.length === 0 && (
@@ -1827,6 +1849,13 @@ export default function Inbox() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Inline "New disposition" create card, opened from the Resolve dropdown */}
+      <CreateDispositionDialog
+        open={showNewDisposition}
+        onOpenChange={setShowNewDisposition}
+        onCreated={(d) => setResolveDispId(d.id.toString())}
+      />
 
       {/* Attach (placeholder) */}
       <Dialog open={showAttach} onOpenChange={setShowAttach}>
