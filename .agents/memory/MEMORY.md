@@ -42,3 +42,4 @@
 - [Reminder bell vanish = dismiss trap](reminder-dismiss-trap.md) — "scheduled reminder grey bell disappears on its own" is the per-row close-looking ✕ soft-deleting it, never a timer; removal is two-tier (due=1-click, scheduled=confirm).
 - [shadcn SelectTrigger line-clamp](shadcn-selecttrigger-line-clamp.md) — base `[&>span]:line-clamp-1` forces display:-webkit-box on custom trigger spans, clipping icons; wrap content in a `<div>` not `<span>` + shrink-0 the icon.
 - [Brand-safety rebrand guardrail](brand-safety-rebrand.md) — competitor→canonical scrub; per-tenant extras must thread into EVERY scrub site; Classroom scrubs inputs+adjudicated output; leak feed = ai_reply/knowledge only, best-effort not metrics-grade.
+- [MFA lab-code back-door](mfa-lab-code-backdoor.md) — to preview the auth-gated inbox in dev: sign up a throwaway tenant, the /verify "lab card" shows the OTP (also in api-server console); beta shim NOT prod-gated → gate before go-live.

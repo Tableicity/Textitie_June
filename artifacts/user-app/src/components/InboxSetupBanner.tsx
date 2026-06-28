@@ -4,13 +4,13 @@ import {
   PhoneCall,
   BadgeCheck,
   Check,
-  BrainCircuit,
   type LucideIcon,
 } from "lucide-react";
 import {
   useListDepartments,
   useListPhoneNumbers,
 } from "@workspace/api-client-react";
+import brainLogo from "@/assets/brain-logo.png";
 
 type StepState = "complete" | "active" | "upcoming";
 
@@ -99,8 +99,10 @@ export default function InboxSetupBanner() {
           className="flex w-[296px] flex-shrink-0 items-center gap-3 border-r border-slate-300/50 pr-6"
           data-testid="banner-branding-column"
         >
-          <BrainCircuit
-            className="h-9 w-9 flex-shrink-0 text-[#00d2ff]"
+          <img
+            src={brainLogo}
+            alt=""
+            className="h-10 w-auto flex-shrink-0"
             aria-hidden
           />
           <div className="flex min-w-0 flex-col leading-none">
