@@ -1,7 +1,103 @@
-import { db, getTenantDb, getTenantPool, tenantsTable, usageRecordsTable } from "@workspace/db";
 import { pool } from "@workspace/db";
-import { eq, and, lte, gte } from "drizzle-orm";
 import { logger } from "./logger";
+import { BACKUP_BLOCK_SIZE } from "./backupTopupProvider";
+
+// ---------------------------------------------------------------------------
+// Balance readers + manual grant on top of the 3-bucket model
+// (Included → Add-On → Backup). The transactional per-message charge lives in
+// creditService.ts; this file is the read/aggregate + manual-credit surface
+// used by the campaign routes. Legacy field names (prepaidCredits,
+// overageEnabled, availableCredits) are preserved for existing callers.
+// ---------------------------------------------------------------------------
+
+interface TenantBucketRow {
+  id: number;
+  plan_tier_code: string | null;
+  tier_code: string | null;
+  addon_credits: number;
+  backup_credits: number;
+  credit_debt: number;
+  backup_enabled: boolean;
+  backup_topup_cap_per_cycle: number;
+  prepaid_credits: number;
+  credit_buckets_migrated_at: Date | null;
+  overage_enabled: boolean;
+}
+
+interface UsageBucketRow {
+  credits_included: number;
+  included_credits_used: number;
+  backup_topups_count: number;
+}
+
+interface CoverageSnapshot {
+  found: boolean;
+  unlimited: boolean;
+  includedRemaining: number;
+  addon: number;
+  backup: number;
+  replenishableBackup: number;
+  debt: number;
+  overageEnabled: boolean;
+}
+
+async function readCoverage(tenantId: number): Promise<CoverageSnapshot> {
+  const tr = await pool.query<TenantBucketRow>(
+    `SELECT id, plan_tier_code, tier_code, addon_credits, backup_credits,
+            credit_debt, backup_enabled, backup_topup_cap_per_cycle,
+            prepaid_credits, credit_buckets_migrated_at, overage_enabled
+       FROM tenants WHERE id = $1 LIMIT 1`,
+    [tenantId],
+  );
+  if (tr.rows.length === 0) {
+    return {
+      found: false,
+      unlimited: false,
+      includedRemaining: 0,
+      addon: 0,
+      backup: 0,
+      replenishableBackup: 0,
+      debt: 0,
+      overageEnabled: false,
+    };
+  }
+  const t = tr.rows[0];
+  const unlimited = (t.plan_tier_code ?? t.tier_code) === "enterprise";
+
+  const addon =
+    t.addon_credits + (t.credit_buckets_migrated_at == null ? t.prepaid_credits : 0);
+
+  const ur = await pool.query<UsageBucketRow>(
+    `SELECT credits_included, included_credits_used, backup_topups_count
+       FROM usage_records
+      WHERE tenant_id = $1 AND period_start <= NOW() AND period_end >= NOW()
+      ORDER BY period_start DESC
+      LIMIT 1`,
+    [tenantId],
+  );
+  const usage = ur.rows[0] ?? null;
+  const includedRemaining = usage
+    ? Math.max(0, usage.credits_included - usage.included_credits_used)
+    : 0;
+
+  let replenishableBackup = 0;
+  if (t.backup_enabled && usage) {
+    const cap = t.backup_topup_cap_per_cycle ?? 0;
+    const blocksAvailable = Math.max(0, cap - usage.backup_topups_count);
+    replenishableBackup = blocksAvailable * BACKUP_BLOCK_SIZE;
+  }
+
+  return {
+    found: true,
+    unlimited,
+    includedRemaining,
+    addon,
+    backup: t.backup_credits,
+    replenishableBackup,
+    debt: t.credit_debt,
+    overageEnabled: t.overage_enabled ?? false,
+  };
+}
 
 export interface PreFlightResult {
   allowed: boolean;
@@ -13,150 +109,162 @@ export interface PreFlightResult {
   shortfall: number;
 }
 
+/**
+ * Bulk preflight for campaigns. Coverage spans Included + Add-On + Backup +
+ * the Backup still auto-replenishable this cycle. Enterprise is unlimited.
+ */
 export async function preFlightCheck(
   tenantId: number,
-  tenantSlug: string,
+  _tenantSlug: string,
   recipientCount: number,
   segmentsPerMessage: number,
 ): Promise<PreFlightResult> {
-  const tenant = await db
-    .select()
-    .from(tenantsTable)
-    .where(eq(tenantsTable.id, tenantId))
-    .limit(1);
+  const cov = await readCoverage(tenantId);
+  const requiredCredits = recipientCount * segmentsPerMessage;
 
-  if (tenant.length === 0) {
+  if (!cov.found) {
     return {
       allowed: false,
-      requiredCredits: 0,
+      requiredCredits,
       availableCredits: 0,
       prepaidCredits: 0,
       includedRemaining: 0,
       overageEnabled: false,
+      shortfall: requiredCredits,
+    };
+  }
+
+  if (cov.unlimited) {
+    return {
+      allowed: true,
+      requiredCredits,
+      availableCredits: Infinity,
+      prepaidCredits: cov.addon,
+      includedRemaining: Infinity,
+      overageEnabled: cov.overageEnabled,
       shortfall: 0,
     };
   }
 
-  const t = tenant[0];
-  const prepaidCredits = t.prepaidCredits ?? 0;
-  const overageEnabled = t.overageEnabled ?? false;
-
-  const tdb = getTenantDb(tenantSlug);
-  let includedRemaining = 0;
-  const now = new Date();
-  const usageRows = await tdb
-    .select()
-    .from(usageRecordsTable)
-    .where(
-      and(
-        eq(usageRecordsTable.tenantId, tenantId),
-        lte(usageRecordsTable.periodStart, now),
-        gte(usageRecordsTable.periodEnd, now),
-      ),
-    )
-    .limit(1);
-
-  if (usageRows.length > 0) {
-    const usage = usageRows[0];
-    includedRemaining = Math.max(0, usage.creditsIncluded - usage.creditsUsed);
-  }
-
-  if (t.planTierCode === "enterprise") {
-    includedRemaining = Infinity;
-  }
-
-  const requiredCredits = recipientCount * segmentsPerMessage;
-  const availableCredits = prepaidCredits + (includedRemaining === Infinity ? requiredCredits : includedRemaining);
+  const availableCredits =
+    cov.includedRemaining + cov.addon + cov.backup + cov.replenishableBackup;
   const shortfall = Math.max(0, requiredCredits - availableCredits);
 
-  const allowed = shortfall === 0 || overageEnabled;
-
   return {
-    allowed,
+    allowed: shortfall === 0,
     requiredCredits,
-    availableCredits: includedRemaining === Infinity ? Infinity : availableCredits,
-    prepaidCredits,
-    includedRemaining: includedRemaining === Infinity ? Infinity : includedRemaining,
-    overageEnabled,
+    availableCredits,
+    prepaidCredits: cov.addon,
+    includedRemaining: cov.includedRemaining,
+    overageEnabled: cov.overageEnabled,
     shortfall,
   };
 }
 
-export async function deductCampaignCredits(
-  tenantId: number,
-  tenantSlug: string,
-  creditsUsed: number,
-): Promise<void> {
-  const tenant = await db
-    .select({ prepaidCredits: tenantsTable.prepaidCredits })
-    .from(tenantsTable)
-    .where(eq(tenantsTable.id, tenantId))
-    .limit(1);
-
-  if (tenant.length === 0) return;
-
-  const prepaid = tenant[0].prepaidCredits ?? 0;
-  const tpool = getTenantPool(tenantSlug);
-
-  if (prepaid >= creditsUsed) {
-    // tenants lives in public — use the global pool
-    await pool.query(
-      `UPDATE tenants SET prepaid_credits = prepaid_credits - $1 WHERE id = $2`,
-      [creditsUsed, tenantId],
-    );
-  } else {
-    if (prepaid > 0) {
-      await pool.query(
-        `UPDATE tenants SET prepaid_credits = 0 WHERE id = $1`,
-        [tenantId],
-      );
-    }
-    const overflowToUsage = creditsUsed - prepaid;
-    if (overflowToUsage > 0) {
-      const now = new Date();
-      // usage_records lives per-tenant — use the per-tenant pool
-      await tpool.query(
-        `UPDATE usage_records
-         SET credits_used = credits_used + $1,
-             messages_sent = messages_sent + $1,
-             overage_credits = GREATEST(0, credits_used + $1 - credits_included),
-             overage_amount_cents = GREATEST(0, credits_used + $1 - credits_included) * 3
-         WHERE tenant_id = $2
-           AND period_start <= $3
-           AND period_end >= $3`,
-        [overflowToUsage, tenantId, now],
-      );
-    }
-  }
-
-  logger.info({ tenantId, creditsUsed }, "Campaign credits deducted");
-}
-
-export async function getCreditBalance(tenantId: number, tenantSlug: string): Promise<{
+export interface CreditBalance {
   prepaidCredits: number;
+  addonCredits: number;
+  backupCredits: number;
+  creditDebt: number;
   includedRemaining: number;
   totalAvailable: number;
   overageEnabled: boolean;
-}> {
-  const result = await preFlightCheck(tenantId, tenantSlug, 0, 0);
+}
+
+export async function getCreditBalance(
+  tenantId: number,
+  _tenantSlug: string,
+): Promise<CreditBalance> {
+  const cov = await readCoverage(tenantId);
+  const includedRemaining = cov.unlimited ? -1 : cov.includedRemaining;
+  const totalAvailable = cov.unlimited
+    ? -1
+    : cov.includedRemaining + cov.addon + cov.backup;
   return {
-    prepaidCredits: result.prepaidCredits,
-    includedRemaining: result.includedRemaining === Infinity ? -1 : result.includedRemaining,
-    totalAvailable: result.availableCredits === Infinity ? -1 : result.availableCredits,
-    overageEnabled: result.overageEnabled,
+    prepaidCredits: cov.addon,
+    addonCredits: cov.addon,
+    backupCredits: cov.backup,
+    creditDebt: cov.debt,
+    includedRemaining,
+    totalAvailable,
+    overageEnabled: cov.overageEnabled,
   };
 }
 
+/**
+ * Manually grant Add-On (rollover) credits — used by the campaign top-up route.
+ * Records a signed `grant_addon` ledger row and returns the new Add-On balance.
+ */
 export async function addPrepaidCredits(
   tenantId: number,
   credits: number,
 ): Promise<number> {
-  const result = await pool.query(
-    `UPDATE tenants SET prepaid_credits = prepaid_credits + $1 WHERE id = $2 RETURNING prepaid_credits`,
-    [credits, tenantId],
+  if (!Number.isFinite(credits) || credits <= 0) {
+    throw new Error("addPrepaidCredits: credits must be a positive number");
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const tr = await client.query<{ addon_credits: number; prepaid_credits: number; credit_buckets_migrated_at: Date | null }>(
+      `SELECT addon_credits, prepaid_credits, credit_buckets_migrated_at
+         FROM tenants WHERE id = $1 FOR UPDATE`,
+      [tenantId],
+    );
+    if (tr.rows.length === 0) {
+      await client.query("ROLLBACK");
+      throw new Error("Tenant not found");
+    }
+    const row = tr.rows[0];
+    const migrate = row.credit_buckets_migrated_at == null;
+    const base = row.addon_credits + (migrate ? row.prepaid_credits : 0);
+    const newBalance = base + credits;
+
+    const key = `grant:manual:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    await client.query(
+      `INSERT INTO credit_ledger
+         (tenant_id, idempotency_key, reason, credits, addon_delta, addon_after,
+          status, metadata)
+       VALUES ($1,$2,'grant_addon',$3,$3,$4,'applied',$5)`,
+      [tenantId, key, credits, newBalance, JSON.stringify({ source: "manual_topup" })],
+    );
+
+    await client.query(
+      `UPDATE tenants
+          SET addon_credits = $2,
+              prepaid_credits = CASE WHEN $3 THEN 0 ELSE prepaid_credits END,
+              credit_buckets_migrated_at = COALESCE(credit_buckets_migrated_at, NOW())
+        WHERE id = $1`,
+      [tenantId, newBalance, migrate],
+    );
+
+    await client.query("COMMIT");
+    logger.info({ tenantId, added: credits, newBalance }, "Add-On credits granted");
+    return newBalance;
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * @deprecated Aggregate post-send campaign deduction. Superseded by per-message
+ * `chargeMessageCredits` (campaign_charge). Retained until the campaign engine
+ * is switched over; do not add new callers.
+ */
+export async function deductCampaignCredits(
+  tenantId: number,
+  _tenantSlug: string,
+  creditsUsed: number,
+): Promise<void> {
+  logger.warn(
+    { tenantId, creditsUsed },
+    "deductCampaignCredits is deprecated; per-message charge should be used",
   );
-  if (result.rows.length === 0) throw new Error("Tenant not found");
-  const newBalance = result.rows[0].prepaid_credits;
-  logger.info({ tenantId, added: credits, newBalance }, "Prepaid credits added");
-  return newBalance;
 }

@@ -7,7 +7,6 @@ import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
 import { pickAgent } from "../lib/routing";
 import type { RoutingStrategy } from "../lib/routing";
-import { recordMessageUsage } from "../lib/stripe-stub";
 import { recordAudit } from "../lib/audit";
 import { enqueueSync } from "../lib/integrations/syncWorker";
 import { maybeEnqueueSurveyForClose } from "../lib/surveyDispatcher";
@@ -671,6 +670,11 @@ router.post(
           res.status(402).json({ error: result.errorMessage, reason: result.reason });
           return;
         }
+        if (result.reason === "credit_frozen") {
+          // Out of messaging credits (no coverage across all buckets).
+          res.status(402).json({ error: result.errorMessage, reason: result.reason });
+          return;
+        }
         // no_sending_number | number_not_owned
         res.status(422).json({ error: result.errorMessage, reason: result.reason });
         return;
@@ -717,9 +721,9 @@ router.post(
         return false;
       });
 
-      recordMessageUsage(tenantId, req.tenantUser!.tenantSlug).catch((usageErr) => {
-        logger.warn({ err: usageErr, tenantId }, "Usage tracking failed (non-blocking)");
-      });
+      // Credit deduction now happens inside sendConversationReply (charged only
+      // on a confirmed send, idempotent, segment/MMS-accurate) — no flat
+      // per-message usage bump here.
 
       eventBus.publish(tenantId, {
         type: "message:new",

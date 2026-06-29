@@ -10,6 +10,7 @@ import {
   conversationsTable,
   messagesTable,
   dispositionsTable,
+  creditLedgerTable,
   ensureTenantSchema,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
@@ -213,6 +214,13 @@ router.post("/tenant-auth/register", async (req, res) => {
           trialEndsAt: isTrial
             ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
             : null,
+          // New tenants are born in the 3-bucket credit era — stamp the
+          // migration marker so the lazy prepaid→addon migration never fires
+          // (there is no legacy prepaidCredits balance to fold in). A trial
+          // tenant starts with a 100-credit Add-On grant (rolls over); paid
+          // tenants draw their plan's Included allotment from usage_records.
+          addonCredits: isTrial ? 100 : 0,
+          creditBucketsMigratedAt: new Date(),
         })
         .returning();
 
@@ -290,6 +298,21 @@ router.post("/tenant-auth/register", async (req, res) => {
           sortOrder: i,
         })),
       );
+
+      // Trial Add-On grant: durable proof of the 100-credit gift + the
+      // idempotency spine (a retried signup can never double-grant). Mirrors
+      // the materialized addonCredits=100 set on the tenant row above.
+      if (isTrial) {
+        await tx.insert(creditLedgerTable).values({
+          tenantId: tenant.id,
+          idempotencyKey: `trial:${tenant.id}`,
+          reason: "grant",
+          credits: 100,
+          addonDelta: 100,
+          addonAfter: 100,
+          metadata: JSON.stringify({ kind: "trial_grant" }),
+        });
+      }
 
       return { tenant, user };
     });

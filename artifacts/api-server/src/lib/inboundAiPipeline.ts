@@ -42,7 +42,6 @@ import { sendConversationReply } from "./outboundReply";
 import { rebrandText, rebrandAndLog } from "./brandSafety";
 import { parseCompetitorNames } from "@workspace/brand-safety";
 import { checkOutboundCompliance } from "./compliance";
-import { recordMessageUsage } from "./stripe-stub";
 import { eventBus } from "./eventBus";
 import { logger } from "./logger";
 
@@ -596,12 +595,9 @@ async function runAutoPilotFailOpenTurn(
         });
       }
 
-      recordMessageUsage(tenant.id, tenantSlug).catch((e) =>
-        logger.warn(
-          { err: e, tenantId: tenant.id },
-          "Usage tracking failed (non-blocking)",
-        ),
-      );
+      // Credit deduction for the auto-sent reply happens inside
+      // sendConversationReply (idempotent, segment/MMS-accurate) — no flat
+      // per-message usage bump here.
       eventBus.publish(tenant.id, {
         type: "message:new",
         conversationId,

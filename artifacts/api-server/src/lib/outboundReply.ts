@@ -10,6 +10,12 @@ import {
   isDemoTextingBlockedForTenant,
   PAYWALL_NEW_CONTACT_MESSAGE,
 } from "./demoTextingGate";
+import { assessOutboundCredit, chargeMessageCredits } from "./creditService";
+import { logger } from "./logger";
+
+/** Customer-safe copy shown when an outbound send is blocked for no credits. */
+export const CREDIT_FROZEN_MESSAGE =
+  "This message can't be sent — your messaging credits are exhausted. Add credits or enable Backup auto-replenish to resume sending.";
 
 type MessageRow = typeof messagesTable.$inferSelect;
 
@@ -26,7 +32,8 @@ export type OutboundReplyResult =
         | "compliance"
         | "no_sending_number"
         | "number_not_owned"
-        | "paywall_new_contact";
+        | "paywall_new_contact"
+        | "credit_frozen";
       errorMessage: string;
       complianceReason?: string;
     };
@@ -140,6 +147,18 @@ export async function sendConversationReply(opts: {
     return { ok: false, reason: fromGuard.reason, errorMessage: fromGuard.message };
   }
 
+  // Outbound HARD-STOP gate: refuse to send (and never create a row or reach the
+  // carrier) when the tenant has no coverage across Included + Add-On + Backup
+  // (+ replenishable Backup). Unlimited/unmetered tenants always pass.
+  const assessment = await assessOutboundCredit({ tenantId, body: outboundBody });
+  if (!assessment.allowed) {
+    return {
+      ok: false,
+      reason: "credit_frozen",
+      errorMessage: CREDIT_FROZEN_MESSAGE,
+    };
+  }
+
   const [pendingRow] = await db
     .insert(messagesTable)
     .values({
@@ -172,6 +191,28 @@ export async function sendConversationReply(opts: {
     })
     .where(eq(messagesTable.id, pendingRow.id))
     .returning();
+
+  // Charge credits ONLY for a confirmed send. Idempotent on the message id, so a
+  // retry never double-charges; a Rejected delivery callback later refunds it. A
+  // charge failure must NOT fail the send — the message already went out.
+  if (sendResult.status === "sent") {
+    try {
+      await chargeMessageCredits({
+        tenantId,
+        direction: "outbound",
+        body: outboundBody,
+        idempotencyKey: `outbound:${pendingRow.id}`,
+        reason: "outbound_charge",
+        messageId: pendingRow.id,
+        externalId: sendResult.externalId ?? null,
+      });
+    } catch (err) {
+      logger.error(
+        { err, tenantId, messageId: pendingRow.id },
+        "Outbound credit charge failed after a confirmed send",
+      );
+    }
+  }
 
   return {
     ok: true,

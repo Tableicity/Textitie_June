@@ -20,6 +20,7 @@ import { logger } from "../lib/logger";
 import { checkTwilioSignature, requireTwilioSignature } from "../lib/twilioSignature";
 import { enqueueSync } from "../lib/integrations/syncWorker";
 import { isBlocked, checkOutboundCompliance } from "../lib/compliance";
+import { chargeMessageCredits } from "../lib/creditService";
 
 const router: IRouter = Router();
 
@@ -85,6 +86,13 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
       "SmsSid",
       "sid",
     ]);
+    // Inbound MMS detection: Twilio sends NumMedia as a string count of the
+    // attached media parts. >0 ⇒ MMS (flat 3-credit charge); persisted onto
+    // messages.numMedia and fed to the credit charge below.
+    const numMedia = Math.max(
+      0,
+      parseInt(pickString(rawBody, ["NumMedia", "numMedia"]) ?? "0", 10) || 0,
+    );
 
     if (toNumber) {
       const tenant = await resolveTenantByPhoneNumber(toNumber);
@@ -341,6 +349,7 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                   body: messageBody,
                   senderName: resolvedContactName,
                   read: false,
+                  numMedia,
                 })
                 .returning({ id: messagesTable.id });
               const inboundMessageId = inboundMessageRow?.id ?? null;
@@ -349,6 +358,31 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
                 .update(conversationsTable)
                 .set({ lastMessageAt: new Date() })
                 .where(eq(conversationsTable.id, conversationId));
+
+              // Charge inbound credits (segment/MMS-accurate, idempotent on the
+              // carrier SID). Inbound is NEVER blocked — at zero with Backup off
+              // the balance simply goes negative (creditDebt). Fire-and-forget so
+              // metering never delays the 200 the carrier expects.
+              if (inboundMessageId != null) {
+                chargeMessageCredits({
+                  tenantId: tenant.id,
+                  direction: "inbound",
+                  body: messageBody,
+                  mediaCount: numMedia,
+                  idempotencyKey: `inbound:${inboundSid ?? inboundMessageId}`,
+                  reason: "inbound_charge",
+                  messageId: inboundMessageId,
+                  externalId: inboundSid ?? null,
+                }).catch((err) =>
+                  logger.warn(
+                    {
+                      err: err instanceof Error ? err.message : String(err),
+                      tenantId: tenant.id,
+                    },
+                    "Inbound credit charge failed (non-blocking)",
+                  ),
+                );
+              }
 
               // Real-time push to any agent inbox watching this tenant.
               if (isNewConversation) {

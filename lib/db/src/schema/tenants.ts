@@ -46,6 +46,29 @@ export const tenantsTable = pgTable("tenants", {
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   prepaidCredits: integer("prepaid_credits").notNull().default(0),
   overageEnabled: boolean("overage_enabled").notNull().default(false),
+  // ---- Credit buckets (3-bucket waterfall: Included → Add-On → Backup) ----
+  // Add-On credits: bought in fixed packs ($0.03/credit), ROLL OVER across
+  // billing cycles. Drained AFTER the per-cycle Included bucket (tracked on
+  // usage_records) and BEFORE Backup. Lazily migrated once from the legacy
+  // prepaidCredits column on the first charge (see creditBucketsMigratedAt).
+  addonCredits: integer("addon_credits").notNull().default(0),
+  // Backup credits: $0.04/credit emergency reserve, auto-replenished in
+  // 250-credit blocks the moment Included + Add-On hit zero. Drained LAST.
+  backupCredits: integer("backup_credits").notNull().default(0),
+  // Accrued NEGATIVE balance. Inbound texts cannot be blocked, so when a tenant
+  // sits at zero with Backup off/declined an inbound charge accrues here as a
+  // positive debt (effective balance = addon + backup - debt).
+  creditDebt: integer("credit_debt").notNull().default(0),
+  // Tenant toggle for Backup auto-replenish. When false (or a top-up declines)
+  // OUTBOUND hard-stops at zero; inbound still accrues creditDebt.
+  backupEnabled: boolean("backup_enabled").notNull().default(true),
+  // Max Backup auto-top-ups per billing cycle before a HARD FREEZE (runaway-loop
+  // guard). The per-cycle counter lives on usage_records.backupTopupsCount.
+  backupTopupCapPerCycle: integer("backup_topup_cap_per_cycle").notNull().default(4),
+  // One-time lazy-migration marker: on the first credit charge we copy the
+  // legacy prepaidCredits balance into addonCredits and stamp this. Null = not
+  // yet migrated.
+  creditBucketsMigratedAt: timestamp("credit_buckets_migrated_at", { withTimezone: true }),
   quietHoursStart: integer("quiet_hours_start"),
   quietHoursEnd: integer("quiet_hours_end"),
   quietHoursTz: text("quiet_hours_tz").notNull().default("America/New_York"),

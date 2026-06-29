@@ -18,11 +18,11 @@ import { logger } from "./logger";
 const TIER_PRICING = [
   {
     code: "starter",
-    name: "Starter",
+    name: "Essentials",
     description: "1 agent seat, shared 10DLC pool — for solo operators kicking the tires.",
-    features: ["1 agent seat", "1 phone number", "1,000 SMS credits/mo", "Shared 10DLC pool", "Email support"],
-    monthlyPriceCents: 13900,
-    includedCredits: 1000,
+    features: ["1 agent seat", "1 phone number", "600 SMS credits/mo", "Shared 10DLC pool", "Email support"],
+    monthlyPriceCents: 14900,
+    includedCredits: 600,
     trialDays: 14,
     maxAgents: 3,
     maxPhoneNumbers: 1,
@@ -30,11 +30,11 @@ const TIER_PRICING = [
   },
   {
     code: "growth",
-    name: "Teams",
-    description: "Dedicated local numbers, automation — for growing teams replacing Textline.",
-    features: ["Up to 10 agents", "Up to 5 phone numbers", "5,000 SMS credits/mo", "Automation workflows", "Priority support"],
+    name: "Pro",
+    description: "Dedicated local numbers, automation — for growing teams.",
+    features: ["Up to 10 agents", "Up to 5 phone numbers", "2,000 SMS credits/mo", "Automation workflows", "Priority support"],
     monthlyPriceCents: 34900,
-    includedCredits: 5000,
+    includedCredits: 2000,
     trialDays: 14,
     maxAgents: 10,
     maxPhoneNumbers: 5,
@@ -215,8 +215,14 @@ async function seedTiers(): Promise<void> {
       await db
         .update(tiersTable)
         .set({
+          // Reconcile pricing/allotment so an existing dev/prod row converges
+          // on the current spec (Essentials $149/600, Pro $349/2000) — without
+          // these, a re-seed silently kept stale prices/credits.
+          name: tier.name,
           description: tier.description,
           features: tier.features,
+          monthlyPriceCents: tier.monthlyPriceCents,
+          includedCredits: tier.includedCredits,
           hipaaEligible: tier.hipaaEligible ?? false,
           // Backfill the real Stripe price ID so production (which only
           // receives schema, not data, on publish) gets it on next boot.

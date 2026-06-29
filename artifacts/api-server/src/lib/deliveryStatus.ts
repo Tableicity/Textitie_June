@@ -2,6 +2,13 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { describeTwilioError } from "./twilioErrors";
+import { refundMessageCredits } from "./creditService";
+
+// Twilio error codes that mean the carrier REJECTED the message (it was never
+// billable delivery) → reverse the credit charge. Everything else (e.g. 30007
+// spam-filtered, 30003 unreachable handset) is a genuine FAILED delivery the
+// carrier still attempted → the charge stands.
+const REFUNDABLE_REJECTION_CODES = new Set(["21610", "21211"]);
 
 /**
  * Twilio delivery-status webhook handler logic.
@@ -54,11 +61,15 @@ export async function processDeliveryStatus(
   //    Fall back to external_id for legacy rows or alternate flows.
   // ------------------------------------------------------------------
   const msgRows = messageId
-    ? await db.execute<{ id: number; status: string; conversation_id: number }>(
-        sql`SELECT id, status, conversation_id FROM messages WHERE id = ${messageId} LIMIT 1`,
+    ? await db.execute<{ id: number; status: string; conversation_id: number; tenant_id: number }>(
+        sql`SELECT m.id, m.status, m.conversation_id, c.tenant_id
+              FROM messages m JOIN conversations c ON c.id = m.conversation_id
+             WHERE m.id = ${messageId} LIMIT 1`,
       )
-    : await db.execute<{ id: number; status: string; conversation_id: number }>(
-        sql`SELECT id, status, conversation_id FROM messages WHERE external_id = ${externalId} LIMIT 1`,
+    : await db.execute<{ id: number; status: string; conversation_id: number; tenant_id: number }>(
+        sql`SELECT m.id, m.status, m.conversation_id, c.tenant_id
+              FROM messages m JOIN conversations c ON c.id = m.conversation_id
+             WHERE m.external_id = ${externalId} LIMIT 1`,
       );
   const msg = msgRows.rows[0];
 
@@ -100,6 +111,21 @@ export async function processDeliveryStatus(
         },
         "Delivery webhook: conversation message marked failed",
       );
+      // Carrier REJECTION (21610 / 21211) → reverse the credit charge. Genuine
+      // FAILED deliveries (30007 / 30003) leave the charge in place. Idempotent
+      // and race-safe (handles the rejection arriving before the charge).
+      if (code != null && REFUNDABLE_REJECTION_CODES.has(code)) {
+        await refundMessageCredits({
+          tenantId: msg.tenant_id,
+          messageId: msg.id,
+          externalId: externalId || null,
+        }).catch((err) =>
+          logger.error(
+            { err: err instanceof Error ? err.message : String(err), messageId: msg.id },
+            "Delivery webhook: credit refund failed (non-blocking)",
+          ),
+        );
+      }
       return { updated: true, target: "message", newStatus: "failed" };
     }
     // Non-terminal status (queued/sent) — nothing to persist for messages.
@@ -113,14 +139,22 @@ export async function processDeliveryStatus(
     id: number;
     campaign_id: number;
     status: string;
+    tenant_id: number;
   }>(
-    sql`SELECT id, campaign_id, status FROM campaign_messages WHERE external_id = ${externalId} LIMIT 1`,
+    sql`SELECT cm.id, cm.campaign_id, cm.status, c.tenant_id
+          FROM campaign_messages cm JOIN campaigns c ON c.id = cm.campaign_id
+         WHERE cm.external_id = ${externalId} LIMIT 1`,
   );
   const cm = cmRows.rows[0];
 
   if (!cm) return { updated: false };
 
-  const { id: campaignMessageId, campaign_id: campaignId, status: currentStatus } = cm;
+  const {
+    id: campaignMessageId,
+    campaign_id: campaignId,
+    status: currentStatus,
+    tenant_id: campaignTenantId,
+  } = cm;
 
   if (currentStatus === "delivered" || currentStatus === "failed") {
     return { updated: false, target: "campaign_message", campaignId };
@@ -167,6 +201,19 @@ export async function processDeliveryStatus(
       { campaignMessageId, campaignId, externalId, errorCode, errorMessage },
       "Delivery webhook: campaign message marked failed",
     );
+    // Carrier REJECTION (21610 / 21211) → reverse the per-message charge.
+    if (errorCode != null && REFUNDABLE_REJECTION_CODES.has(errorCode)) {
+      await refundMessageCredits({
+        tenantId: campaignTenantId,
+        campaignMessageId,
+        externalId: externalId || null,
+      }).catch((err) =>
+        logger.error(
+          { err: err instanceof Error ? err.message : String(err), campaignMessageId },
+          "Delivery webhook: campaign credit refund failed (non-blocking)",
+        ),
+      );
+    }
     return { updated: true, target: "campaign_message", campaignId, newStatus: "failed" };
   }
 

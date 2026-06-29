@@ -1,0 +1,54 @@
+---
+name: Credit deduction engine — money-correctness boundaries
+description: Durable invariants and known scope boundaries of the internal credit charge/refund/waterfall engine (creditService.ts).
+---
+
+# Credit deduction engine — money-correctness
+
+The engine charges every live inbound + outbound SMS/MMS against a strict
+3-bucket waterfall (Included → Add-On → Backup) idempotently, with refunds.
+Core code: `artifacts/api-server/src/lib/creditService.ts`,
+`messageCost.ts`, `backupTopupProvider.ts`, refund wiring in `deliveryStatus.ts`.
+
+## Invariants that are easy to break
+
+- **Refund reverses CONSUMPTION only, never the Backup top-up PURCHASE.** The
+  consumed-from-Backup amount = `origCredits + includedDelta + addonDelta - debtDelta`
+  (included/addon stored as negative draws, debt as positive accrual). The 250-credit
+  block that was bought with real money stays.
+  **Why:** a carrier rejection should give back what the message consumed, not claw
+  back a card charge we already made.
+
+- **The refund-before-charge guard AND the pending_refund marker must key on
+  `message_id` OR `campaign_message_id` symmetrically.** A rejection status callback
+  can race ahead of the inline charge for *campaign* sends too (under load), not just
+  conversation messages. If the guard only covers `message_id`, a fast 21610/21211
+  callback on a campaign message no-ops, then the later `campaign_charge` lands and the
+  rejected message is charged forever.
+  **How to apply:** any new charge path that gets its own ledger identifier needs both
+  the guard lookup and the pending marker extended to that column.
+
+- **Ledger INSERT column list count must equal the values array.** A `$N` placeholder
+  with no corresponding value throws `bind message supplies M parameters, but prepared
+  statement requires N` **only at runtime** — `tsc` does NOT catch it. DB-backed tests
+  do. This bit the refund INSERT (a trailing `metadata` `$17` with 16 values supplied).
+  **How to apply:** never trust typecheck alone for raw-SQL INSERTs; run the DB-backed
+  creditService tests (`creditService.test.ts` / `creditService.decline.test.ts`,
+  per-file to dodge the env reaper).
+
+## Known scope boundaries (deliberate, not bugs)
+
+- **Backup hard-stop on DECLINE is not enforced yet.** The locked rule is
+  "Backup off/declined ⇒ OUTBOUND hard-stop." The **off** case IS enforced at preflight
+  (`assessOutboundCredit` excludes replenishable Backup when `backupEnabled=false`). The
+  **declined** case needs authorizing the card BEFORE the carrier send
+  (reserve-then-send) + the real Stripe backup provider. `backupTopupProvider` is a stub
+  that always authorizes, so declines can't happen in dev. Until reserve-before-send is
+  wired, a decline detected at charge time (message already sent) becomes `creditDebt` —
+  it never mints phantom credits and never consumes the per-cycle cap.
+
+- **Post-send charge failures are best-effort logged — no durable outbox/reconciler.**
+  If `chargeMessageCredits` throws after a confirmed carrier send (outbound, campaign) or
+  on the fire-and-forget inbound path, the charge is lost. The idempotent ledger keys
+  (`unique(tenant_id, idempotency_key, reason)`) make a future reconciler/outbox safe to
+  add — that subsystem was out of scope for the engine-build phase.

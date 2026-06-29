@@ -3,7 +3,7 @@ import { pool } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { getSender } from "./senders";
 import { extractContactVars, injectVariables, calculateSegments } from "./smsUtils";
-import { deductCampaignCredits } from "./creditEngine";
+import { chargeMessageCredits } from "./creditService";
 import { simulateDeliveryCallback } from "./deliveryStatus";
 import { logger } from "./logger";
 
@@ -64,6 +64,27 @@ async function sendBatch(ctx: CampaignContext): Promise<boolean> {
 
       if (newStatus === "sent") {
         ctx.sentSoFar++;
+        // Charge credits for this campaign message (segment/MMS-accurate,
+        // idempotent on the campaign_message id). Non-fatal: the SMS already
+        // left the building, so a metering hiccup must not fail the campaign —
+        // the ledger key keeps a later reconcile safe.
+        await chargeMessageCredits({
+          tenantId: ctx.tenantId,
+          direction: "outbound",
+          body: row.rendered_body,
+          idempotencyKey: `campaign_message:${row.id}`,
+          reason: "campaign_charge",
+          campaignMessageId: row.id,
+          externalId: result.externalId ?? null,
+        }).catch((err) =>
+          logger.error(
+            {
+              err: err instanceof Error ? err.message : String(err),
+              campaignMessageId: row.id,
+            },
+            "Campaign message credit charge failed (non-blocking)",
+          ),
+        );
         if (isStub && result.externalId) {
           simulateDeliveryCallback(result.externalId);
         }
@@ -137,27 +158,8 @@ export async function executeCampaign(tenantSlug: string, campaignId: number): P
       }
     }
 
-    if (ctx.sentSoFar > 0) {
-      const renderedRows = await tpool.query(
-        `SELECT rendered_body FROM campaign_messages WHERE campaign_id = $1 AND status IN ('sent', 'delivered')`,
-        [campaignId],
-      );
-      let totalSegments = 0;
-      for (const row of renderedRows.rows) {
-        totalSegments += Math.max(1, calculateSegments(row.rendered_body).segmentCount);
-      }
-
-      try {
-        await deductCampaignCredits(campaign.tenantId, tenantSlug, totalSegments);
-      } catch (deductErr) {
-        logger.error({ err: deductErr, campaignId, totalSegments }, "Credit deduction failed — campaign marked failed");
-        await tpool.query(
-          `UPDATE campaigns SET status = 'failed', completed_at = NOW(), sent_count = $1, failed_count = $2 WHERE id = $3`,
-          [ctx.sentSoFar, ctx.failedSoFar, campaignId],
-        );
-        return;
-      }
-    }
+    // Credits are now charged per campaign_message inside sendBatch (idempotent
+    // on the campaign_message id), so there is no end-of-run aggregate deduction.
 
     await tpool.query(
       `UPDATE campaigns SET status = 'completed', completed_at = NOW(), sent_count = $1, failed_count = $2 WHERE id = $3`,

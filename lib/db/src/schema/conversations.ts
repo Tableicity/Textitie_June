@@ -69,6 +69,10 @@ export const messagesTable = pgTable(
     status: text("status").notNull().default("sent"),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),
+    // Media attachment count (Twilio NumMedia on inbound). >0 ⇒ MMS ⇒ flat
+    // 3-credit charge regardless of text length. Outbound stays 0 until MMS
+    // sending exists.
+    numMedia: integer("num_media").notNull().default(0),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
