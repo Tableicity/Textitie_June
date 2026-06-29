@@ -6,6 +6,10 @@ import { getSender } from "./senders";
 import type { SendStatus } from "./senders/types";
 import { rebrandAndLog } from "./brandSafety";
 import { getTenantExtraCompetitors } from "./brandSafetyStore";
+import {
+  isDemoTextingBlockedForTenant,
+  PAYWALL_NEW_CONTACT_MESSAGE,
+} from "./demoTextingGate";
 
 type MessageRow = typeof messagesTable.$inferSelect;
 
@@ -18,7 +22,11 @@ export type OutboundReplyResult =
     }
   | {
       ok: false;
-      reason: "compliance" | "no_sending_number" | "number_not_owned";
+      reason:
+        | "compliance"
+        | "no_sending_number"
+        | "number_not_owned"
+        | "paywall_new_contact";
       errorMessage: string;
       complianceReason?: string;
     };
@@ -69,6 +77,18 @@ export async function sendConversationReply(opts: {
     senderName,
     conductorAuthorized,
   } = opts;
+
+  // Demo paywall (authoritative): an unpaid/demo tenant may text only the phone
+  // it signed up with. Block before scrub/compliance/from-resolution/persist so a
+  // gated send never creates a message row, burns usage, or reaches the carrier.
+  if (await isDemoTextingBlockedForTenant(tenantId, contactPhone)) {
+    return {
+      ok: false,
+      reason: "paywall_new_contact",
+      errorMessage: PAYWALL_NEW_CONTACT_MESSAGE,
+    };
+  }
+
   const runCompliance = opts.runComplianceCheck ?? true;
   let outboundBody = body;
   if (opts.scrubBrand ?? false) {

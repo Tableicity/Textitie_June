@@ -12,6 +12,7 @@
 - [Stale session_plan replay](stale-session-plan-replay.md) — a completed plan that keeps reappearing as a "Session Plan" is a stale .local/session_plan.md re-injected on restore; DELETE it when its work merges, don't re-execute.
 - [Twilio API from shell](twilio-api-from-shell.md) — verify message SIDs/line-type/TF-status by hitting Twilio REST from bash (creds in shell env, NOT code_execution sandbox); diagnose delivery disputes.
 - [Outbound From resolution](telephony-from-resolution.md) — From resolved live per-send per-tenant; tenant may only send on a number it OWNS (never the global default = a real tenant's number) or convos split; number doubles as inbound key (1 two-way tenant/number); unowned → Twilio 21660; 10DLC badge cosmetic.
+- [Demo paywall gate](demo-paywall-gate.md) — unpaid (status!=="active") tenants may text only their signup phone; gated in universal sendConversationReply (covers human+AI), fail-closed, →HTTP 402; tests must seed status:"active".
 - [Two user systems](two-user-systems.md) — `users` (superusers @ /admin/) vs `tenant_users` (per-tenant agents/owner @ agent inbox); don't confuse them; never return passwordHash.
 - [Orval operationId mangling](orval-operationid-mangling.md) — some operationIds codegen into garbage symbol names (filenames stay correct); reorder words verb-first and re-run codegen.
 - [Stripe Checkout wiring](stripe-checkout-wiring.md) — live price IDs, stub customer guard, Stripe v22 type cast, tenant JWT scope gotcha, generated client call convention.

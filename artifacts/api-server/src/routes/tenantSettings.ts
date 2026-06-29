@@ -6,6 +6,8 @@ import { requireTenantAuth } from "../middleware/tenantAuth";
 import { recordAudit } from "../lib/audit";
 import { setHipaaEnabled } from "../lib/logger";
 import { ENGAGEMENT_MODES, normalizeEngagementMode } from "../lib/engagementPolicy";
+import { loadOwnerSignupPhone } from "../lib/demoTextingGate";
+import { normalizePhoneE164 } from "../lib/phoneNumberRegistry";
 
 const router = Router();
 
@@ -28,6 +30,7 @@ async function loadTenantSettings(tenantId: number) {
       baaAcknowledgedBy: tenantsTable.baaAcknowledgedBy,
       hipaaEligible: tiersTable.hipaaEligible,
       engagementMode: tenantsTable.engagementMode,
+      subscriptionStatus: tenantsTable.subscriptionStatus,
     })
     .from(tenantsTable)
     .leftJoin(tiersTable, eq(tiersTable.code, tenantsTable.tierCode))
@@ -35,9 +38,24 @@ async function loadTenantSettings(tenantId: number) {
     .limit(1);
   const row = rows[0];
   if (!row) return null;
+  // The phone the tenant signed up with (owner) — the only number an unpaid
+  // "demo" tenant may text. Normalize to E.164 for a stable client-side compare.
+  const signupPhoneRaw = await loadOwnerSignupPhone(tenantId);
+  let signupPhone: string | null = null;
+  if (signupPhoneRaw) {
+    try {
+      signupPhone = normalizePhoneE164(signupPhoneRaw) ?? signupPhoneRaw;
+    } catch {
+      signupPhone = signupPhoneRaw;
+    }
+  }
   // Always present the canonical mode to clients even if a legacy alias
   // (assisted/gated_auto) or null is still stored on the row.
-  return { ...row, engagementMode: normalizeEngagementMode(row.engagementMode) };
+  return {
+    ...row,
+    engagementMode: normalizeEngagementMode(row.engagementMode),
+    signupPhone,
+  };
 }
 
 router.get("/tenant-settings/me", requireTenantAuth, async (req, res) => {

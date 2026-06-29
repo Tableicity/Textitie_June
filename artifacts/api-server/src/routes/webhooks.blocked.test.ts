@@ -89,6 +89,7 @@ beforeAll(async () => {
       region: "us",
       tierCode: "starter",
       phoneNumber: TENANT_PHONE,
+      subscriptionStatus: "active",
     })
     .returning({ id: tenantsTable.id });
   tenantId = tenant.id;

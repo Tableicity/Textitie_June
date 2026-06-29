@@ -4143,6 +4143,17 @@ components:
             outbound compliance — and only then persists what it learned.
             Legacy values "assisted"/"gated_auto" are still accepted on write
             and normalized to copilot/autopilot.
+        subscriptionStatus:
+          type: string
+          description: >-
+            Billing state. "active" unlocks texting any compliant contact. Any
+            other value (none/trialing/past_due/canceled) marks an unpaid "demo"
+            tenant that may text only the phone it signed up with (signupPhone).
+        signupPhone:
+          type: ["string", "null"]
+          description: >-
+            E.164 phone the tenant signed up with (owner). While unpaid, this is
+            the only destination the tenant is allowed to text.
       required:
         - id
         - name
@@ -4150,6 +4161,7 @@ components:
         - region
         - tierCode
         - engagementMode
+        - subscriptionStatus
 
     UpdateTenantSettingsInput:
       type: object

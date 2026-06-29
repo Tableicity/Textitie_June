@@ -666,6 +666,11 @@ router.post(
           res.status(422).json({ error: result.errorMessage, reason: result.complianceReason });
           return;
         }
+        if (result.reason === "paywall_new_contact") {
+          // Demo paywall: unpaid tenant tried to text a non-signup contact.
+          res.status(402).json({ error: result.errorMessage, reason: result.reason });
+          return;
+        }
         // no_sending_number | number_not_owned
         res.status(422).json({ error: result.errorMessage, reason: result.reason });
         return;

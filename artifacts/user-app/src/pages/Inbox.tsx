@@ -3,6 +3,7 @@ import {
   useGetConversation,
   useListMessages,
   useSendMessage,
+  useGetTenantSettings,
   useListDepartments,
   useListAgents,
   useClaimConversation,
@@ -363,6 +364,25 @@ export default function Inbox() {
   // phone. The inbound webhook never creates a contact row, so this may be
   // empty — in which case saving creates one (find-or-create on save).
   const contactPhone = selectedConv?.contactPhone ?? "";
+
+  // --- Demo paywall (UX mirror of the authoritative server gate) ---
+  // An unpaid tenant (subscriptionStatus !== "active") may text only the phone
+  // it signed up with. The server (`sendConversationReply`) is the source of
+  // truth and returns HTTP 402; this just surfaces the banner + disables the
+  // composer so the agent gets the message before attempting a blocked send.
+  const { data: tenantSettings } = useGetTenantSettings();
+  const last10Digits = (s: string | null | undefined) =>
+    (s ?? "").replace(/\D/g, "").slice(-10);
+  const textingUnlocked = tenantSettings?.subscriptionStatus === "active";
+  const signupLast10 = last10Digits(tenantSettings?.signupPhone);
+  const isSignupContact =
+    signupLast10.length > 0 && last10Digits(contactPhone) === signupLast10;
+  const [paywallBlockedId, setPaywallBlockedId] = useState<number | null>(null);
+  const showPaywallBanner =
+    !!selectedConv &&
+    !textingUnlocked &&
+    (!isSignupContact || paywallBlockedId === selectedId);
+
   const { data: contactMatches } = useListContacts(
     { q: contactPhone },
     {
@@ -525,6 +545,14 @@ export default function Inbox() {
             queryKey: getGetConversationQueryKey(selectedId),
           });
         }
+      },
+      onError: (err: unknown) => {
+        // The server is authoritative on the demo paywall; a 402 means this send
+        // to a new contact was blocked. Surface the banner for this conversation.
+        const status =
+          (err as { response?: { status?: number } } | null)?.response
+            ?.status ?? (err as { status?: number } | null)?.status;
+        if (status === 402 && selectedId) setPaywallBlockedId(selectedId);
       },
     },
   });
@@ -722,6 +750,8 @@ export default function Inbox() {
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!composeText.trim() || !selectedId) return;
+    // Unpaid tenants cannot text a new contact; the server enforces this too.
+    if (showPaywallBanner) return;
     if (isWhisperMode) {
       whisperMutation.mutate({ id: selectedId, data: { body: composeText } });
     } else {
@@ -1522,6 +1552,17 @@ export default function Inbox() {
               )}
             </ScrollArea>
 
+            {/* Demo paywall: full-width banner directly on top of the composer. */}
+            {showPaywallBanner && (
+              <div
+                className="w-full px-4 py-3 bg-amber-50 border-t border-amber-200 flex items-center gap-2 text-sm font-medium text-amber-900"
+                data-testid="paywall-new-contact-banner"
+                role="alert"
+              >
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>You will need a Paid Subscription to text New Contacts</span>
+              </div>
+            )}
             {/* Compose Area */}
             <div className="p-4 border-t border-slate-200 bg-white">
               <div className="relative">
@@ -1698,6 +1739,7 @@ export default function Inbox() {
                         onKeyDown={handleComposeKeyDown}
                         maxLength={COMPOSE_MAX_CHARS}
                         rows={2}
+                        disabled={showPaywallBanner}
                         placeholder={
                           isWhisperMode
                             ? "Internal note (only your team will see this)..."
@@ -1717,7 +1759,7 @@ export default function Inbox() {
                       type="submit"
                       size="icon"
                       className={`rounded-xl h-[66px] w-[66px] shrink-0 ${sendButtonClass}`}
-                      disabled={!composeText.trim() || composerBusy}
+                      disabled={!composeText.trim() || composerBusy || showPaywallBanner}
                       data-testid="button-send-message"
                     >
                       <Send className="h-5 w-5" />
