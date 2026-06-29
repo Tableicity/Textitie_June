@@ -36,3 +36,9 @@ id = "Vnf1KRs3VsIqfTixXWNLT"
 uri = "file://John/A Migration Tenant/Migration_How_To.md"
 type = "text"
 title = "Migration How-To — TextLine → Textitie (Staff Training Manual)"
+
+[[outputs]]
+id = "0EAqHS9CZm_L-MrAxD4u8"
+uri = "file://John/A Billing Credit System/Billing_Credit.md"
+type = "text"
+title = "Billing & Credit Engine — Staff Training Manual"

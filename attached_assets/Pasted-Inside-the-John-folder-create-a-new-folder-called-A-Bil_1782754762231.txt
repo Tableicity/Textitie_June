@@ -1,0 +1,21 @@
+Inside the 'John' folder, create a new folder called 'A Billing Credit System'. Inside that new folder, generate a highly granular, production-grade Staff Training Manual document named 'Billing_Credit.md'. 
+
+This document must comprehensively cover the internal credit-deduction engine backend logic you just built, using these exact foundational rules as the source of truth so our team understands the engineering mechanics:
+
+1. THE WATERFALL LOGIC: Detail how the engine checks and drains a tenant's balance in strict sequence: 1st: Included Pool (resets monthly/no rollover), 2nd: Add-On Packs ($0.03/credit, rolls over), 3rd: Backup Credits ($0.04/credit, triggers in blocks of 250 when balance hits zero). Detail how a tenant toggle can turn Backup off, causing a hard outbound stop at 0 balance, while inbound messages are forced to allow a negative balance.
+
+2. SEGMENTATION & ENCODING RULES: Explain the math behind how credits are calculated:
+   - Standard SMS (GSM-7): 1 credit per 160 characters.
+   - Multi-Segment SMS (GSM-7): 1 credit per 153 characters due to 7-character concatenation headers (e.g., 350 chars = 3 segments/credits). There is NO 3-credit cap for long text.
+   - Emoji Drop (UCS-2): The exact moment a single emoji or special character is introduced, the entire segment size drops to 70 characters (71 characters = 2 segments, 150 characters = 3 segments).
+   - MMS Rules: Any file/document attachment (PDF, PNG, vCard, etc.) or inbound/outbound media costs a flat 3 credits.
+
+3. WEBHOOK STATUS & REFUND LOGIC: Document how our webhook listener maps Twilio-style gateway responses:
+   - REJECTED (Refund/No Charge): Error 21610 (Opt-out/Stop) and Error 21211 (Invalid number format).
+   - FAILED/UNDELIVERED (No Refund/Charge Stands): Error 30007 (Carrier spam block) and Error 30003 (Unreachable handset). Explain why we still charge for carrier drops to protect our margins.
+
+4. SEPARATE OVERHEAD LINE ITEMS: Reiterate that the $15/mo local number fee and $10/mo unregistered surcharge are handled strictly via Stripe line items and NEVER deducted from the credit buckets.
+
+5. AGENTIC AI MOAT: Document how Agentic LLM Co-Pilot generations are mathematically "free" on the credit rate-card but drive revenue by generating longer contextual responses that naturally trigger multi-segment/emoji credit usage.
+
+Document everything cleanly with code-snippet examples of the logic blocks you just implemented so our engineers can easily maintain this codebase.
