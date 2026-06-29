@@ -1,0 +1,35 @@
+# PAGE TITLE: 🛠️ Global Billing & Rate Card Blueprint (Read-Only Reference)
+Subtitle: This page acts as the structural source of truth for the core billing engine wired into Stripe and the database waterfall.
+
+[ SECTION 1: MONTHLY SUBSCRIPTION TIERS & CARRIER overhead ]
+--------------------------------------------------------------------------------
+
+| Tier Name   | Base Price | Incl. Credits | Overage Actions / Strategy        |
+--------------------------------------------------------------------------------
+
+| Starter     | $149.00/mo | 600 Credits   | Hard-stops at 0 if Backup is Off  |
+| Growth      | $349.00/mo | 2,000 Credits | Unlimited AI Agent generation     |
+| Enterprise  | Custom     | Bespoke Pool  | Isolated Hetzner Silo Deployment  |
+--------------------------------------------------------------------------------
+* Pass-Through Number Fee: $15.00/mo (Added to all live Stripe invoices)
+* Unregistered Surcharge: $10.00/mo (Applied continuously until A2P 10DLC is approved)
+
+[ SECTION 2: THE 3-BUCKET WATERFALL ENGINE (DEDUCTION LOGIC) ]
+Every routing event queries the DB and drains assets in this strict order:
+1. 🟢 INCLUDED POOL  -> Resets to plan amount at monthly cycle boundary (No Rollover).
+2. 🔵 ADD-ON PACKS   -> Purchased at $0.03/credit ($15/$30/$150 packs). Cash asset (Rolls Over).
+3. 🔴 BACKUP CREDITS -> Triggers at 0 balance in $10 blocks (250 credits @ $0.04/credit).
+
+[ SECTION 3: PROTOCOL & SEGMENTATION RATES ]
+* Standard SMS (Text only, GSM-7): 1 Credit per 160 characters.
+* Multi-Segment Text (GSM-7): 1 Credit per 153 characters (7-char concatenation headers applied).
+* Emoji Drop Penalty (UCS-2): 1 Credit per 70 characters (Triggered by a single emoji/special char).
+* Document / Media (MMS): 3 Credits flat per message (Inbound and Outbound, PDFs, vCards, PNGs).
+
+[ SECTION 4: GATEWAY STATUS & REFUND MAPPING ]
+* REJECTED (No Charge / Auto-Refund Credit):
+  - Error 21610 (Stop / Opt-Out)
+  - Error 21211 (Invalid Format / Landline check)
+* FAILED / UNDELIVERED (Charge Stands / No Refund):
+  - Error 30007 (Carrier Carrier/Spam Filter Block)
+  - Error 30003 (Unreachable/Dead Handset Network drop)

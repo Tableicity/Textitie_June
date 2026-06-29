@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Activity, Webhook, Box, ShieldAlert, Zap, Users, ShieldCheck, UserCog, LogOut, BrainCircuit } from "lucide-react";
+import { Activity, Webhook, Box, ShieldAlert, Zap, Users, ShieldCheck, UserCog, LogOut, BrainCircuit, Coins } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { InjectComposerDialog } from "./InjectComposerDialog";
@@ -16,6 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: "/webhooks", label: "Webhooks", icon: Webhook },
     { href: "/compliance", label: "10DLC Compliance", icon: ShieldCheck },
     { href: "/tiers", label: "Tiers", icon: Box },
+    { href: "/credit-pricing", label: "Credit Pricing", icon: Coins },
   ];
 
   const profileActive = location === "/profile";
