@@ -35,10 +35,11 @@ interface SetupStep {
  *     centered, keeping their original format.
  *
  * The first two bubbles track real tenant state (a department exists; a number
- * is assigned). Once both are present the tenant can text, so the banner
- * retires. The third "Register" bubble points to the (stubbed) registration
- * screen — registrationStatus isn't exposed to the tenant API, so it is not
- * tracked here.
+ * is assigned). The banner is a PERSISTENT fixed header — it stays visible even
+ * after both steps are complete, so it never disappears on the agent once setup
+ * is done; completed steps simply render with a check. The third "Register"
+ * bubble points to the (stubbed) registration screen — registrationStatus isn't
+ * exposed to the tenant API, so it is not tracked here.
  */
 export default function InboxSetupBanner() {
   const {
@@ -60,8 +61,9 @@ export default function InboxSetupBanner() {
   const hasDepartment = (departments?.length ?? 0) > 0;
   const hasNumber = (phoneNumbers?.length ?? 0) > 0;
 
-  // Functional "ready to text" gate: a department + an assigned number.
-  if (hasDepartment && hasNumber) return null;
+  // The banner is a persistent fixed header: it stays visible even once both a
+  // department and a number exist (completed steps just show a check). It no
+  // longer auto-retires when setup is complete.
 
   const steps: SetupStep[] = [
     {
