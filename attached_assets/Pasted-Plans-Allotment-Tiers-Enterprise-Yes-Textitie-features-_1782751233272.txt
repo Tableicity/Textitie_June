@@ -1,0 +1,66 @@
+Plans & Allotment
+•	Tiers & Enterprise: Yes. Textitie features a third tier above Pro named Enterprise (Custom pricing, requiring contact). It includes everything in Pro plus flexible implementation, advanced security, and personalized account plans. [1]
+•	Free Trial Credits: The standard signup trial gives users 100 starter credits completely free for testing.
+•	Rollover vs. Reset: Included base credits (600 or 2,000) do not roll over. They reset completely at the start of each billing cycle ("use it or lose it").
+________________________________________
+The Three Buckets (Waterfall Logic)
+3. Consumption Order (Waterfall)
+When an SMS/MMS event occurs, your system must drain your user's balance in this strict sequence:
+1.	Included Credits (Drains first; expires at end of cycle)
+2.	Add-On Credits (Drains second; rolls over because they paid cash upfront for them)
+3.	Backup Credits (Drains last; auto-replenishes in blocks when both fields above hit zero)
+4. Add-On Mechanics
+•	Frequency: Users can buy Add-On credits repeatedly whenever they want.
+•	Sizing: They are sold in fixed packs (e.g., 500 credits for $15, 1,000 credits for $30, 5,000 credits for $150) keeping the effective rate at $0.03/credit. They are not sold in arbitrary single-digit quantities.
+5. Backup Mechanics
+•	Frequency & Caps: Backup triggers automatically multiple times per cycle every single time the user's total credit pool hits zero. To protect your customers from runaway loops (e.g., a buggy automated loop), your system should implement a configurable cap (e.g., max 4 auto-top-ups per month) before a hard freeze.
+•	Tenant Toggle & Declines: Yes, build a tenant toggle to disable Backup Credits.
+o	If Backup is OFF or Stripe declines: Outbound traffic must hard-stop immediately.
+o	Inbound handling: See rule #7 below.
+________________________________________
+Rate-Card Edge Cases
+6. Long-Text Cap (The 4+ Segment Rule)
+To clarify the previous example: A text exceeding 3 segments does NOT cap out. It continues to accrue 1 credit per segment indefinitely (4 credits for 4 segments, 5 credits for 5 segments, etc.).
+•	The MMS Rule: A message changes to a flat 3-credit charge only if the user physically attaches a file/document (MMS), OR if your system explicitly converts a massive block of text into an MMS wrapper to save costs. If sent as pure raw text, a 4-segment chain costs 4 credits.
+7. Inbound at Zero Balance
+•	Negative Balance Allowed: Because you cannot block an incoming carrier transmission, if the tenant is at zero credits and Backup is disabled (or the card fails), you must allow the account balance to go negative (e.g., -1, -5 credits).
+•	Inbound MMS Cost: Yes, inbound MMS messages containing documents, images, or vCards consume 3 credits, exactly like outbound MMS.
+8. AI Usage
+•	Credit Logic: An Auto-Pilot/Co-Pilot generation that results in a text message only costs the standard SMS/MMS credit required to send that text. The AI processing/generation itself is "free" relative to your credit tracking engine (you absorb the LLM API costs inside the SaaS platform subscription margin).
+________________________________________
+Billing Trigger & Scope
+9. Failed vs. Rejected Mapping (Twilio-Equivalent Webhooks)
+Wire your database's status_callback refund processor using this mapping logic:
+Webhook Status / Error Code	Action Type	System Action	Reason
+Error 21610 (User Opted Out)	Rejected	No Charge (Refund Credit)	Twilio stops it instantly; you aren't billed.
+Error 21211 (Invalid/Unregistered)	Rejected	No Charge (Refund Credit)	Number fails formatting validation before hitting network.
+Error 30007 (Carrier Spam Block)	Failed	Charge Stands (No Refund)	Handed to carrier, carrier dropped it; you are still billed.
+Error 30003 (Unreachable Handset)	Failed	Charge Stands (No Refund)	Phone is dead/out of range; network resources were used.
+10. Carrier & Number Fees
+•	Separate Line Items: Correct. The $15/month local number fee, $10/month unregistered surcharges, and A2P 10DLC brand registration costs are fixed infrastructure costs. They must remain normal monthly Stripe subscription line items and should never be deducted from a user's credit balance.
+________________________________________
+Separate Line Items: Correct. The $15/month local number fee, $10/month unregistered surcharges, and A2P 10DLC brand registration costs are fixed infrastructure costs. They must remain normal monthly Stripe subscription line items and should never be deducted from a user's credit balance. = can you explain this? Carrier fee is $15 billed on top of the Price Tier; if Unregistered Number I add $10 to the invoice until registered = $25
+Exactly. You have the logic perfectly mapped out for your automated invoicing.
+To explain why this is critical for your SaaS: you are separating Usage Costs (which fluctuate based on how many texts they send) from Infrastructure Costs (which are fixed monthly overheads imposed by the telecom carriers).
+Here is exactly how this maps to your Stripe invoicing and why your $15 and $25 logic is spot on.
+The Breakdown of the Stripe Line Items
+When you bill your customer via Stripe every month, their invoice will look like a flat fee plus penalties, completely separate from their credit usage history.
+1.	The Base Tier + Local Number ($15 Add-on)
+o	Every tenant needs a phone number to send texts. You are passing down the carrier cost as a flat subscription line item.
+o	If they are on the Essentials Plan ($149/mo), their fixed base invoice is $164/mo ($149 + $15 number fee).
+2.	The "Unregistered Number" Penalty ($10 Surcharge)
+o	Mobile carriers (AT&T, Verizon, T-Mobile) heavily penalize business text messages that are sent from unregistered numbers (known as A2P 10DLC compliance).
+o	If a tenant refuses or delays registering their business brand, you slap an extra $10/mo surcharge on their bill.
+o	Their fixed base invoice now bumps to $174/mo ($149 + $15 + $10).
+o	The moment their registration is approved by the carrier, your code removes this $10 line item from the next Stripe billing cycle. [1, 2, 3]
+Why You Never Mix Fixed Fees with Credits
+You should never let a user "pay" for their $15 number or $10 compliance penalty using their credit balance. Here is why:
+•	Predictable SaaS Revenue: Infrastructure fees are recurring and time-based (billed on the 1st of the month, every month). Credits are usage-based (drained by sending texts). Mixing them makes your accounting a nightmare.
+•	Margin Protection: If a user runs out of credits and hits a zero balance, you can easily freeze their outbound texting. However, you cannot freeze their phone number—the carrier will still charge you $15 for keeping that phone line active. By keeping it as a Stripe subscription line item, you guarantee you collect that cash upfront, even if they never send a single text.
+How this Looks on a Stripe Invoice (Example)
+If an unregistered customer on the Essentials tier runs out of credits and buys one extra Add-On pack, their Stripe invoice at the end of the month dynamically stitches together like this:
+•	Essentials Plan Subscription: $149.00
+•	Local Number Provisioning Fee: $15.00
+•	Unregistered A2P 10DLC Compliance Surcharge: $10.00
+•	Add-On Credit Pack (1,000 Credits): $30.00 (Usage charge)
+•	TOTAL MONTHLY INVOICE: $204.00
