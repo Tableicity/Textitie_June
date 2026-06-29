@@ -23,23 +23,25 @@ interface SetupStep {
 }
 
 /**
- * Getting-started "bubble step" banner. Runs full-width along the very top of
- * the Inbox (above the conversation list + conversation pane), mirroring
- * Textline's setup prompt. Brand-blue background (#3e6996) with white text.
+ * Inbox Hero Banner. Runs full-width along the very top of the Inbox (above the
+ * conversation list + conversation pane). Brand-blue background (#3e6996) with
+ * white text spanning BOTH columns, so whatever occupies the right-hand slot
+ * keeps a consistent look & feel as messages rotate.
  *
- * Two-column layout — this banner is a fixed asset reused across scenarios:
- *   - Left column: reserved for company branding. It spans from the left edge
- *     to the right edge of the conversation-list panel (w-80 / 320px), capped
+ * Two-column layout — the branded strip is a PERMANENT fixture:
+ *   - Left column: company branding (logo + wordmark). Always rendered; never
+ *     retires. Spans to the conversation-list panel edge (w-80 / 320px), capped
  *     by a thin grey vertical divider.
- *   - Right column: the "Ready to start texting…" heading + the bubble stepper,
- *     centered, keeping their original format.
+ *   - Right column: a rotating "message slot". Its current occupant is the
+ *     getting-started "Ready to start texting…" heading + bubble stepper, which
+ *     shows ONLY while setup is incomplete and retires once the tenant has both
+ *     a department and an assigned number. When empty, the blue strip + branding
+ *     stay put, ready for the next message.
  *
- * The first two bubbles track real tenant state (a department exists; a number
- * is assigned). The banner is a PERSISTENT fixed header — it stays visible even
- * after both steps are complete, so it never disappears on the agent once setup
- * is done; completed steps simply render with a check. The third "Register"
- * bubble points to the (stubbed) registration screen — registrationStatus isn't
- * exposed to the tenant API, so it is not tracked here.
+ * Stepper bubbles track real tenant state (a department exists; a number is
+ * assigned). The third "Register" bubble points to the (stubbed) registration
+ * screen — registrationStatus isn't exposed to the tenant API, so it is not
+ * tracked here.
  */
 export default function InboxSetupBanner() {
   const {
@@ -53,17 +55,19 @@ export default function InboxSetupBanner() {
     isError: numbersError,
   } = useListPhoneNumbers();
 
-  // Don't flash the banner before we know the setup state, and don't show a
-  // false "incomplete" state if a setup query fails.
-  if (loadingDepts || loadingNumbers) return null;
-  if (deptsError || numbersError) return null;
-
   const hasDepartment = (departments?.length ?? 0) > 0;
   const hasNumber = (phoneNumbers?.length ?? 0) > 0;
 
-  // The banner is a persistent fixed header: it stays visible even once both a
-  // department and a number exist (completed steps just show a check). It no
-  // longer auto-retires when setup is complete.
+  // The branded strip is permanent; only the right-hand message slot changes.
+  // The setup stepper is that slot's current occupant: show it only once we
+  // know the real setup state AND it's still incomplete. Once a department + an
+  // assigned number both exist — or while the state is still loading or a query
+  // errored (so we never flash a false "incomplete") — the stepper retires and
+  // the slot sits empty, ready for the next message, while the blue strip +
+  // branding stay put.
+  const settled =
+    !loadingDepts && !loadingNumbers && !deptsError && !numbersError;
+  const showSetupStepper = settled && !(hasDepartment && hasNumber);
 
   const steps: SetupStep[] = [
     {
@@ -121,6 +125,7 @@ export default function InboxSetupBanner() {
         {/* Column 2 — getting-started prompt + bubble stepper, left-aligned to
             match the conversation pane's avatar padding (header px-6). */}
         <div className="flex flex-1 items-center justify-start pl-6">
+          {showSetupStepper && (
           <div className="flex flex-wrap items-center justify-start gap-x-8 gap-y-2">
             {/* Heading — mirrors Textline's getting-started prompt */}
             <p className="text-sm font-semibold text-white">
@@ -182,6 +187,7 @@ export default function InboxSetupBanner() {
               })}
             </ol>
           </div>
+          )}
         </div>
       </div>
     </div>
