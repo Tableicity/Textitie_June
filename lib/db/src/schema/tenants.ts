@@ -71,6 +71,11 @@ export const tenantsTable = pgTable("tenants", {
   unregisteredSurchargeEnabled: boolean("unregistered_surcharge_enabled")
     .notNull()
     .default(true),
+  // Operator "Auto Approve / Auto Subscribed" override. When true the tenant is
+  // treated as a paid subscriber and bypasses the demo paywall (isTextingUnlocked
+  // returns true) regardless of subscriptionStatus — lets an operator test the
+  // paid experience without going through the payment gateway. Default false.
+  billingBypass: boolean("billing_bypass").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

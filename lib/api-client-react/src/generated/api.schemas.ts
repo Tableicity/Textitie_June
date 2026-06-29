@@ -114,6 +114,8 @@ export interface Tenant {
   autopilotHoldingPhrase: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled: boolean;
+  /** Operator "Auto Approve / Auto Subscribed" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing. */
+  billingBypass: boolean;
   createdAt: string;
 }
 
@@ -174,6 +176,8 @@ export interface UpdateTenantInput {
   autopilotHoldingPhrase?: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled?: boolean;
+  /** Operator "Auto Approve / Auto Subscribed" override. When true the tenant bypasses the demo paywall and texts as a paid subscriber (for testing the paid experience without going through billing). */
+  billingBypass?: boolean;
 }
 
 export interface InjectMessageInput {
@@ -363,6 +367,8 @@ export interface TenantSettings {
    * @nullable
    */
   signupPhone?: string | null;
+  /** Operator "Auto Approve / Auto Subscribed" override. When true the tenant bypasses the demo paywall and may text any compliant contact even while unpaid. */
+  billingBypass: boolean;
 }
 
 /**

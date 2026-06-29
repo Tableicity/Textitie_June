@@ -371,6 +371,27 @@ export default function TenantDetail() {
     );
   };
 
+  const onToggleBillingBypass = (enabled: boolean) => {
+    if (!tenant) return;
+    updateTenant.mutate(
+      { id: tenant.id, data: { billingBypass: enabled } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenant.id) });
+          toast({
+            title: enabled ? "Auto Approve On" : "Auto Approve Off",
+            description: enabled
+              ? `${tenant.name} is now treated as a paid subscriber — the demo paywall is bypassed and it can text any contact.`
+              : `Auto Approve removed for ${tenant.name}. The demo paywall now follows the real subscription status.`,
+          });
+        },
+        onError: (err) => {
+          toast({ title: "Update Failed", description: err.message || "An error occurred", variant: "destructive" });
+        },
+      },
+    );
+  };
+
   const onSaveBrandScope = () => {
     if (!tenant) return;
     const next = brandScopeText.trim() || null;
@@ -663,6 +684,23 @@ export default function TenantDetail() {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-3 rounded-md border p-3">
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">
+                Auto Approve / Auto Subscribed
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {tenant.billingBypass
+                  ? `${tenant.name} is treated as a paid subscriber — the demo paywall is bypassed and it can text any contact.`
+                  : "Bypass the payment gateway and treat this tenant as a paid subscriber for testing. While on, the demo paywall (unpaid tenants may text only their signup number) is skipped."}
+              </p>
+            </div>
+            <Switch
+              checked={tenant.billingBypass}
+              disabled={updateTenant.isPending}
+              onCheckedChange={onToggleBillingBypass}
+            />
+          </div>
           <div className="rounded-md border p-3 space-y-2">
             <p className="text-sm font-medium">Create a department</p>
             <div className="flex gap-2">

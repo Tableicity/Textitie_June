@@ -31,6 +31,7 @@ async function loadTenantSettings(tenantId: number) {
       hipaaEligible: tiersTable.hipaaEligible,
       engagementMode: tenantsTable.engagementMode,
       subscriptionStatus: tenantsTable.subscriptionStatus,
+      billingBypass: tenantsTable.billingBypass,
     })
     .from(tenantsTable)
     .leftJoin(tiersTable, eq(tiersTable.code, tenantsTable.tierCode))

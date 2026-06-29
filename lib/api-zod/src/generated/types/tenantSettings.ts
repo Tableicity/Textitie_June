@@ -41,4 +41,6 @@ export interface TenantSettings {
    * @nullable
    */
   signupPhone?: string | null;
+  /** Operator "Auto Approve / Auto Subscribed" override. When true the tenant bypasses the demo paywall and may text any compliant contact even while unpaid. */
+  billingBypass: boolean;
 }

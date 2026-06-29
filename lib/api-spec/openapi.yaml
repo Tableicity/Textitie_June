@@ -3789,6 +3789,13 @@ components:
           description: >-
             When false, the per-number unregistered carrier surcharge is waived
             for this tenant (carrier fee still applies).
+        billingBypass:
+          type: boolean
+          description: >-
+            Operator "Auto Approve / Auto Subscribed" override. When true the
+            tenant is treated as a paid subscriber and bypasses the demo paywall
+            (may text any compliant contact) regardless of subscriptionStatus —
+            for testing the paid experience without going through billing.
         createdAt:
           type: string
           format: date-time
@@ -3807,6 +3814,7 @@ components:
         - fallbackPhrase
         - autopilotHoldingPhrase
         - unregisteredSurchargeEnabled
+        - billingBypass
         - createdAt
 
     CreateTenantInput:
@@ -3878,6 +3886,12 @@ components:
           description: >-
             When false, the per-number unregistered carrier surcharge is waived
             for this tenant (carrier fee still applies).
+        billingBypass:
+          type: boolean
+          description: >-
+            Operator "Auto Approve / Auto Subscribed" override. When true the
+            tenant bypasses the demo paywall and texts as a paid subscriber
+            (for testing the paid experience without going through billing).
 
     InjectMessageInput:
       type: object
@@ -4154,6 +4168,12 @@ components:
           description: >-
             E.164 phone the tenant signed up with (owner). While unpaid, this is
             the only destination the tenant is allowed to text.
+        billingBypass:
+          type: boolean
+          description: >-
+            Operator "Auto Approve / Auto Subscribed" override. When true the
+            tenant bypasses the demo paywall and may text any compliant contact
+            even while unpaid.
       required:
         - id
         - name
@@ -4162,6 +4182,7 @@ components:
         - tierCode
         - engagementMode
         - subscriptionStatus
+        - billingBypass
 
     UpdateTenantSettingsInput:
       type: object

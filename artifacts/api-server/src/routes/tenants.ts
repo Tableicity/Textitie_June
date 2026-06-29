@@ -632,6 +632,7 @@ router.patch("/tenants/:id", async (req, res): Promise<void> => {
     "fallbackPhrase",
     "autopilotHoldingPhrase",
     "unregisteredSurchargeEnabled",
+    "billingBypass",
   ] as const) {
     if (k in body.data) patch[k] = body.data[k];
   }

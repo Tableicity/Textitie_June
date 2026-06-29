@@ -23,6 +23,26 @@ describe("demoTextingGate pure policy", () => {
     }
   });
 
+  it("treats billingBypass=true as unlocked even when unpaid", () => {
+    expect(isTextingUnlocked("none", true)).toBe(true);
+    expect(isTextingUnlocked("trialing", true)).toBe(true);
+    expect(isTextingUnlocked(null, true)).toBe(true);
+    // bypass off/unset keeps the active-only rule
+    expect(isTextingUnlocked("none", false)).toBe(false);
+    expect(isTextingUnlocked("none", undefined)).toBe(false);
+  });
+
+  it("never blocks a bypassed tenant, regardless of destination", () => {
+    expect(
+      isDemoTextingBlocked({
+        subscriptionStatus: "none",
+        allowedPhone: "+15550000000",
+        contactPhone: "+15559999999",
+        billingBypass: true,
+      }),
+    ).toBe(false);
+  });
+
   it("normalizes equivalent US numbers to the same comparable form", () => {
     expect(normalizeDemoPhone("+15551234567")).toBe(
       normalizeDemoPhone("5551234567"),

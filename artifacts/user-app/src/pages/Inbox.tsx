@@ -373,7 +373,9 @@ export default function Inbox() {
   const { data: tenantSettings } = useGetTenantSettings();
   const last10Digits = (s: string | null | undefined) =>
     (s ?? "").replace(/\D/g, "").slice(-10);
-  const textingUnlocked = tenantSettings?.subscriptionStatus === "active";
+  const textingUnlocked =
+    tenantSettings?.subscriptionStatus === "active" ||
+    tenantSettings?.billingBypass === true;
   const signupLast10 = last10Digits(tenantSettings?.signupPhone);
   const isSignupContact =
     signupLast10.length > 0 && last10Digits(contactPhone) === signupLast10;

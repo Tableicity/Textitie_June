@@ -12,7 +12,10 @@ import { normalizePhoneE164 } from "./phoneNumberRegistry";
  *
  * "Unlocked"/paid is defined narrowly as subscriptionStatus === "active". A trial
  * ("trialing"), "none", "past_due", or "canceled" tenant stays gated — the gate
- * covers the demo/testing phase that precedes an actual paid subscription.
+ * covers the demo/testing phase that precedes an actual paid subscription. An
+ * operator can also flip the per-tenant `billingBypass` ("Auto Approve / Auto
+ * Subscribed") flag from the Conductor to treat a tenant as paid and bypass this
+ * gate for testing the paid experience without going through the payment gateway.
  *
  * Enforcement lives in the single outbound source of truth
  * (`sendConversationReply`) so every send path (human composer, AI auto-send,
@@ -23,11 +26,17 @@ import { normalizePhoneE164 } from "./phoneNumberRegistry";
 export const PAYWALL_NEW_CONTACT_MESSAGE =
   "You will need a Paid Subscription to text New Contacts";
 
-/** A tenant can text any compliant contact only once its subscription is active. */
+/**
+ * A tenant can text any compliant contact once its subscription is active OR an
+ * operator has flipped the per-tenant `billingBypass` ("Auto Approve / Auto
+ * Subscribed") override on — the bypass treats the tenant as a paid subscriber
+ * for testing without going through the payment gateway.
+ */
 export function isTextingUnlocked(
   subscriptionStatus: string | null | undefined,
+  billingBypass?: boolean | null,
 ): boolean {
-  return subscriptionStatus === "active";
+  return billingBypass === true || subscriptionStatus === "active";
 }
 
 /**
@@ -57,8 +66,9 @@ export function isDemoTextingBlocked(args: {
   subscriptionStatus: string | null | undefined;
   allowedPhone: string | null | undefined;
   contactPhone: string | null | undefined;
+  billingBypass?: boolean | null;
 }): boolean {
-  if (isTextingUnlocked(args.subscriptionStatus)) return false;
+  if (isTextingUnlocked(args.subscriptionStatus, args.billingBypass)) return false;
   const allowed = normalizeDemoPhone(args.allowedPhone);
   if (!allowed) return true; // unpaid + unknown signup phone => fail closed
   return normalizeDemoPhone(args.contactPhone) !== allowed;
@@ -97,12 +107,21 @@ export async function isDemoTextingBlockedForTenant(
   contactPhone: string,
 ): Promise<boolean> {
   const [tenant] = await db
-    .select({ subscriptionStatus: tenantsTable.subscriptionStatus })
+    .select({
+      subscriptionStatus: tenantsTable.subscriptionStatus,
+      billingBypass: tenantsTable.billingBypass,
+    })
     .from(tenantsTable)
     .where(eq(tenantsTable.id, tenantId))
     .limit(1);
   const subscriptionStatus = tenant?.subscriptionStatus ?? null;
-  if (isTextingUnlocked(subscriptionStatus)) return false;
+  const billingBypass = tenant?.billingBypass ?? false;
+  if (isTextingUnlocked(subscriptionStatus, billingBypass)) return false;
   const allowedPhone = await loadOwnerSignupPhone(tenantId);
-  return isDemoTextingBlocked({ subscriptionStatus, allowedPhone, contactPhone });
+  return isDemoTextingBlocked({
+    subscriptionStatus,
+    allowedPhone,
+    contactPhone,
+    billingBypass,
+  });
 }

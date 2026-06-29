@@ -48,5 +48,7 @@ export interface Tenant {
   autopilotHoldingPhrase: string | null;
   /** When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies). */
   unregisteredSurchargeEnabled: boolean;
+  /** Operator "Auto Approve / Auto Subscribed" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing. */
+  billingBypass: boolean;
   createdAt: Date;
 }

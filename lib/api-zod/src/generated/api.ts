@@ -76,6 +76,11 @@ export const ListTenantsResponseItem = zod.object({
     .describe(
       "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
     ),
+  billingBypass: zod
+    .boolean()
+    .describe(
+      'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing.',
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListTenantsResponse = zod.array(ListTenantsResponseItem);
@@ -190,6 +195,11 @@ export const GetTenantResponse = zod.object({
     .describe(
       "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
     ),
+  billingBypass: zod
+    .boolean()
+    .describe(
+      'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing.',
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -236,6 +246,12 @@ export const UpdateTenantBody = zod
       .optional()
       .describe(
         "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
+      ),
+    billingBypass: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant bypasses the demo paywall and texts as a paid subscriber (for testing the paid experience without going through billing).',
       ),
   })
   .describe("Partial tenant update — only supplied fields are written.");
@@ -285,6 +301,11 @@ export const UpdateTenantResponse = zod.object({
     .boolean()
     .describe(
       "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
+    ),
+  billingBypass: zod
+    .boolean()
+    .describe(
+      'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing.',
     ),
   createdAt: zod.coerce.date(),
 });
@@ -669,6 +690,11 @@ export const GetTenantSettingsResponse = zod.object({
     .describe(
       "E.164 phone the tenant signed up with (owner). While unpaid, this is the only destination the tenant is allowed to text.",
     ),
+  billingBypass: zod
+    .boolean()
+    .describe(
+      'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant bypasses the demo paywall and may text any compliant contact even while unpaid.',
+    ),
 });
 
 /**
@@ -750,6 +776,11 @@ export const UpdateTenantSettingsResponse = zod.object({
     .nullish()
     .describe(
       "E.164 phone the tenant signed up with (owner). While unpaid, this is the only destination the tenant is allowed to text.",
+    ),
+  billingBypass: zod
+    .boolean()
+    .describe(
+      'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant bypasses the demo paywall and may text any compliant contact even while unpaid.',
     ),
 });
 

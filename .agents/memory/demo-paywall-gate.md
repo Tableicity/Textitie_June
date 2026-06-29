@@ -10,8 +10,14 @@ owner `tenant_user`'s phone). Every other destination is blocked server-side and
 the inbox shows a full-width banner directly above the composer reading EXACTLY:
 `You will need a Paid Subscription to text New Contacts`.
 
-- **"Paid"/unlocked = `tenants.subscriptionStatus === "active"` ONLY.** `trialing`,
-  `none`, `past_due`, `canceled`, null — all GATED. (`isTextingUnlocked`.)
+- **"Paid"/unlocked = `tenants.subscriptionStatus === "active"` OR the per-tenant
+  operator override `tenants.billingBypass === true`** ("Auto Approve / Auto
+  Subscribed"). Otherwise (`trialing`, `none`, `past_due`, `canceled`, null) GATED.
+  (`isTextingUnlocked(status, billingBypass?)`.) `billingBypass` is a NOT NULL
+  DEFAULT false column the operator flips from the Conductor tenant-detail
+  Departments section so they can test the paid experience without paying; it is
+  threaded through `isDemoTextingBlocked`/`isDemoTextingBlockedForTenant` and
+  mirrored read-only onto `TenantSettings` for the Inbox (server still re-checks).
 - Enforcement lives in the **universal `sendConversationReply` (outboundReply.ts)**,
   gated FIRST (before scrub/compliance/From-resolution/persist) so a blocked send
   creates no message row, burns no usage, and never reaches the carrier. Returns
