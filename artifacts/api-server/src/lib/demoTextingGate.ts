@@ -1,6 +1,7 @@
-import { db, tenantsTable, tenantUsersTable } from "@workspace/db";
-import { asc, eq } from "drizzle-orm";
+import { db, tenantsTable, tenantUsersTable, creditLedgerTable } from "@workspace/db";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
 import { normalizePhoneE164 } from "./phoneNumberRegistry";
+import { calculateMessageCredits } from "./messageCost";
 
 /**
  * Demo paywall policy.
@@ -124,4 +125,145 @@ export async function isDemoTextingBlockedForTenant(
     contactPhone,
     billingBypass,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Daily free-trial outbound budget.
+//
+// A tenant on the free trial (`subscriptionStatus === "trialing"`) may send at
+// most TRIAL_DAILY_SEGMENT_CAP outbound SMS segments per ROLLING 24h — even
+// when texting only its own signup number. Segments are measured in the same
+// unit the credit ledger records (1 credit/segment for SMS, a flat 3 for MMS),
+// so the prior-usage SUM and the pending message's cost are directly
+// comparable. Active / billing-bypassed tenants are never capped; expired/none
+// tenants are already restricted to self-texting by the contact gate above and
+// are intentionally NOT subject to this trial-only budget.
+// ---------------------------------------------------------------------------
+
+/** Max outbound segments a trialing tenant may send per rolling 24h. */
+export const TRIAL_DAILY_SEGMENT_CAP = 15;
+
+export const DAILY_TRIAL_LIMIT_MESSAGE =
+  "Daily trial message limit reached. Upgrade to a paid plan or wait 24 hours to resume testing.";
+
+export type DemoGateReason = "paywall_new_contact" | "daily_trial_limit";
+
+export interface DemoGateDecision {
+  blocked: boolean;
+  reason?: DemoGateReason;
+  message?: string;
+}
+
+/**
+ * Pure budget policy. Trial-only: returns true when sending `pendingSegments`
+ * on top of `priorSegments24h` already used would push the tenant OVER the
+ * daily cap. Unlocked tenants and non-trialing statuses are never capped.
+ */
+export function isTrialDailyBudgetExceeded(args: {
+  subscriptionStatus: string | null | undefined;
+  billingBypass?: boolean | null;
+  priorSegments24h: number;
+  pendingSegments: number;
+}): boolean {
+  if (isTextingUnlocked(args.subscriptionStatus, args.billingBypass)) return false;
+  if (args.subscriptionStatus !== "trialing") return false;
+  return args.priorSegments24h + args.pendingSegments > TRIAL_DAILY_SEGMENT_CAP;
+}
+
+/**
+ * Sum the outbound segments (ledger `credits`) charged to a tenant in the last
+ * 24h. Reads the append-only credit_ledger — the durable record of every
+ * confirmed outbound charge — so it can never double-count a carrier retry.
+ */
+export async function sumOutboundSegmentsLast24h(
+  tenantId: number,
+): Promise<number> {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [row] = await db
+    .select({
+      total: sql<number>`COALESCE(SUM(${creditLedgerTable.credits}), 0)`,
+    })
+    .from(creditLedgerTable)
+    .where(
+      and(
+        eq(creditLedgerTable.tenantId, tenantId),
+        eq(creditLedgerTable.direction, "outbound"),
+        gte(creditLedgerTable.createdAt, cutoff),
+      ),
+    );
+  return Number(row?.total ?? 0);
+}
+
+/**
+ * Authoritative send-time demo gate. Runs both demo policies in order:
+ *   1. Contact restriction — an unpaid/demo tenant may only text its signup
+ *      phone (fail-closed).
+ *   2. Daily trial budget — a trialing tenant is capped at
+ *      TRIAL_DAILY_SEGMENT_CAP outbound segments per rolling 24h.
+ * Returns a discriminated decision so the caller can surface the right 402.
+ */
+export async function evaluateDemoTextingGate(args: {
+  tenantId: number;
+  contactPhone: string;
+  body: string;
+  mediaCount?: number;
+  forceMms?: boolean;
+}): Promise<DemoGateDecision> {
+  const [tenant] = await db
+    .select({
+      subscriptionStatus: tenantsTable.subscriptionStatus,
+      billingBypass: tenantsTable.billingBypass,
+    })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, args.tenantId))
+    .limit(1);
+
+  const subscriptionStatus = tenant?.subscriptionStatus ?? null;
+  const billingBypass = tenant?.billingBypass ?? false;
+
+  // Active / operator-bypassed tenants have no demo restrictions at all.
+  if (isTextingUnlocked(subscriptionStatus, billingBypass)) return { blocked: false };
+
+  // 1) Contact restriction.
+  const allowedPhone = await loadOwnerSignupPhone(args.tenantId);
+  if (
+    isDemoTextingBlocked({
+      subscriptionStatus,
+      allowedPhone,
+      contactPhone: args.contactPhone,
+      billingBypass,
+    })
+  ) {
+    return {
+      blocked: true,
+      reason: "paywall_new_contact",
+      message: PAYWALL_NEW_CONTACT_MESSAGE,
+    };
+  }
+
+  // 2) Daily trial budget (trialing tenants only).
+  if (subscriptionStatus === "trialing") {
+    const pendingSegments = calculateMessageCredits({
+      body: args.body,
+      mediaCount: args.mediaCount,
+      forceMms: args.forceMms,
+    }).credits;
+    const priorSegments24h = await sumOutboundSegmentsLast24h(args.tenantId);
+    if (
+      isTrialDailyBudgetExceeded({
+        subscriptionStatus,
+        billingBypass,
+        priorSegments24h,
+        pendingSegments,
+      })
+    ) {
+      return {
+        blocked: true,
+        reason: "daily_trial_limit",
+        message: DAILY_TRIAL_LIMIT_MESSAGE,
+      };
+    }
+  }
+
+  return { blocked: false };
 }

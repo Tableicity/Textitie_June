@@ -670,6 +670,11 @@ router.post(
           res.status(402).json({ error: result.errorMessage, reason: result.reason });
           return;
         }
+        if (result.reason === "daily_trial_limit") {
+          // Trial daily outbound-segment budget exhausted (rolling 24h).
+          res.status(402).json({ error: result.errorMessage, reason: result.reason });
+          return;
+        }
         if (result.reason === "credit_frozen") {
           // Out of messaging credits (no coverage across all buckets).
           res.status(402).json({ error: result.errorMessage, reason: result.reason });

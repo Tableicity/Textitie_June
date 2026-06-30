@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, useSearch, Redirect } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall, User } from "lucide-react";
+import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall, User, Lock, ArrowRight } from "lucide-react";
 import HipaaBanner from "@/components/HipaaBanner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -20,8 +20,10 @@ import {
   useTenantMe,
   useSetAgentStatus,
   useListAgents,
+  useGetSubscription,
   getTenantMeQueryKey,
   getListAgentsQueryKey,
+  getGetSubscriptionQueryKey,
 } from "@workspace/api-client-react";
 import { removeTenantToken, getTenantToken } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,6 +70,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       queryKey: getListAgentsQueryKey(),
     },
   });
+
+  // Trial soft-expiry paywall. Once the trial-lifecycle job flips the tenant to
+  // "expired", swap the main app for an "Upgrade to keep going" wall — the demo
+  // number stays assigned, but the workspace is read-blocked until they pay.
+  // /billing stays reachable so they can actually upgrade.
+  const { data: subscription } = useGetSubscription({
+    query: {
+      enabled: hasToken && !!data?.user,
+      queryKey: getGetSubscriptionQueryKey(),
+    },
+  });
+  const isTrialExpired = subscription?.status === "expired";
 
   const myAgent = agents?.find((a) => a.id === data?.user?.id);
   const [status, setStatus] = useState<AgentStatus>("online");
@@ -296,7 +310,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Main Content Area */}
       <main className="flex-1 bg-white text-slate-900 rounded-tl-2xl overflow-hidden shadow-2xl z-10 border-l border-t border-slate-200 flex flex-col">
         <HipaaBanner />
-        <div className="flex-1 overflow-hidden">{children}</div>
+        <div className="flex-1 overflow-hidden">
+          {isTrialExpired && location !== "/billing" ? (
+            <div className="h-full w-full flex items-center justify-center bg-slate-50 p-6">
+              <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl shadow-xl p-8 text-center">
+                <div className="mx-auto w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center mb-5">
+                  <Lock className="w-7 h-7 text-blue-600" />
+                </div>
+                <h1 className="text-xl font-bold text-slate-900 mb-2" data-testid="trial-expired-title">
+                  Your free trial has ended
+                </h1>
+                <p className="text-sm text-slate-600 mb-6">
+                  Upgrade to a paid plan to keep texting. Your demo number, contacts,
+                  and setup are saved — you'll pick up right where you left off.
+                </p>
+                <Button
+                  onClick={() => setLocation("/billing")}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  data-testid="button-upgrade-trial"
+                >
+                  Upgrade to keep going
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            children
+          )}
+        </div>
       </main>
 
       {/* Profile dialog — manages locally-stored A2P opt-in evidence */}

@@ -5,6 +5,7 @@ import { activateScheduledCampaign } from "./campaignEngine";
 import { processDueReminders } from "../routes/reminders";
 import { processCrmSyncQueue } from "./integrations/syncWorker";
 import { processPendingSurveys } from "./surveyDispatcher";
+import { processTrialLifecycle } from "./trialLifecycle";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -52,6 +53,14 @@ async function runTimerCycle(): Promise<void> {
     }
   } catch (err) {
     logger.error({ err }, "processCrmSyncQueue failed");
+  }
+  try {
+    const trialActions = await processTrialLifecycle();
+    if (trialActions > 0) {
+      logger.info({ count: trialActions }, "Trial lifecycle actions");
+    }
+  } catch (err) {
+    logger.error({ err }, "processTrialLifecycle failed");
   }
   try {
     const dispatched = await processPendingSurveys();

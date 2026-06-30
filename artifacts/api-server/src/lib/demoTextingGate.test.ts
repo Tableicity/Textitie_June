@@ -3,7 +3,10 @@ import {
   isTextingUnlocked,
   normalizeDemoPhone,
   isDemoTextingBlocked,
+  isTrialDailyBudgetExceeded,
   PAYWALL_NEW_CONTACT_MESSAGE,
+  DAILY_TRIAL_LIMIT_MESSAGE,
+  TRIAL_DAILY_SEGMENT_CAP,
 } from "./demoTextingGate";
 
 describe("demoTextingGate pure policy", () => {
@@ -106,5 +109,71 @@ describe("demoTextingGate pure policy", () => {
     expect(PAYWALL_NEW_CONTACT_MESSAGE).toBe(
       "You will need a Paid Subscription to text New Contacts",
     );
+  });
+});
+
+describe("trial daily outbound budget (pure policy)", () => {
+  it("exposes the exact required limit copy and cap", () => {
+    expect(DAILY_TRIAL_LIMIT_MESSAGE).toBe(
+      "Daily trial message limit reached. Upgrade to a paid plan or wait 24 hours to resume testing.",
+    );
+    expect(TRIAL_DAILY_SEGMENT_CAP).toBe(15);
+  });
+
+  it("never caps an active or bypassed tenant", () => {
+    expect(
+      isTrialDailyBudgetExceeded({
+        subscriptionStatus: "active",
+        priorSegments24h: 1000,
+        pendingSegments: 10,
+      }),
+    ).toBe(false);
+    expect(
+      isTrialDailyBudgetExceeded({
+        subscriptionStatus: "trialing",
+        billingBypass: true,
+        priorSegments24h: 1000,
+        pendingSegments: 10,
+      }),
+    ).toBe(false);
+  });
+
+  it("only caps 'trialing' tenants — other unpaid statuses are not budget-capped", () => {
+    for (const s of ["none", "past_due", "canceled", "expired"]) {
+      expect(
+        isTrialDailyBudgetExceeded({
+          subscriptionStatus: s,
+          priorSegments24h: 100,
+          pendingSegments: 10,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it("allows a trialing tenant up to and including the cap, blocks over it", () => {
+    // 14 used + 1 pending = 15 → exactly at cap → allowed.
+    expect(
+      isTrialDailyBudgetExceeded({
+        subscriptionStatus: "trialing",
+        priorSegments24h: 14,
+        pendingSegments: 1,
+      }),
+    ).toBe(false);
+    // 15 used + 1 pending = 16 → over cap → blocked.
+    expect(
+      isTrialDailyBudgetExceeded({
+        subscriptionStatus: "trialing",
+        priorSegments24h: 15,
+        pendingSegments: 1,
+      }),
+    ).toBe(true);
+    // A single multi-segment message that alone exceeds the cap is blocked.
+    expect(
+      isTrialDailyBudgetExceeded({
+        subscriptionStatus: "trialing",
+        priorSegments24h: 0,
+        pendingSegments: 16,
+      }),
+    ).toBe(true);
   });
 });

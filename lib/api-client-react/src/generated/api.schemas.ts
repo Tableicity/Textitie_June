@@ -360,7 +360,7 @@ export interface TenantSettings {
   hipaaEligible?: boolean | null;
   /** How the AI engages on inbound texts. "manual" = AI off (no draft, no auto-send, no learning). "copilot" drafts a reply into the composer for a human to edit and send (never learns). "autopilot" may auto-send the reply verbatim when it is high-confidence, classroom-grounded, conflict-free, in a safe category, and passes outbound compliance — and only then persists what it learned. Legacy values "assisted"/"gated_auto" are still accepted on write and normalized to copilot/autopilot. */
   engagementMode: TenantSettingsEngagementMode;
-  /** Billing state. "active" unlocks texting any compliant contact. Any other value (none/trialing/past_due/canceled) marks an unpaid "demo" tenant that may text only the phone it signed up with (signupPhone). */
+  /** Billing state. "active" unlocks texting any compliant contact. Any other value (none/trialing/past_due/canceled/expired) marks an unpaid "demo" tenant that may text only the phone it signed up with (signupPhone). "expired" is set by the trial-lifecycle job once a free trial passes its trialEndsAt. */
   subscriptionStatus: string;
   /**
    * E.164 phone the tenant signed up with (owner). While unpaid, this is the only destination the tenant is allowed to text.
@@ -935,6 +935,7 @@ export const SubscriptionDetailStatus = {
   active: "active",
   past_due: "past_due",
   canceled: "canceled",
+  expired: "expired",
 } as const;
 
 export interface SubscriptionDetail {

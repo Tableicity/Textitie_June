@@ -6,10 +6,7 @@ import { getSender } from "./senders";
 import type { SendStatus } from "./senders/types";
 import { rebrandAndLog } from "./brandSafety";
 import { getTenantExtraCompetitors } from "./brandSafetyStore";
-import {
-  isDemoTextingBlockedForTenant,
-  PAYWALL_NEW_CONTACT_MESSAGE,
-} from "./demoTextingGate";
+import { evaluateDemoTextingGate } from "./demoTextingGate";
 import { assessOutboundCredit, chargeMessageCredits } from "./creditService";
 import { logger } from "./logger";
 
@@ -33,6 +30,7 @@ export type OutboundReplyResult =
         | "no_sending_number"
         | "number_not_owned"
         | "paywall_new_contact"
+        | "daily_trial_limit"
         | "credit_frozen";
       errorMessage: string;
       complianceReason?: string;
@@ -85,14 +83,16 @@ export async function sendConversationReply(opts: {
     conductorAuthorized,
   } = opts;
 
-  // Demo paywall (authoritative): an unpaid/demo tenant may text only the phone
-  // it signed up with. Block before scrub/compliance/from-resolution/persist so a
-  // gated send never creates a message row, burns usage, or reaches the carrier.
-  if (await isDemoTextingBlockedForTenant(tenantId, contactPhone)) {
+  // Demo gate (authoritative): an unpaid/demo tenant may text only the phone it
+  // signed up with, AND a trialing tenant is capped at a daily outbound-segment
+  // budget. Block before scrub/compliance/from-resolution/persist so a gated
+  // send never creates a message row, burns usage, or reaches the carrier.
+  const demoGate = await evaluateDemoTextingGate({ tenantId, contactPhone, body });
+  if (demoGate.blocked) {
     return {
       ok: false,
-      reason: "paywall_new_contact",
-      errorMessage: PAYWALL_NEW_CONTACT_MESSAGE,
+      reason: demoGate.reason!,
+      errorMessage: demoGate.message!,
     };
   }
 

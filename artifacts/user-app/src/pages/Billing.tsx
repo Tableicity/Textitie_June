@@ -49,6 +49,7 @@ const STATUS_BADGES: Record<string, { label: string; variant: "default" | "secon
   active: { label: "Active", variant: "default" },
   past_due: { label: "Past Due", variant: "destructive" },
   canceled: { label: "Canceled", variant: "destructive" },
+  expired: { label: "Trial Ended", variant: "destructive" },
 };
 
 const TIER_ICONS: Record<string, React.ReactNode> = {

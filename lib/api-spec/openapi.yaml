@@ -4161,8 +4161,10 @@ components:
           type: string
           description: >-
             Billing state. "active" unlocks texting any compliant contact. Any
-            other value (none/trialing/past_due/canceled) marks an unpaid "demo"
-            tenant that may text only the phone it signed up with (signupPhone).
+            other value (none/trialing/past_due/canceled/expired) marks an
+            unpaid "demo" tenant that may text only the phone it signed up with
+            (signupPhone). "expired" is set by the trial-lifecycle job once a
+            free trial passes its trialEndsAt.
         signupPhone:
           type: ["string", "null"]
           description: >-
@@ -4952,7 +4954,7 @@ components:
           type: ["string", "null"]
         status:
           type: string
-          enum: [none, trialing, active, past_due, canceled]
+          enum: [none, trialing, active, past_due, canceled, expired]
         planTierCode:
           type: ["string", "null"]
         planName:

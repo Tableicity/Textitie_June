@@ -682,7 +682,7 @@ export const GetTenantSettingsResponse = zod.object({
   subscriptionStatus: zod
     .string()
     .describe(
-      'Billing state. \"active\" unlocks texting any compliant contact. Any other value (none\/trialing\/past_due\/canceled) marks an unpaid \"demo\" tenant that may text only the phone it signed up with (signupPhone).',
+      'Billing state. \"active\" unlocks texting any compliant contact. Any other value (none\/trialing\/past_due\/canceled\/expired) marks an unpaid \"demo\" tenant that may text only the phone it signed up with (signupPhone). \"expired\" is set by the trial-lifecycle job once a free trial passes its trialEndsAt.',
     ),
   signupPhone: zod
     .string()
@@ -769,7 +769,7 @@ export const UpdateTenantSettingsResponse = zod.object({
   subscriptionStatus: zod
     .string()
     .describe(
-      'Billing state. \"active\" unlocks texting any compliant contact. Any other value (none\/trialing\/past_due\/canceled) marks an unpaid \"demo\" tenant that may text only the phone it signed up with (signupPhone).',
+      'Billing state. \"active\" unlocks texting any compliant contact. Any other value (none\/trialing\/past_due\/canceled\/expired) marks an unpaid \"demo\" tenant that may text only the phone it signed up with (signupPhone). \"expired\" is set by the trial-lifecycle job once a free trial passes its trialEndsAt.',
     ),
   signupPhone: zod
     .string()
@@ -1659,7 +1659,14 @@ export const ListBillingPlansResponse = zod.array(ListBillingPlansResponseItem);
 export const GetSubscriptionResponse = zod.object({
   subscriptionId: zod.string().nullish(),
   customerId: zod.string().nullish(),
-  status: zod.enum(["none", "trialing", "active", "past_due", "canceled"]),
+  status: zod.enum([
+    "none",
+    "trialing",
+    "active",
+    "past_due",
+    "canceled",
+    "expired",
+  ]),
   planTierCode: zod.string().nullish(),
   planName: zod.string().nullish(),
   monthlyPriceCents: zod.number(),
