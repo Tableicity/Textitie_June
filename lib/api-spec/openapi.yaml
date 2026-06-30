@@ -5048,10 +5048,17 @@ components:
         currentPeriodEnd:
           type: ["string", "null"]
           format: date-time
+        billingBypass:
+          type: boolean
+          description: >
+            Operator override ("Auto Approve / Auto Subscribed") that treats the
+            tenant as paid. When true the client MUST NOT show the trial-expired
+            paywall mask even if status is "expired".
       required:
         - status
         - monthlyPriceCents
         - includedCredits
+        - billingBypass
 
     CheckoutSessionInput:
       type: object

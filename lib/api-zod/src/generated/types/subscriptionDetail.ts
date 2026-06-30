@@ -25,4 +25,7 @@ export interface SubscriptionDetail {
   currentPeriodStart?: Date | null;
   /** @nullable */
   currentPeriodEnd?: Date | null;
+  /** Operator override ("Auto Approve / Auto Subscribed") that treats the tenant as paid. When true the client MUST NOT show the trial-expired paywall mask even if status is "expired".
+   */
+  billingBypass: boolean;
 }

@@ -1,4 +1,4 @@
-import { useLocation, useRoute } from "wouter";
+import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,8 +25,10 @@ const signupSchema = z.object({
 
 export default function Signup() {
   const [, setLocation] = useLocation();
-  const [matchTrial] = useRoute("/signup/trial");
-  const isTrial = matchTrial;
+  // Signup ALWAYS starts a 14-day free trial (Choice C) — the dual
+  // /signup vs /signup/trial role was collapsed; both routes render this
+  // trial flow and the backend is authoritative regardless of `plan`.
+  const isTrial = true;
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [cookiesAcknowledged, setCookiesAcknowledged] = useState(true);
@@ -52,7 +54,6 @@ export default function Signup() {
           phone: values.phone,
           email: values.email,
           password: values.password,
-          plan: isTrial ? "trial" : "paid",
         }),
       });
       const data = await res.json();

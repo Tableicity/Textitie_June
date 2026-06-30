@@ -1718,6 +1718,11 @@ export const GetSubscriptionResponse = zod.object({
   trialEndsAt: zod.coerce.date().nullish(),
   currentPeriodStart: zod.coerce.date().nullish(),
   currentPeriodEnd: zod.coerce.date().nullish(),
+  billingBypass: zod
+    .boolean()
+    .describe(
+      'Operator override (\"Auto Approve \/ Auto Subscribed\") that treats the tenant as paid. When true the client MUST NOT show the trial-expired paywall mask even if status is \"expired\".\n',
+    ),
 });
 
 /**

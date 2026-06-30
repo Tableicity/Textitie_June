@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, tiersTable, billingEventsTable, tenantsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
-import { requireTenantAuth } from "../middleware/tenantAuth";
+import { requireTenantAuth, requireTenantOwner } from "../middleware/tenantAuth";
 import {
   startSubscription,
   changePlan,
@@ -17,7 +17,7 @@ import { computeCarrierBillingSnapshot } from "../lib/carrierBilling";
 
 const router = Router();
 
-router.post("/billing/checkout", requireTenantAuth, async (req, res) => {
+router.post("/billing/checkout", requireTenantAuth, requireTenantOwner, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
   const tenantSlug = req.tenantUser!.tenantSlug;
   const { tierCode, successUrl, cancelUrl } = req.body ?? {};
@@ -96,7 +96,7 @@ router.get("/billing/subscription", requireTenantAuth, async (req, res) => {
   }
 });
 
-router.post("/billing/subscribe", requireTenantAuth, async (req, res) => {
+router.post("/billing/subscribe", requireTenantAuth, requireTenantOwner, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
   const { tierCode } = req.body ?? {};
 
@@ -130,7 +130,7 @@ router.post("/billing/subscribe", requireTenantAuth, async (req, res) => {
   }
 });
 
-router.post("/billing/change-plan", requireTenantAuth, async (req, res) => {
+router.post("/billing/change-plan", requireTenantAuth, requireTenantOwner, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
   const { tierCode } = req.body ?? {};
 
@@ -164,7 +164,7 @@ router.post("/billing/change-plan", requireTenantAuth, async (req, res) => {
   }
 });
 
-router.post("/billing/cancel", requireTenantAuth, async (req, res) => {
+router.post("/billing/cancel", requireTenantAuth, requireTenantOwner, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
 
   try {

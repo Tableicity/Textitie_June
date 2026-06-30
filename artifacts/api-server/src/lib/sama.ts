@@ -38,6 +38,12 @@ export async function dispatchInjection(payload: {
     );
   }
 
+  // NOTE: Conductor injections are INTENTIONALLY exempt from the tenant trial
+  // hard-stop (isTenantSendingExpired). `/inject` is operator-only — it sits
+  // outside conductorAuth's tenant allow-list, so a tenant JWT can never reach
+  // it; only a Conductor (Basic auth) or superuser token can. An operator
+  // deliberately messaging a tenant's contact (support, migration, testing) is
+  // a trusted override, mirroring billingBypass, and is not "the tenant sending".
   const sender = getSender();
   const send = await sender.send({
     to,

@@ -5,6 +5,7 @@ import { getSender } from "./senders";
 import { extractContactVars, injectVariables, calculateSegments } from "./smsUtils";
 import { chargeMessageCredits } from "./creditService";
 import { simulateDeliveryCallback } from "./deliveryStatus";
+import { isTenantSendingExpired } from "./demoTextingGate";
 import { logger } from "./logger";
 
 const SEND_RATE_PER_SECOND = 10;
@@ -127,6 +128,19 @@ export async function executeCampaign(tenantSlug: string, campaignId: number): P
 
   if (campaign.status !== "sending") {
     logger.warn({ campaignId, status: campaign.status }, "Campaign not in sending state");
+    return;
+  }
+
+  // Trial hard-stop: an expired tenant is in full takeover — halt the campaign
+  // before any carrier send. The batch path bypasses the per-conversation demo
+  // gate, so it must enforce the expiry stop itself. Active / billingBypass
+  // tenants are unaffected; legacy "none"/"trialing" tenants are not stopped.
+  if (await isTenantSendingExpired(campaign.tenantId)) {
+    logger.warn({ campaignId, tenantSlug }, "Campaign halted — tenant free trial expired");
+    await tpool.query(
+      `UPDATE campaigns SET status = 'failed', completed_at = NOW() WHERE id = $1`,
+      [campaignId],
+    );
     return;
   }
 

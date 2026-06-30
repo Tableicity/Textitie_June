@@ -71,17 +71,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     },
   });
 
-  // Trial soft-expiry paywall. Once the trial-lifecycle job flips the tenant to
-  // "expired", swap the main app for an "Upgrade to keep going" wall — the demo
-  // number stays assigned, but the workspace is read-blocked until they pay.
-  // /billing stays reachable so they can actually upgrade.
-  const { data: subscription } = useGetSubscription({
+  // Trial expiry paywall. Once the trial-lifecycle job flips the tenant to
+  // "expired", swap the main app for an upgrade wall — the demo number stays
+  // assigned, but the workspace is blocked until they pay (server also
+  // hard-stops every outbound send for expired tenants). /billing stays
+  // reachable so an owner can actually upgrade. An operator billingBypass
+  // override treats the tenant as paid and lifts the mask entirely.
+  const {
+    data: subscription,
+    isLoading: isSubLoading,
+    isError: isSubError,
+  } = useGetSubscription({
     query: {
       enabled: hasToken && !!data?.user,
       queryKey: getGetSubscriptionQueryKey(),
     },
   });
-  const isTrialExpired = subscription?.status === "expired";
+  const isTrialExpired =
+    subscription?.status === "expired" && !subscription?.billingBypass;
 
   const myAgent = agents?.find((a) => a.id === data?.user?.id);
   const [status, setStatus] = useState<AgentStatus>("online");
@@ -153,6 +160,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (isLoading || !data?.user) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-900">
+        <Skeleton className="h-12 w-12 rounded-full bg-slate-800" />
+      </div>
+    );
+  }
+
+  // Hold the workspace until the subscription state is known so an expired
+  // tenant never flashes the app before the paywall mask mounts. /billing stays
+  // reachable (that's where the owner upgrades); on a load error we fail OPEN to
+  // avoid trapping the user — the server still hard-stops every outbound send.
+  if (location !== "/billing" && isSubLoading && !subscription && !isSubError) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-900">
         <Skeleton className="h-12 w-12 rounded-full bg-slate-800" />
@@ -320,18 +339,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <h1 className="text-xl font-bold text-slate-900 mb-2" data-testid="trial-expired-title">
                   Your free trial has ended
                 </h1>
-                <p className="text-sm text-slate-600 mb-6">
-                  Upgrade to a paid plan to keep texting. Your demo number, contacts,
-                  and setup are saved — you'll pick up right where you left off.
-                </p>
-                <Button
-                  onClick={() => setLocation("/billing")}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  data-testid="button-upgrade-trial"
-                >
-                  Upgrade to keep going
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
+                {data.user.role === "owner" ? (
+                  <>
+                    <p className="text-sm text-slate-600 mb-6">
+                      Upgrade to a paid plan to keep texting. Your demo number, contacts,
+                      and setup are saved — you'll pick up right where you left off.
+                    </p>
+                    <Button
+                      onClick={() => setLocation("/billing")}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                      data-testid="button-upgrade-trial"
+                    >
+                      Upgrade to keep going
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-600" data-testid="trial-expired-agent-note">
+                    Your account owner needs to add a payment method to restore
+                    texting. Your contacts and setup are saved — reach out to your
+                    owner to upgrade.
+                  </p>
+                )}
               </div>
             </div>
           ) : (

@@ -73,3 +73,19 @@ export const requireTenantAuth: RequestHandler = async (req, res, next) => {
   // imports automatically resolve to this tenant's per-schema pool.
   tenantSlugStore.run(tenantSlug as string, () => next());
 };
+
+/**
+ * Gate requiring the authenticated tenant user to be the workspace OWNER. Layer
+ * it AFTER `requireTenantAuth`. Used for owner-only billing release actions
+ * (checkout / subscribe / change-plan / cancel) so an agent can never lift the
+ * trial paywall or change the plan — only the owner can. Read-only billing
+ * endpoints (subscription, plans, usage) stay open so an agent's app shell can
+ * still resolve the paywall state.
+ */
+export const requireTenantOwner: RequestHandler = (req, res, next) => {
+  if (req.tenantUser?.role !== "owner") {
+    res.status(403).json({ error: "Only the workspace owner can manage billing" });
+    return;
+  }
+  next();
+};

@@ -675,6 +675,11 @@ router.post(
           res.status(402).json({ error: result.errorMessage, reason: result.reason });
           return;
         }
+        if (result.reason === "trial_expired") {
+          // Free trial fully expired — full takeover, no sends until upgrade.
+          res.status(402).json({ error: result.errorMessage, reason: result.reason });
+          return;
+        }
         if (result.reason === "credit_frozen") {
           // Out of messaging credits (no coverage across all buckets).
           res.status(402).json({ error: result.errorMessage, reason: result.reason });

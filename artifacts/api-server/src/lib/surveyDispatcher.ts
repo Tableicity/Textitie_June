@@ -4,6 +4,7 @@ import { and, eq, lte, isNull, asc } from "drizzle-orm";
 import { logger } from "./logger";
 import { getSender } from "./senders";
 import { checkOutboundCompliance } from "./compliance";
+import { isTenantSendingExpired } from "./demoTextingGate";
 
 export function generateSurveyToken(): string {
   return randomBytes(18).toString("base64url");
@@ -145,6 +146,22 @@ async function processPendingSurveysForTenant(tenantSlug: string): Promise<numbe
         logger.info(
           { sendId: item.id, reason: compliance.reason },
           "Survey dispatch blocked by compliance",
+        );
+        continue;
+      }
+
+      // Trial hard-stop: an expired tenant is in full takeover — surveys are
+      // automated tenant outbound and must not leave once the free trial ends.
+      // This batch path bypasses the per-conversation demo gate, so it enforces
+      // the expiry stop itself (active / billingBypass tenants are unaffected).
+      if (await isTenantSendingExpired(item.tenantId)) {
+        await tdb
+          .update(surveySendsTable)
+          .set({ status: "failed", error: "trial_expired" })
+          .where(eq(surveySendsTable.id, item.id));
+        logger.info(
+          { sendId: item.id, tenantId: item.tenantId },
+          "Survey dispatch blocked — tenant free trial expired",
         );
         continue;
       }

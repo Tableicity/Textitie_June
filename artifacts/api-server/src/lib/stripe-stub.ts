@@ -359,6 +359,7 @@ export async function getSubscriptionDetails(tenantId: number) {
     trialEndsAt: t.trialEndsAt?.toISOString() ?? null,
     currentPeriodStart: t.currentPeriodStart?.toISOString() ?? null,
     currentPeriodEnd: t.currentPeriodEnd?.toISOString() ?? null,
+    billingBypass: t.billingBypass,
   };
 }
 

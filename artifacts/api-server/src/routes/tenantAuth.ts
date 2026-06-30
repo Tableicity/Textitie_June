@@ -156,7 +156,7 @@ async function uniqueSlug(base: string): Promise<string> {
 }
 
 router.post("/tenant-auth/register", async (req, res) => {
-  const { companyName, email, password, plan, phone } = req.body ?? {};
+  const { companyName, email, password, phone } = req.body ?? {};
   const trimmedCompanyName = typeof companyName === "string" ? companyName.trim() : "";
   if (!trimmedCompanyName || !email || !password) {
     res.status(400).json({ error: "Full name, email, and password are required" });
@@ -182,7 +182,13 @@ router.post("/tenant-auth/register", async (req, res) => {
     return;
   }
 
-  const isTrial = plan === "trial";
+  // Every signup ALWAYS starts a 14-day free trial — no card at signup. The
+  // dual /signup vs /signup/trial role was collapsed (Choice C); the backend is
+  // authoritative and ignores any client-supplied `plan`. A tenant converts to
+  // paid by subscribing during the trial (Stripe checkout → "active"); if they
+  // never do, the trial-lifecycle job flips them to "expired" and the paywall
+  // mask + send hard-stop take over.
+  const isTrial = true;
   const normalizedEmail = String(email).trim().toLowerCase();
 
   try {

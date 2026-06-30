@@ -49,3 +49,49 @@ treats a non-ok send as handback, so it degrades safely).
 **Test seeding gotcha:** any api-server integration test that drives a human/AI
 send must seed the tenant `subscriptionStatus:"active"`, or the new gate blocks
 the send and the assertion fails for an unrelated reason.
+
+## "Choice C" trial → expired FULL hard-stop (distinct from the per-contact gate)
+
+Signup is **always a 14-day free trial** (no card; no more `plan` branch / no
+`/signup/trial`). At trial end a lifecycle job flips `trialing`→`expired`, which
+triggers a *second, stronger* mode of the same gate:
+
+- **Two gate modes, same `isTextingUnlocked` foundation:** (a) the per-contact
+  demo restriction above (`paywall_new_contact`, applies to `trialing`/`none`),
+  and (b) the **`expired` FULL hard-stop** (`trial_expired`) that blocks ALL
+  tenant outbound **including self-texting**. The full stop is **scoped strictly
+  to `subscriptionStatus === "expired"`** — legacy `none` tenants (abc4/abc5)
+  keep self-texting under the per-contact gate; only `expired` is fully cut off.
+  `active` / `billingBypass` escape both (via `isTextingUnlocked`).
+
+- **DURABLE RULE — gate at EVERY direct `getSender().send()` choke point, not
+  just `sendConversationReply`.** Tenant outbound has *three* tenant-driven
+  senders and a tenant-wide stop must be replicated at each or it leaks:
+  `sendConversationReply` (human+AI, runs `evaluateDemoTextingGate`),
+  `campaignEngine.executeCampaign` (immediate + scheduled), and
+  `surveyDispatcher`. The latter two are batch paths that bypass the
+  per-contact gate, so they call the tenant-level helper
+  **`isTenantSendingExpired(tenantId)`** (no per-contact compare; true only when
+  `expired` AND not unlocked) before sending and mark the row failed.
+
+- **`/inject` (Conductor) is intentionally EXEMPT** — it's outside
+  `conductorAuth`'s tenant allow-list and only a non-tenant Bearer or Basic-auth
+  caller passes, so a tenant JWT can never reach it. Operator injection is a
+  trusted override (mirrors `billingBypass`), not "the tenant sending". Exemption
+  is documented at the `dispatchInjection` send site.
+
+- **Owner-only release, server-enforced:** `requireTenantOwner` (role must be
+  `owner`) gates the 4 *mutation* billing endpoints (checkout/subscribe/
+  change-plan/cancel). **GET billing endpoints stay open** — the agent AppShell
+  must fetch `/billing/subscription` to render the mask, so gating the GET would
+  break the paywall for agents.
+
+- **Mask must be flash-safe:** AppShell holds a skeleton until the subscription
+  query resolves (except on `/billing`, the upgrade destination) so an expired
+  tenant never flashes the workspace before the mask mounts; **fail-OPEN on query
+  error** (render children) since the server still hard-stops every send. Mask
+  predicate = `status==="expired" && !billingBypass`; owner sees an Upgrade
+  button → `/billing`, agents see "ask your owner" copy with no button.
+
+- **`SubscriptionDetail.billingBypass` is now a required contract field** (server
+  returns it; codegen regenerated) so the UI predicate can read it.

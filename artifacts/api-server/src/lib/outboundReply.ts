@@ -31,6 +31,7 @@ export type OutboundReplyResult =
         | "number_not_owned"
         | "paywall_new_contact"
         | "daily_trial_limit"
+        | "trial_expired"
         | "credit_frozen";
       errorMessage: string;
       complianceReason?: string;

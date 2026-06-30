@@ -127,6 +127,30 @@ export async function isDemoTextingBlockedForTenant(
   });
 }
 
+/**
+ * Tenant-level send hard-stop (no per-contact comparison). Returns true when a
+ * tenant's free trial has FULLY expired and no override applies — used by
+ * non-conversational outbound paths (e.g. campaigns) that bypass the per-contact
+ * demo gate but must still halt entirely on expiry. Active / billingBypass
+ * tenants are never stopped; legacy "none"/"trialing" tenants are NOT stopped
+ * here (they stay governed by the per-contact demo gate on the conversation
+ * send path) — this mirrors the "expired"-only scope of evaluateDemoTextingGate.
+ */
+export async function isTenantSendingExpired(tenantId: number): Promise<boolean> {
+  const [tenant] = await db
+    .select({
+      subscriptionStatus: tenantsTable.subscriptionStatus,
+      billingBypass: tenantsTable.billingBypass,
+    })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, tenantId))
+    .limit(1);
+  const subscriptionStatus = tenant?.subscriptionStatus ?? null;
+  const billingBypass = tenant?.billingBypass ?? false;
+  if (isTextingUnlocked(subscriptionStatus, billingBypass)) return false;
+  return subscriptionStatus === "expired";
+}
+
 // ---------------------------------------------------------------------------
 // Daily free-trial outbound budget.
 //
@@ -146,7 +170,18 @@ export const TRIAL_DAILY_SEGMENT_CAP = 15;
 export const DAILY_TRIAL_LIMIT_MESSAGE =
   "Daily trial message limit reached. Upgrade to a paid plan or wait 24 hours to resume testing.";
 
-export type DemoGateReason = "paywall_new_contact" | "daily_trial_limit";
+/**
+ * Hard-stop shown when a tenant whose free trial has fully expired tries to
+ * send. Expiry is a FULL takeover — no outbound at all, not even to the
+ * tenant's own signup phone — until the owner upgrades.
+ */
+export const TRIAL_EXPIRED_MESSAGE =
+  "Your free trial has ended. Upgrade to a paid plan to resume texting.";
+
+export type DemoGateReason =
+  | "paywall_new_contact"
+  | "daily_trial_limit"
+  | "trial_expired";
 
 export interface DemoGateDecision {
   blocked: boolean;
@@ -223,6 +258,19 @@ export async function evaluateDemoTextingGate(args: {
 
   // Active / operator-bypassed tenants have no demo restrictions at all.
   if (isTextingUnlocked(subscriptionStatus, billingBypass)) return { blocked: false };
+
+  // 0) Trial fully expired — hard stop (full takeover). A tenant whose 14-day
+  // trial has lapsed may not send ANY outbound, not even to its own signup
+  // phone, until the owner upgrades. Scoped to "expired" ONLY so legacy
+  // "none"/demo tenants keep self-texting through the contact gate below.
+  // (billingBypass already escaped via isTextingUnlocked above.)
+  if (subscriptionStatus === "expired") {
+    return {
+      blocked: true,
+      reason: "trial_expired",
+      message: TRIAL_EXPIRED_MESSAGE,
+    };
+  }
 
   // 1) Contact restriction.
   const allowedPhone = await loadOwnerSignupPhone(args.tenantId);
