@@ -9,9 +9,11 @@
 > This is the money-correctness core of the platform.
 > **Status:** the backend engine is built and tested (DB-backed money-correctness
 > suite is green); the free-trial budget + lifecycle are built and unit-tested, and
-> the trial paywall is live in the app. The full customer-facing billing UI, real
-> email delivery of trial notices, and the real Backup card-charge are later
-> phases — see [§12 Known Boundaries](#12-known-boundaries--deferred-work).
+> the trial paywall is live in the app — at expiry it **hard-stops all outbound
+> (including self-texting)** across every send path, with **owner-only** release
+> ([§10](#10-the-free-trial-lifecycle-soft-expiry--reminders)). The full
+> customer-facing billing UI, real email delivery of trial notices, and the real
+> Backup card-charge are later phases — see [§12 Known Boundaries](#12-known-boundaries--deferred-work).
 
 ---
 
@@ -571,23 +573,34 @@ export function isTrialDailyBudgetExceeded(args: {
 | --- | --- |
 | `active`, or `billingBypass` on | **No** — fully unlocked, no demo restrictions at all |
 | `trialing` | **Yes** — 15 segments / rolling 24h |
-| `expired`, `none`, `past_due`, `canceled` | **No** *budget* — but the **contact gate** below already restricts them to self-texting |
+| `expired` | **No** *budget* — because expiry is a **full outbound hard-stop**: it sends **nothing at all**, not even to its own signup phone (§10) |
+| `none`, `past_due`, `canceled` | **No** *budget* — but the **contact gate** below already restricts them to self-texting |
 
-### Two gates, in order
+### Three gates, in order
 
-`evaluateDemoTextingGate` is the single send-time demo gate and runs **both** demo
+`evaluateDemoTextingGate` is the single send-time demo gate and runs the demo
 policies in a fixed order, returning a discriminated decision so the caller can
-surface the right 402:
+surface the right 402. Active / `billingBypass` tenants short-circuit out first
+with no restriction at all; everyone else falls through these in order:
 
+0. **Trial expired — full hard-stop** — a tenant whose 14-day trial has lapsed
+   (`subscriptionStatus === "expired"`) may send **nothing**, not even to its own
+   signup phone (`reason: "trial_expired"`). Checked **first**, and scoped to
+   `expired` ONLY so legacy `none`/demo tenants fall through to the contact gate
+   below (§10).
 1. **Contact restriction** — an unpaid/demo tenant may only text the phone it
    signed up with (`reason: "paywall_new_contact"`, fail-closed).
 2. **Daily trial budget** — only for `trialing`, the 15-segment/24h cap
    (`reason: "daily_trial_limit"`).
 
-It is enforced in the one authoritative outbound path (`sendConversationReply`),
-so **every** send — human composer, AI auto-send, campaigns — is covered
+It is enforced in the one authoritative **conversational** outbound path
+(`sendConversationReply`), so the human composer **and** AI auto-send are covered
 uniformly, and `routes/conversations.ts` maps a blocked decision to **402** with
-the decision's message.
+the decision's message. The two **batch** send paths — campaign blasts
+(`campaignEngine.ts`) and survey dispatch (`surveyDispatcher.ts`) — call
+`getSender().send()` directly and do **not** run this per-contact gate, so each
+enforces the expiry hard-stop on its own via `isTenantSendingExpired(tenantId)`
+before sending (§10).
 
 > **Engineer note — this is a deliberate *soft* cap.** The budget reads the ledger
 > *before* the carrier send, and the ledger row for the current message is only
@@ -634,18 +647,45 @@ nudge — the lifecycle never backfills old reminders.
 
 ### What "expired" means
 
+Expiry is **"soft" only in that nothing is deleted** — operationally it is a
+**hard** takeover of both the UI and every outbound path:
+
 - `subscriptionStatus` flips **`trialing` → `expired`**.
 - The **demo number stays assigned** — the tenant keeps its sandbox, contacts, and
   setup. Nothing is deleted.
+- **All outbound is hard-stopped — including self-texting.** Unlike the per-contact
+  demo gate (which still lets an unpaid tenant text its *own* signup phone), an
+  `expired` tenant may send **nothing**. The stop is enforced **server-side at every
+  outbound choke point**, so the UI wall is a courtesy, not the control:
+  - **Conversational sends** (human composer + AI auto-send) — `evaluateDemoTextingGate`
+    returns `reason: "trial_expired"` *before* the contact/budget checks, and
+    `routes/conversations.ts` maps it to **HTTP 402**.
+  - **Batch sends** (campaign blasts, survey dispatch) — these bypass the
+    per-contact gate, so each calls `isTenantSendingExpired(tenantId)` before its
+    `getSender().send()` and refuses (the campaign run is halted; the survey row is
+    marked `failed` with error `trial_expired`).
 - The user-app swaps the main view for an **"Upgrade to keep going"** wall off the
   `expired` status — **except `/billing`**, which stays reachable so they can pay.
+  To avoid a flash of the workspace before the wall mounts, AppShell holds a
+  skeleton until the subscription query resolves (it **fails open** on a query
+  error, since the server still hard-stops every send regardless).
+- **Release is owner-only.** Only an `owner` tenant_user can lift the wall by
+  subscribing — the four billing **mutations** (checkout / subscribe / change-plan /
+  cancel) are guarded by `requireTenantOwner`. A non-owner agent sees an
+  "ask your owner to upgrade" message with no upgrade button. Billing **GET**s stay
+  open so the agent's app can still fetch the subscription to render the wall.
+- **`billingBypass` escapes everything.** The operator's per-tenant "Auto Approve /
+  Auto Subscribed" override (`isTextingUnlocked`) clears both the send hard-stop and
+  the UI wall, so support can preview the paid experience on an expired tenant.
 
 > **Contract note.** `expired` is a **new** `subscriptionStatus` value. Because
 > `GET /billing/subscription` returns the status **raw**, any new status MUST be
 > added to the OpenAPI `SubscriptionDetail.status` enum and the client
 > regenerated — otherwise the generated TypeScript union won't contain it and the
 > UI literally cannot branch on it. (Same "raw passthrough" gotcha as the Facts
-> list elsewhere in the platform.)
+> list elsewhere in the platform.) The same applied to **`billingBypass`** — it was
+> added to `SubscriptionDetail` (required) and the client regenerated so the wall
+> predicate can read it (`expired && !billingBypass`).
 
 ### Where the code lives
 
@@ -655,6 +695,9 @@ nudge — the lifecycle never backfills old reminders.
 | Processor (scan + flip + fire) | `trialLifecycle.ts` (`processTrialLifecycle`) |
 | Timer wiring (60s) | `timerEngine.ts` (`runTimerCycle`) |
 | Idempotency + email seam table | `lib/db/src/schema/tenantNotifications.ts` |
+| Conversational send hard-stop | `demoTextingGate.ts` (`evaluateDemoTextingGate` `trial_expired` branch, `TRIAL_EXPIRED_MESSAGE`) |
+| Batch send hard-stop (campaign / survey) | `demoTextingGate.ts` (`isTenantSendingExpired`) → `campaignEngine.ts`, `surveyDispatcher.ts` |
+| Owner-only release guard | `middleware/tenantAuth.ts` (`requireTenantOwner`) → `routes/billing.ts` |
 | Paywall wall + Billing badge | user-app `components/AppShell.tsx`, `pages/Billing.tsx` |
 
 ### The two safety guarantees
@@ -744,9 +787,10 @@ These are deliberate scope lines, not bugs — flag them before go-live:
   it is logged, not retried. The idempotent ledger keys make a future
   reconciler/outbox safe to add.
 - **Customer billing UI is partial.** The **trial paywall** (the "Upgrade to keep
-  going" wall on `expired`) and **in-app trial notifications** are live (§10).
-  Still later phases: the full balance display, the Backup toggle UI, and the
-  top-up purchase screens.
+  going" wall on `expired`, with **owner-only** release and a full server-side
+  outbound hard-stop) and **in-app trial notifications** are live (§10). Still later
+  phases: the full balance display, the Backup toggle UI, and the top-up purchase
+  screens.
 - **Trial notifications are in-app only.** `processTrialLifecycle` records each
   nudge in `tenant_notifications` and logs an email-delivery seam, but **no email
   provider is wired** — real email/SMS delivery of the nudges is a later phase.
@@ -783,7 +827,17 @@ These are deliberate scope lines, not bugs — flag them before go-live:
 - **A new `subscriptionStatus` value means an OpenAPI change.** The status is
   returned **raw** to the client, so add any new value (e.g. `expired`) to the
   `SubscriptionDetail.status` enum and regenerate the client, or the UI can't see
-  it (§10).
+  it (§10). Any new field the wall predicate needs (e.g. `billingBypass`) must
+  likewise be added to `SubscriptionDetail` and the client regenerated.
+- **A tenant-wide outbound stop must be replicated at *every* send choke point.**
+  There are three tenant-driven senders — `sendConversationReply` (human + AI),
+  `campaignEngine.executeCampaign`, and `surveyDispatcher` — each calling
+  `getSender().send()`. A stop added only to the conversational gate silently leaks
+  through campaigns and surveys. The conversational path uses
+  `evaluateDemoTextingGate`; the two batch paths use `isTenantSendingExpired`. The
+  Conductor `/inject` path is an operator capability deliberately **exempt** (it
+  sits outside `conductorAuth`'s tenant allow-list, so a tenant JWT can never reach
+  it — an operator override, like `billingBypass`).
 - **Refund codes are an allow-list.** To make a new Twilio code refundable, add it
   to `REFUNDABLE_REJECTION_CODES` in `deliveryStatus.ts` — and ask first whether
   the carrier billed us for that attempt (if yes, it should *not* be refundable).
