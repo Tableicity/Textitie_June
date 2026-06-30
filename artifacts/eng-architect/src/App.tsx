@@ -16,6 +16,7 @@ import Brain from "@/pages/Brain";
 import Injections from "@/pages/Injections";
 import Webhooks from "@/pages/Webhooks";
 import Compliance from "@/pages/Compliance";
+import Telephony from "@/pages/Telephony";
 import Tiers from "@/pages/Tiers";
 import CreditPricing from "@/pages/CreditPricing";
 import Profile from "@/pages/Profile";
@@ -45,6 +46,7 @@ function Router() {
       <Route path="/injections" component={Injections} />
       <Route path="/webhooks" component={Webhooks} />
       <Route path="/compliance" component={Compliance} />
+      <Route path="/telephony" component={Telephony} />
       <Route path="/tiers" component={Tiers} />
       <Route path="/credit-pricing" component={CreditPricing} />
       <Route path="/profile" component={Profile} />

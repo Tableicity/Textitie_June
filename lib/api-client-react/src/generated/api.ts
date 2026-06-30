@@ -126,6 +126,7 @@ import type {
   SuccessResult,
   SuggestAreaCodesParams,
   TagsResult,
+  TelephonyOverviewResponse,
   Tenant,
   TenantChangePasswordInput,
   TenantChangePasswordResult,
@@ -4289,6 +4290,81 @@ export const useRemoveDepartmentMember = <
 > => {
   return useMutation(getRemoveDepartmentMemberMutationOptions(options));
 };
+
+/**
+ * @summary Platform-wide telephony overview (Conductor). Lists numbers owned by the Twilio account that are AVAILABLE (not yet assigned to any tenant) and the numbers ASSIGNED in the canonical registry, each with its tenant and department.
+ */
+export const getGetTelephonyNumbersUrl = () => {
+  return `/api/telephony/numbers`;
+};
+
+export const getTelephonyNumbers = async (
+  options?: RequestInit,
+): Promise<TelephonyOverviewResponse> => {
+  return customFetch<TelephonyOverviewResponse>(getGetTelephonyNumbersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTelephonyNumbersQueryKey = () => {
+  return [`/api/telephony/numbers`] as const;
+};
+
+export const getGetTelephonyNumbersQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTelephonyNumbers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTelephonyNumbers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTelephonyNumbersQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTelephonyNumbers>>
+  > = ({ signal }) => getTelephonyNumbers({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTelephonyNumbers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTelephonyNumbersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTelephonyNumbers>>
+>;
+export type GetTelephonyNumbersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Platform-wide telephony overview (Conductor). Lists numbers owned by the Twilio account that are AVAILABLE (not yet assigned to any tenant) and the numbers ASSIGNED in the canonical registry, each with its tenant and department.
+ */
+
+export function useGetTelephonyNumbers<
+  TData = Awaited<ReturnType<typeof getTelephonyNumbers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTelephonyNumbers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTelephonyNumbersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Search available phone numbers from Twilio

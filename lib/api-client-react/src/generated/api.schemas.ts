@@ -726,6 +726,35 @@ export interface OwnedNumbersResponse {
   numbers: OwnedNumberItem[];
 }
 
+export interface TelephonyAssignedNumber {
+  phoneNumber: string;
+  /** local | toll_free (drives carrier billing) */
+  numberType: string;
+  /** registered | unregistered (local numbers only) */
+  registrationStatus: string;
+  /** primary (tenant's own number) | department */
+  kind: string;
+  /** @nullable */
+  twilioSid: string | null;
+  tenantId: number;
+  tenantName: string;
+  tenantSlug: string;
+  /** @nullable */
+  departmentId: number | null;
+  /** @nullable */
+  departmentName: string | null;
+  createdAt: string;
+}
+
+export interface TelephonyOverviewResponse {
+  /** Whether the platform Twilio account is configured */
+  configured: boolean;
+  /** Numbers owned by the Twilio account that are not assigned to any tenant */
+  available: OwnedNumberItem[];
+  /** Numbers assigned in the canonical registry, with tenant + department */
+  assigned: TelephonyAssignedNumber[];
+}
+
 export interface TenantUserItem {
   id: number;
   email: string;

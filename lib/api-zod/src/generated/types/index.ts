@@ -159,6 +159,8 @@ export * from "./successResponse";
 export * from "./successResult";
 export * from "./suggestAreaCodesParams";
 export * from "./tagsResult";
+export * from "./telephonyAssignedNumber";
+export * from "./telephonyOverviewResponse";
 export * from "./tenant";
 export * from "./tenantChangePasswordInput";
 export * from "./tenantChangePasswordResult";

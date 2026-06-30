@@ -1279,6 +1279,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/SuccessResult"
 
+  /telephony/numbers:
+    get:
+      operationId: getTelephonyNumbers
+      tags: [phone-numbers]
+      summary: >-
+        Platform-wide telephony overview (Conductor). Lists numbers owned by the
+        Twilio account that are AVAILABLE (not yet assigned to any tenant) and the
+        numbers ASSIGNED in the canonical registry, each with its tenant and
+        department.
+      responses:
+        "200":
+          description: Available and assigned phone numbers across the platform
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelephonyOverviewResponse"
+
   /phone-numbers/available:
     get:
       operationId: searchAvailableNumbers
@@ -4591,6 +4608,65 @@ components:
           items:
             $ref: "#/components/schemas/OwnedNumberItem"
       required: [configured, numbers]
+
+    TelephonyAssignedNumber:
+      type: object
+      properties:
+        phoneNumber:
+          type: string
+        numberType:
+          type: string
+          description: local | toll_free (drives carrier billing)
+        registrationStatus:
+          type: string
+          description: registered | unregistered (local numbers only)
+        kind:
+          type: string
+          description: primary (tenant's own number) | department
+        twilioSid:
+          type: ["string", "null"]
+        tenantId:
+          type: integer
+        tenantName:
+          type: string
+        tenantSlug:
+          type: string
+        departmentId:
+          type: ["integer", "null"]
+        departmentName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - phoneNumber
+        - numberType
+        - registrationStatus
+        - kind
+        - twilioSid
+        - tenantId
+        - tenantName
+        - tenantSlug
+        - departmentId
+        - departmentName
+        - createdAt
+
+    TelephonyOverviewResponse:
+      type: object
+      properties:
+        configured:
+          type: boolean
+          description: Whether the platform Twilio account is configured
+        available:
+          type: array
+          description: Numbers owned by the Twilio account that are not assigned to any tenant
+          items:
+            $ref: "#/components/schemas/OwnedNumberItem"
+        assigned:
+          type: array
+          description: Numbers assigned in the canonical registry, with tenant + department
+          items:
+            $ref: "#/components/schemas/TelephonyAssignedNumber"
+      required: [configured, available, assigned]
 
     TenantUserItem:
       type: object

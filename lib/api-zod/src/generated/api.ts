@@ -1540,6 +1540,50 @@ export const RemoveDepartmentMemberResponse = zod.object({
 });
 
 /**
+ * @summary Platform-wide telephony overview (Conductor). Lists numbers owned by the Twilio account that are AVAILABLE (not yet assigned to any tenant) and the numbers ASSIGNED in the canonical registry, each with its tenant and department.
+ */
+export const GetTelephonyNumbersResponse = zod.object({
+  configured: zod
+    .boolean()
+    .describe("Whether the platform Twilio account is configured"),
+  available: zod
+    .array(
+      zod.object({
+        phoneNumber: zod.string(),
+        friendlyName: zod.string(),
+      }),
+    )
+    .describe(
+      "Numbers owned by the Twilio account that are not assigned to any tenant",
+    ),
+  assigned: zod
+    .array(
+      zod.object({
+        phoneNumber: zod.string(),
+        numberType: zod
+          .string()
+          .describe("local | toll_free (drives carrier billing)"),
+        registrationStatus: zod
+          .string()
+          .describe("registered | unregistered (local numbers only)"),
+        kind: zod
+          .string()
+          .describe("primary (tenant's own number) | department"),
+        twilioSid: zod.string().nullable(),
+        tenantId: zod.number(),
+        tenantName: zod.string(),
+        tenantSlug: zod.string(),
+        departmentId: zod.number().nullable(),
+        departmentName: zod.string().nullable(),
+        createdAt: zod.string(),
+      }),
+    )
+    .describe(
+      "Numbers assigned in the canonical registry, with tenant + department",
+    ),
+});
+
+/**
  * @summary Search available phone numbers from Twilio
  */
 export const searchAvailableNumbersQueryCountryDefault = `US`;
