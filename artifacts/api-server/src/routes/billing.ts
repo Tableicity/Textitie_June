@@ -53,21 +53,29 @@ router.get("/billing/plans", requireTenantAuth, async (_req, res) => {
       .from(tiersTable)
       .orderBy(tiersTable.monthlyPriceCents);
 
-    const plans = tiers.map((t) => ({
-      tierCode: t.code,
-      name: t.name,
-      description: t.description,
-      features: t.features,
-      monthlyPriceCents: t.monthlyPriceCents,
-      monthlyPriceFormatted: `$${(t.monthlyPriceCents / 100).toFixed(2)}`,
-      includedCredits: t.includedCredits,
-      isUnlimitedCredits: t.code === "enterprise",
-      trialDays: t.trialDays,
-      maxAgents: t.maxAgents === 0 ? null : t.maxAgents,
-      maxPhoneNumbers: t.maxPhoneNumbers === 0 ? null : t.maxPhoneNumbers,
-      overageRateCents: OVERAGE_RATE_CENTS,
-      phoneAddonCents: PHONE_ADDON_CENTS,
-    }));
+    const plans = tiers
+      .slice()
+      .sort((a, b) => {
+        // Enterprise/Custom ("contact sales", $0 price) always sorts last;
+        // paid tiers stay in ascending monthly-price order.
+        const rank = (t: typeof a) => (t.code === "enterprise" ? Number.POSITIVE_INFINITY : t.monthlyPriceCents);
+        return rank(a) - rank(b);
+      })
+      .map((t) => ({
+        tierCode: t.code,
+        name: t.name,
+        description: t.description,
+        features: t.features,
+        monthlyPriceCents: t.monthlyPriceCents,
+        monthlyPriceFormatted: `$${(t.monthlyPriceCents / 100).toFixed(2)}`,
+        includedCredits: t.includedCredits,
+        isUnlimitedCredits: t.code === "enterprise",
+        trialDays: t.trialDays,
+        maxAgents: t.maxAgents === 0 ? null : t.maxAgents,
+        maxPhoneNumbers: t.maxPhoneNumbers === 0 ? null : t.maxPhoneNumbers,
+        overageRateCents: OVERAGE_RATE_CENTS,
+        phoneAddonCents: PHONE_ADDON_CENTS,
+      }));
 
     res.json(plans);
   } catch (err) {
