@@ -3,10 +3,15 @@
 > **Audience:** Textitie / SAMA engineers and technical support staff.
 > **Scope:** the internal **credit-deduction engine** — how a tenant's balance is
 > counted, drained, charged, and refunded for every live inbound and outbound
-> message. This is the money-correctness core of the platform.
-> **Status:** backend engine is built and tested (DB-backed money-correctness
-> suite is green). The customer-facing billing UI and the real Backup card-charge
-> are later phases — see [§10 Known Boundaries](#10-known-boundaries--deferred-work).
+> message — plus the two **free-trial spend controls** layered on top of it: the
+> daily trial outbound budget ([§9](#9-the-free-trial-daily-budget)) and the trial
+> soft-expiry lifecycle ([§10](#10-the-free-trial-lifecycle-soft-expiry--reminders)).
+> This is the money-correctness core of the platform.
+> **Status:** the backend engine is built and tested (DB-backed money-correctness
+> suite is green); the free-trial budget + lifecycle are built and unit-tested, and
+> the trial paywall is live in the app. The full customer-facing billing UI, real
+> email delivery of trial notices, and the real Backup card-charge are later
+> phases — see [§12 Known Boundaries](#12-known-boundaries--deferred-work).
 
 ---
 
@@ -509,7 +514,190 @@ net charge**, no matter how many times a webhook, retry, or reconcile fires.
 
 ---
 
-## 9. Worked end-to-end examples
+## 9. The Free-Trial Daily Budget
+
+Counting and the waterfall (§1–§2) decide what a message *costs*. The free-trial
+daily budget is a separate **send-time guard** that decides whether a **trialing**
+tenant is allowed to send at all right now. It exists so a free trial cannot be
+used as an unlimited SMS faucet — even when the tenant is only texting its own
+signup number in the sandbox.
+
+> **The trial rule.** A tenant on `subscriptionStatus = "trialing"` may send at
+> most **15 outbound segments per rolling 24 hours**. The segment that would push
+> the trailing-24h total over 15 is refused with **HTTP 402**:
+>
+> > *"Daily trial message limit reached. Upgrade to a paid plan or wait 24 hours
+> > to resume testing."*
+
+### Where the code lives
+
+| Concern | File |
+| --- | --- |
+| Cap constant + 402 message | `demoTextingGate.ts` (`TRIAL_DAILY_SEGMENT_CAP`, `DAILY_TRIAL_LIMIT_MESSAGE`) |
+| Pure budget policy | `demoTextingGate.ts` (`isTrialDailyBudgetExceeded`) |
+| Rolling-24h usage SUM | `demoTextingGate.ts` (`sumOutboundSegmentsLast24h`) |
+| Authoritative send-time gate | `demoTextingGate.ts` (`evaluateDemoTextingGate`) |
+| Gate call + 402 mapping | `outboundReply.ts` → `routes/conversations.ts` |
+
+### Same unit as the ledger
+
+The budget is counted in **segments** — exactly the unit the credit ledger
+already records (1 credit/segment for SMS, a flat 3 for MMS — §2). So the two
+numbers the gate compares are directly addable:
+
+- **Prior usage** = `SUM(credit_ledger.credits)` for `direction = 'outbound'`
+  over the last 24h. Reading the append-only ledger (the durable record of every
+  *confirmed* outbound charge) means a carrier retry can never inflate the count.
+- **Pending cost** = `calculateMessageCredits(...)` for the message about to send.
+
+```ts
+export const TRIAL_DAILY_SEGMENT_CAP = 15;
+
+export function isTrialDailyBudgetExceeded(args: {
+  subscriptionStatus: string | null | undefined;
+  billingBypass?: boolean | null;
+  priorSegments24h: number;
+  pendingSegments: number;
+}): boolean {
+  if (isTextingUnlocked(args.subscriptionStatus, args.billingBypass)) return false;
+  if (args.subscriptionStatus !== "trialing") return false;
+  return args.priorSegments24h + args.pendingSegments > TRIAL_DAILY_SEGMENT_CAP;
+}
+```
+
+### Who is and isn't capped
+
+| Tenant state | Capped by the daily budget? |
+| --- | --- |
+| `active`, or `billingBypass` on | **No** — fully unlocked, no demo restrictions at all |
+| `trialing` | **Yes** — 15 segments / rolling 24h |
+| `expired`, `none`, `past_due`, `canceled` | **No** *budget* — but the **contact gate** below already restricts them to self-texting |
+
+### Two gates, in order
+
+`evaluateDemoTextingGate` is the single send-time demo gate and runs **both** demo
+policies in a fixed order, returning a discriminated decision so the caller can
+surface the right 402:
+
+1. **Contact restriction** — an unpaid/demo tenant may only text the phone it
+   signed up with (`reason: "paywall_new_contact"`, fail-closed).
+2. **Daily trial budget** — only for `trialing`, the 15-segment/24h cap
+   (`reason: "daily_trial_limit"`).
+
+It is enforced in the one authoritative outbound path (`sendConversationReply`),
+so **every** send — human composer, AI auto-send, campaigns — is covered
+uniformly, and `routes/conversations.ts` maps a blocked decision to **402** with
+the decision's message.
+
+> **Engineer note — this is a deliberate *soft* cap.** The budget reads the ledger
+> *before* the carrier send, and the ledger row for the current message is only
+> written *after* the send confirms (§6). So two truly concurrent trial sends can
+> both read the same prior total and both pass, briefly overshooting 15. That is
+> acceptable and intentional for a trial sandbox limit — it mirrors how the charge
+> engine reads balances and avoids a distributed lock for a non-billing guardrail.
+> **Do not "harden" this into a reservation unless the trial cap ever becomes
+> billing-critical.**
+
+---
+
+## 10. The Free-Trial Lifecycle (Soft Expiry & Reminders)
+
+The daily budget (§9) governs a trial *while it is live*. The lifecycle governs
+how a trial *ends*. It is a **subscription-state** process, distinct from the
+per-message charge engine, but it lives in this manual because it is the other
+half of trial monetization.
+
+It runs on the existing **60-second timer engine** — `processTrialLifecycle()` in
+`trialLifecycle.ts`, wired into `timerEngine.runTimerCycle` — so there is no
+separate scheduler. Each cycle it scans every tenant still `trialing` with a
+`trialEndsAt` and takes **at most one** action per tenant:
+
+| Time left to `trialEndsAt` | Action | Notification type |
+| --- | --- | --- |
+| within (2, 7] days | day-7 upgrade nudge | `trial_reminder_day_7` |
+| within (0, 2] days | day-2 upgrade nudge | `trial_reminder_day_2` |
+| at or past expiry (≤ 0) | flip `trialing → expired` + "trial ended" nudge | `trial_expired` |
+
+```ts
+export function selectTrialAction(msLeft: number): TrialLifecycleAction {
+  if (msLeft <= 0) return "expire";
+  const daysLeft = Math.ceil(msLeft / DAY_MS);
+  if (daysLeft <= 2) return "remind_day_2";
+  if (daysLeft <= 7) return "remind_day_7";
+  return "none";
+}
+```
+
+Only **one** action returns per call. Earlier windows have already fired on prior
+cycles, so a tenant that comes online late simply gets the most relevant remaining
+nudge — the lifecycle never backfills old reminders.
+
+### What "expired" means
+
+- `subscriptionStatus` flips **`trialing` → `expired`**.
+- The **demo number stays assigned** — the tenant keeps its sandbox, contacts, and
+  setup. Nothing is deleted.
+- The user-app swaps the main view for an **"Upgrade to keep going"** wall off the
+  `expired` status — **except `/billing`**, which stays reachable so they can pay.
+
+> **Contract note.** `expired` is a **new** `subscriptionStatus` value. Because
+> `GET /billing/subscription` returns the status **raw**, any new status MUST be
+> added to the OpenAPI `SubscriptionDetail.status` enum and the client
+> regenerated — otherwise the generated TypeScript union won't contain it and the
+> UI literally cannot branch on it. (Same "raw passthrough" gotcha as the Facts
+> list elsewhere in the platform.)
+
+### Where the code lives
+
+| Concern | File |
+| --- | --- |
+| Pure window decision | `trialLifecycle.ts` (`selectTrialAction`) |
+| Processor (scan + flip + fire) | `trialLifecycle.ts` (`processTrialLifecycle`) |
+| Timer wiring (60s) | `timerEngine.ts` (`runTimerCycle`) |
+| Idempotency + email seam table | `lib/db/src/schema/tenantNotifications.ts` |
+| Paywall wall + Billing badge | user-app `components/AppShell.tsx`, `pages/Billing.tsx` |
+
+### The two safety guarantees
+
+**1. Each nudge fires exactly once.** `tenant_notifications` has a UNIQUE
+`(tenant_id, type)` and every insert is `ON CONFLICT DO NOTHING`, so the 60s
+re-run can never double-send a reminder.
+
+**2. The flip is race-safe and atomic with its notification.** The status UPDATE
+is **doubly guarded** — still `trialing` **and** `trialEndsAt <= now` — so neither
+a concurrent upgrade to `active` nor a concurrent trial *extension* (status stays
+`trialing`, `trialEndsAt` pushed out) can be clobbered by a stale processor. The
+flip and the `trial_expired` insert run in **one transaction**: if the insert
+throws, the flip rolls back and the next cycle retries both, so an expiry can
+never be recorded without its notification.
+
+```ts
+const flipped = await db.transaction(async (tx) => {
+  const updated = await tx.update(tenantsTable)
+    .set({ subscriptionStatus: "expired" })
+    .where(and(
+      eq(tenantsTable.id, tenant.id),
+      eq(tenantsTable.subscriptionStatus, "trialing"),
+      lte(tenantsTable.trialEndsAt, now),     // only a TRULY elapsed trial
+    ))
+    .returning({ id: tenantsTable.id });
+  if (updated.length === 0) return false;     // someone paid / extended — leave it
+  firstFire = await insertTrialNotification(tx, tenant, REMINDER_SPECS.expire);
+  return true;
+});
+```
+
+### Side effects (best-effort)
+
+On a **first** fire only, the lifecycle also writes an auditable `billing_events`
+row and logs the **email-delivery seam**. No email provider is wired yet — the
+in-app notification *is* the delivery today, and the log line is where a real send
+will attach. These side effects are best-effort: a failure here is logged and
+**never** rolls back the flip or the notification.
+
+---
+
+## 11. Worked end-to-end examples
 
 1. **Plain 1-segment reply, healthy balance.** "Thanks, see you at 3pm" (23
    chars, GSM-7) → 1 credit. Drains 1 from Included. Ledger: one
@@ -540,7 +728,7 @@ net charge**, no matter how many times a webhook, retry, or reconcile fires.
 
 ---
 
-## 10. Known Boundaries & Deferred Work
+## 12. Known Boundaries & Deferred Work
 
 These are deliberate scope lines, not bugs — flag them before go-live:
 
@@ -555,12 +743,19 @@ These are deliberate scope lines, not bugs — flag them before go-live:
 - **No durable charge outbox yet.** If a charge throws *after* a confirmed send,
   it is logged, not retried. The idempotent ledger keys make a future
   reconciler/outbox safe to add.
-- **Billing UI is a later phase.** This engine is backend-only; balance display,
-  the Backup toggle UI, and top-up purchase screens are not part of it.
+- **Customer billing UI is partial.** The **trial paywall** (the "Upgrade to keep
+  going" wall on `expired`) and **in-app trial notifications** are live (§10).
+  Still later phases: the full balance display, the Backup toggle UI, and the
+  top-up purchase screens.
+- **Trial notifications are in-app only.** `processTrialLifecycle` records each
+  nudge in `tenant_notifications` and logs an email-delivery seam, but **no email
+  provider is wired** — real email/SMS delivery of the nudges is a later phase.
+- **The trial daily budget is a soft cap, not a reservation** — see the engineer
+  note in §9; truly concurrent trial sends can briefly overshoot 15 segments.
 
 ---
 
-## 11. Maintaining this code
+## 13. Maintaining this code
 
 - **Never change pricing in two places.** Backup price/size live only in
   `backupTopupProvider.ts` (`BACKUP_BLOCK_SIZE`, `BACKUP_BLOCK_PRICE_CENTS`).
@@ -579,9 +774,16 @@ These are deliberate scope lines, not bugs — flag them before go-live:
   pnpm --filter @workspace/api-server exec vitest run src/lib/creditService.test.ts
   pnpm --filter @workspace/api-server exec vitest run src/lib/creditService.decline.test.ts
   pnpm --filter @workspace/api-server exec vitest run src/lib/messageCost.test.ts
+  # Free-trial spend controls (§9–§10):
+  pnpm --filter @workspace/api-server exec vitest run src/lib/demoTextingGate.test.ts
+  pnpm --filter @workspace/api-server exec vitest run src/lib/trialLifecycle.test.ts
   ```
 
   (Run per-file — the shared test-DB env reaper can tear down a multi-file run.)
+- **A new `subscriptionStatus` value means an OpenAPI change.** The status is
+  returned **raw** to the client, so add any new value (e.g. `expired`) to the
+  `SubscriptionDetail.status` enum and regenerate the client, or the UI can't see
+  it (§10).
 - **Refund codes are an allow-list.** To make a new Twilio code refundable, add it
   to `REFUNDABLE_REJECTION_CODES` in `deliveryStatus.ts` — and ask first whether
   the carrier billed us for that attempt (if yes, it should *not* be refundable).
