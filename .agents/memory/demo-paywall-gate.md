@@ -95,3 +95,13 @@ triggers a *second, stronger* mode of the same gate:
 
 - **`SubscriptionDetail.billingBypass` is now a required contract field** (server
   returns it; codegen regenerated) so the UI predicate can read it.
+
+## Minting an expired-trial test account
+There is NO Conductor/admin "force-expire" endpoint, and prod DB is read-only to
+the agent, so an **expired-state test tenant can only be created in DEV**: `POST
+/api/tenant-auth/register` (always starts a 14-day trial) → then `UPDATE tenants
+SET subscription_status='expired', trial_ends_at=NOW()-'1 day', billing_bypass=false,
+stripe_customer_id=NULL, stripe_subscription_id=NULL`. Owner then sees the
+"Upgrade to keep going" wall (only `/billing` reachable); an agent sees "ask your
+owner". Login MFA "Log Code" shows on the `/verify` lab card (dev) + api-server
+console. Testing this in PROD would require adding an operator force-expire control.
