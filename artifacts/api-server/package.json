@@ -16,6 +16,7 @@
     "@workspace/api-zod": "workspace:*",
     "@workspace/brand-safety": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/send-notices": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "drizzle-orm": "catalog:",

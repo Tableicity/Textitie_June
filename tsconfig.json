@@ -20,6 +20,9 @@
     },
     {
       "path": "./lib/brand-safety"
+    },
+    {
+      "path": "./lib/send-notices"
     }
   ]
 }
