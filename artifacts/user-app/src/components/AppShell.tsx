@@ -3,6 +3,7 @@ import { Link, useLocation, useSearch, Redirect } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall, User, Lock, ArrowRight } from "lucide-react";
 import HipaaBanner from "@/components/HipaaBanner";
+import TrialBanner from "@/components/TrialBanner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -328,6 +329,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Main Content Area */}
       <main className="flex-1 bg-white text-slate-900 rounded-tl-2xl overflow-hidden shadow-2xl z-10 border-l border-t border-slate-200 flex flex-col">
+        <TrialBanner
+          status={subscription?.status}
+          trialEndsAt={subscription?.trialEndsAt}
+          billingBypass={subscription?.billingBypass}
+          isOwner={data.user.role === "owner"}
+        />
         <HipaaBanner />
         <div className="flex-1 overflow-hidden">
           {isTrialExpired && location !== "/billing" ? (

@@ -687,6 +687,37 @@ Expiry is **"soft" only in that nothing is deleted** — operationally it is a
 > added to `SubscriptionDetail` (required) and the client regenerated so the wall
 > predicate can read it (`expired && !billingBypass`).
 
+### The trial countdown banner
+
+A persistent, full-width banner rides the top of the agent workspace for **every
+free-trial tenant** (`TrialBanner.tsx`, rendered in `AppShell` above the HIPAA
+banner). It is **orange** while the trial is live, showing a **live countdown** to
+`trialEndsAt` — a 1-second tick that drops to finer units (days → hours → minutes
+→ seconds) as the deadline nears — and it flips **red** the instant the trial
+expires. "Expired" fires on **either** signal: the server status is already
+`expired`, **or** the client-side countdown crosses zero before the ~60s lifecycle
+job flips it. On that zero-crossing the banner also invalidates the subscription
+query **once**, so the full-screen "Upgrade to keep going" wall mounts promptly
+instead of waiting for the next refetch.
+
+- **Who sees it:** only `trialing`/`expired` tenants, and only when `billingBypass`
+  is false — paid, never-trialed, and operator-bypassed tenants see nothing (the
+  same "treated as paid" escape as the wall).
+- **Owner vs agent:** an `owner` gets an **Upgrade** link to `/billing`; a
+  non-owner agent gets an "ask your owner to upgrade" note (mirrors the wall's
+  owner-only release).
+- **It shows everywhere, including `/billing`** — unlike the full-screen wall,
+  which is suppressed on `/billing` so the owner can pay. This keeps the
+  countdown/expiry state visible on the very page where they upgrade.
+- **A11y:** the per-second tick is *not* announced; a visually-hidden live region
+  announces only the one-time transition to expired.
+
+The banner is **pure UI on top of the existing contract** — it reads the same
+`GET /billing/subscription` fields the wall does (`status`, `trialEndsAt`,
+`billingBypass`) and adds no new server surface. The server outbound hard-stop
+(above) remains the authoritative control; the banner, like the wall, is a
+courtesy.
+
 ### Where the code lives
 
 | Concern | File |
@@ -699,6 +730,7 @@ Expiry is **"soft" only in that nothing is deleted** — operationally it is a
 | Batch send hard-stop (campaign / survey) | `demoTextingGate.ts` (`isTenantSendingExpired`) → `campaignEngine.ts`, `surveyDispatcher.ts` |
 | Owner-only release guard | `middleware/tenantAuth.ts` (`requireTenantOwner`) → `routes/billing.ts` |
 | Paywall wall + Billing badge | user-app `components/AppShell.tsx`, `pages/Billing.tsx` |
+| Trial countdown banner (orange→red) | user-app `components/TrialBanner.tsx` (mounted in `AppShell.tsx`) |
 
 ### The two safety guarantees
 
@@ -829,6 +861,24 @@ These are deliberate scope lines, not bugs — flag them before go-live:
   `SubscriptionDetail.status` enum and regenerate the client, or the UI can't see
   it (§10). Any new field the wall predicate needs (e.g. `billingBypass`) must
   likewise be added to `SubscriptionDetail` and the client regenerated.
+- **Blocked-send copy lives in one shared catalog.** Every customer/agent-facing
+  message for a *blocked outbound send* — `paywall_new_contact`,
+  `daily_trial_limit`, `trial_expired`, `credit_frozen` — is owned by the pure-data
+  lib **`@workspace/send-notices`** (`SEND_NOTICES`, keyed by `SendNoticeReason`;
+  each entry carries `title` / `message` / `severity` / `httpStatus` / optional
+  `cta`). The server re-sources its message constants from it
+  (`PAYWALL_NEW_CONTACT_MESSAGE`, `DAILY_TRIAL_LIMIT_MESSAGE`,
+  `TRIAL_EXPIRED_MESSAGE`, `CREDIT_FROZEN_MESSAGE`) and the `conversations.ts` 402
+  path maps a blocked `reason` through `getSendNotice`; the Inbox composer reads the
+  same `reason` off the 402 `{ error, reason }` body and renders the matching
+  banner/toast (unknown/absent reason → fall back to the server `error` string, so
+  a block is never silent). To add or reword a block, edit `SEND_NOTICES` **only** —
+  a brand-new gate additionally needs the key on `SendNoticeReason` and the `reason`
+  emitted on `OutboundReplyResult`, nothing else. Keep each `message`
+  verbatim-equal to its historical server constant (the exact strings are asserted
+  in `demoTextingGate.test.ts`). **Gotcha:** the 402 `{ error, reason }` body is not
+  yet in the OpenAPI spec — the shared lib is the de-facto typed join key, and
+  typing that body is an open follow-up.
 - **A tenant-wide outbound stop must be replicated at *every* send choke point.**
   There are three tenant-driven senders — `sendConversationReply` (human + AI),
   `campaignEngine.executeCampaign`, and `surveyDispatcher` — each calling
