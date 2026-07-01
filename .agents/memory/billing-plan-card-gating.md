@@ -17,4 +17,4 @@ The tenant Billing page (`artifacts/user-app/src/pages/Billing.tsx`) renders one
 
 So: `isCurrent = (isSubscribed || isPastDue) && currentTier === plan.tierCode`, where `isSubscribed = active|trialing`; `isLapsed = expired|canceled` drives the "Subscribe" CTA + trial-copy suppression.
 
-Note: the onboarding `pages/onboarding/Plans.tsx` has parallel plan-card logic — if you change gating semantics, check whether it needs the same treatment.
+Note: this plan-card gating lives in TWO surfaces that are kept in sync — `pages/Billing.tsx` and the onboarding `pages/onboarding/Plans.tsx`. Any change to the gating semantics (isSubscribed / isPastDue / isLapsed / isCurrent / CTA labels) must be applied to BOTH or they drift.

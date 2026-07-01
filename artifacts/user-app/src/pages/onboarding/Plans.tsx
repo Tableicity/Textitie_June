@@ -77,6 +77,16 @@ export default function Plans() {
 
   const isSubscribed = subscription?.status === "active" || subscription?.status === "trialing";
   const currentTier = subscription?.planTierCode;
+  // `past_due` still has a live Stripe subscription (payment is retrying), so it
+  // is treated as a holding/current plan below — NOT re-purchasable — to avoid
+  // spawning a duplicate subscription through a fresh checkout.
+  const isPastDue = subscription?.status === "past_due";
+  // A lapsed subscription (trial ended or canceled) is NOT "current": the tenant
+  // must be able to re-purchase, and the server grants no new trial once one has
+  // been used, so lapsed users are charged immediately.
+  const isLapsed =
+    subscription?.status === "expired" ||
+    subscription?.status === "canceled";
   const isMutating = checkoutMutation.isPending || cancelMutation.isPending;
 
   const handlePlanAction = (tierCode: string, tierName: string) => {
@@ -123,7 +133,7 @@ export default function Plans() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {plans?.map((plan) => {
-            const isCurrent = currentTier === plan.tierCode;
+            const isCurrent = (isSubscribed || isPastDue) && currentTier === plan.tierCode;
             const iconColor = TIER_ICON_COLORS[plan.tierCode] ?? "text-slate-600 bg-slate-100";
             const isEnterprise = plan.tierCode === "enterprise";
             const isUpgrade =
@@ -161,7 +171,7 @@ export default function Plans() {
                       {isEnterprise ? "Custom" : plan.monthlyPriceFormatted}
                       {!isEnterprise && <span className="text-sm font-normal text-slate-500">/mo</span>}
                     </p>
-                    {plan.trialDays > 0 && !isSubscribed && !isEnterprise && (
+                    {plan.trialDays > 0 && !isSubscribed && !isLapsed && !isEnterprise && (
                       <p className="text-xs text-green-600 font-medium mt-1">
                         {plan.trialDays}-day free trial included
                       </p>
@@ -214,6 +224,8 @@ export default function Plans() {
                       <><ExternalLink className="w-4 h-4 mr-2" /> Contact Sales</>
                     ) : isSubscribed ? (
                       isUpgrade ? "Upgrade →" : "Downgrade"
+                    ) : isLapsed ? (
+                      "Subscribe"
                     ) : (
                       "Start Free Trial"
                     )}
