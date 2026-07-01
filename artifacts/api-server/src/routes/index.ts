@@ -32,6 +32,7 @@ import eventsRouter from "./events";
 import knowledgeRouter from "./knowledge";
 import brainRouter from "./brain";
 import migrationsRouter from "./migrations";
+import csvImportsRouter from "./csvImports";
 import brandSafetyRouter from "./brandSafety";
 
 const router: IRouter = Router();
@@ -69,6 +70,7 @@ router.use(eventsRouter);
 router.use(knowledgeRouter);
 router.use(brainRouter);
 router.use(migrationsRouter);
+router.use(csvImportsRouter);
 router.use(brandSafetyRouter);
 
 export default router;

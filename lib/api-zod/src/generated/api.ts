@@ -3740,6 +3740,94 @@ export const DiscardMigrationResponse = zod.object({
 });
 
 /**
+ * @summary List a tenant's CSV contact-import jobs (Conductor-only)
+ */
+export const ListCsvImportsParams = zod.object({
+  tenantId: zod.coerce.number(),
+});
+
+export const ListCsvImportsResponseItem = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  source: zod.string(),
+  status: zod.string().describe("review|complete|discarded|failed"),
+  originalFilename: zod.string().nullish(),
+  summary: zod.record(zod.string(), zod.unknown()).nullish(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListCsvImportsResponse = zod.array(ListCsvImportsResponseItem);
+
+/**
+ * @summary Get a CSV contact-import job's status and review summary (Conductor-only)
+ */
+export const GetCsvImportParams = zod.object({
+  tenantId: zod.coerce.number(),
+  jobId: zod.coerce.number(),
+});
+
+export const GetCsvImportResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  source: zod.string(),
+  status: zod.string().describe("review|complete|discarded|failed"),
+  originalFilename: zod.string().nullish(),
+  summary: zod.record(zod.string(), zod.unknown()).nullish(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Flip a staged CSV import live, inserting/updating live contacts (Conductor-only)
+ */
+export const FlipCsvImportLiveParams = zod.object({
+  tenantId: zod.coerce.number(),
+  jobId: zod.coerce.number(),
+});
+
+export const FlipCsvImportLiveBody = zod.object({
+  duplicateResolution: zod
+    .enum(["update", "skip"])
+    .describe(
+      "How to resolve rows whose phone already matches a live contact (update the existing contact vs skip the row)",
+    ),
+});
+
+export const FlipCsvImportLiveResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  source: zod.string(),
+  status: zod.string().describe("review|complete|discarded|failed"),
+  originalFilename: zod.string().nullish(),
+  summary: zod.record(zod.string(), zod.unknown()).nullish(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Discard a staged CSV import and delete its staged rows (Conductor-only)
+ */
+export const DiscardCsvImportParams = zod.object({
+  tenantId: zod.coerce.number(),
+  jobId: zod.coerce.number(),
+});
+
+export const DiscardCsvImportResponse = zod.object({
+  id: zod.number(),
+  tenantId: zod.number(),
+  source: zod.string(),
+  status: zod.string().describe("review|complete|discarded|failed"),
+  originalFilename: zod.string().nullish(),
+  summary: zod.record(zod.string(), zod.unknown()).nullish(),
+  createdBy: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
  * @summary Get the brand-safety config for a tenant (Conductor-only)
  */
 export const GetBrandSafetyConfigParams = zod.object({

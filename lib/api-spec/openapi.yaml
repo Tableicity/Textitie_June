@@ -3692,6 +3692,135 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /tenants/{tenantId}/csv-imports:
+    get:
+      operationId: listCsvImports
+      tags: [csv-imports]
+      summary: List a tenant's CSV contact-import jobs (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: CSV import jobs, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CsvImportJob"
+
+  /tenants/{tenantId}/csv-imports/{jobId}:
+    get:
+      operationId: getCsvImport
+      tags: [csv-imports]
+      summary: Get a CSV contact-import job's status and review summary (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: CSV import job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CsvImportJob"
+        "404":
+          description: CSV import job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/csv-imports/{jobId}/flip-live:
+    post:
+      operationId: flipCsvImportLive
+      tags: [csv-imports]
+      summary: Flip a staged CSV import live, inserting/updating live contacts (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FlipCsvImportBody"
+      responses:
+        "200":
+          description: CSV import flipped live
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CsvImportJob"
+        "400":
+          description: Job is not in a flippable state, or invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: CSV import job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /tenants/{tenantId}/csv-imports/{jobId}/discard:
+    post:
+      operationId: discardCsvImport
+      tags: [csv-imports]
+      summary: Discard a staged CSV import and delete its staged rows (Conductor-only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: CSV import discarded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CsvImportJob"
+        "409":
+          description: Job is not in a discardable state (already flipped live or discarded)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: CSV import job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /tenants/{tenantId}/brand-safety/config:
     get:
       operationId: getBrandSafetyConfig
@@ -6352,3 +6481,38 @@ components:
           maxLength: 4096
           description: The tenant's TextLine API access token (used transiently, encrypted at rest, never logged)
       required: [accessToken]
+
+    CsvImportJob:
+      type: object
+      properties:
+        id: { type: integer }
+        tenantId: { type: integer }
+        source: { type: string }
+        status:
+          type: string
+          description: review|complete|discarded|failed
+        originalFilename:
+          type: ["string", "null"]
+        summary:
+          type: ["object", "null"]
+          additionalProperties: true
+        createdBy:
+          type: ["integer", "null"]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required:
+        - id
+        - tenantId
+        - source
+        - status
+        - createdAt
+        - updatedAt
+
+    FlipCsvImportBody:
+      type: object
+      properties:
+        duplicateResolution:
+          type: string
+          enum: [update, skip]
+          description: How to resolve rows whose phone already matches a live contact (update the existing contact vs skip the row)
+      required: [duplicateResolution]

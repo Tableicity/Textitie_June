@@ -45,6 +45,7 @@ import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Uploa
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import MigrationsPanel from "@/components/MigrationsPanel";
+import CsvImportPanel from "@/components/CsvImportPanel";
 import BrandSafetyPanel from "@/components/BrandSafetyPanel";
 
 const injectSchema = z.object({
@@ -618,7 +619,8 @@ export default function TenantDetail() {
           <TabsTrigger value="migrations">Migrations</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="migrations">
+        <TabsContent value="migrations" className="space-y-6">
+          <CsvImportPanel tenantId={tenant.id} />
           <MigrationsPanel tenantId={tenant.id} tenantName={tenant.name} />
         </TabsContent>
 

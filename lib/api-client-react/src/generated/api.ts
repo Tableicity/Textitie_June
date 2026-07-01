@@ -79,11 +79,13 @@ import type {
   CreateTenantInput,
   CreditBalance,
   CreditShortfallError,
+  CsvImportJob,
   DepartmentItem,
   DepartmentMemberItem,
   DepartmentMemberRecord,
   Disposition,
   ExportAnalyticsConversationsParams,
+  FlipCsvImportBody,
   GetAnalyticsAgentsParams,
   GetAnalyticsDepartmentsParams,
   GetAnalyticsOverviewParams,
@@ -12371,6 +12373,358 @@ export const useDiscardMigration = <
   TContext
 > => {
   return useMutation(getDiscardMigrationMutationOptions(options));
+};
+
+/**
+ * @summary List a tenant's CSV contact-import jobs (Conductor-only)
+ */
+export const getListCsvImportsUrl = (tenantId: number) => {
+  return `/api/tenants/${tenantId}/csv-imports`;
+};
+
+export const listCsvImports = async (
+  tenantId: number,
+  options?: RequestInit,
+): Promise<CsvImportJob[]> => {
+  return customFetch<CsvImportJob[]>(getListCsvImportsUrl(tenantId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCsvImportsQueryKey = (tenantId: number) => {
+  return [`/api/tenants/${tenantId}/csv-imports`] as const;
+};
+
+export const getListCsvImportsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCsvImports>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCsvImports>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCsvImportsQueryKey(tenantId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listCsvImports>>> = ({
+    signal,
+  }) => listCsvImports(tenantId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!tenantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCsvImports>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCsvImportsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCsvImports>>
+>;
+export type ListCsvImportsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List a tenant's CSV contact-import jobs (Conductor-only)
+ */
+
+export function useListCsvImports<
+  TData = Awaited<ReturnType<typeof listCsvImports>>,
+  TError = ErrorType<unknown>,
+>(
+  tenantId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCsvImports>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCsvImportsQueryOptions(tenantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a CSV contact-import job's status and review summary (Conductor-only)
+ */
+export const getGetCsvImportUrl = (tenantId: number, jobId: number) => {
+  return `/api/tenants/${tenantId}/csv-imports/${jobId}`;
+};
+
+export const getCsvImport = async (
+  tenantId: number,
+  jobId: number,
+  options?: RequestInit,
+): Promise<CsvImportJob> => {
+  return customFetch<CsvImportJob>(getGetCsvImportUrl(tenantId, jobId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCsvImportQueryKey = (tenantId: number, jobId: number) => {
+  return [`/api/tenants/${tenantId}/csv-imports/${jobId}`] as const;
+};
+
+export const getGetCsvImportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCsvImport>>,
+  TError = ErrorType<ApiError>,
+>(
+  tenantId: number,
+  jobId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCsvImport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCsvImportQueryKey(tenantId, jobId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCsvImport>>> = ({
+    signal,
+  }) => getCsvImport(tenantId, jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(tenantId && jobId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCsvImport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCsvImportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCsvImport>>
+>;
+export type GetCsvImportQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Get a CSV contact-import job's status and review summary (Conductor-only)
+ */
+
+export function useGetCsvImport<
+  TData = Awaited<ReturnType<typeof getCsvImport>>,
+  TError = ErrorType<ApiError>,
+>(
+  tenantId: number,
+  jobId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCsvImport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCsvImportQueryOptions(tenantId, jobId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Flip a staged CSV import live, inserting/updating live contacts (Conductor-only)
+ */
+export const getFlipCsvImportLiveUrl = (tenantId: number, jobId: number) => {
+  return `/api/tenants/${tenantId}/csv-imports/${jobId}/flip-live`;
+};
+
+export const flipCsvImportLive = async (
+  tenantId: number,
+  jobId: number,
+  flipCsvImportBody: FlipCsvImportBody,
+  options?: RequestInit,
+): Promise<CsvImportJob> => {
+  return customFetch<CsvImportJob>(getFlipCsvImportLiveUrl(tenantId, jobId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(flipCsvImportBody),
+  });
+};
+
+export const getFlipCsvImportLiveMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof flipCsvImportLive>>,
+    TError,
+    { tenantId: number; jobId: number; data: BodyType<FlipCsvImportBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof flipCsvImportLive>>,
+  TError,
+  { tenantId: number; jobId: number; data: BodyType<FlipCsvImportBody> },
+  TContext
+> => {
+  const mutationKey = ["flipCsvImportLive"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof flipCsvImportLive>>,
+    { tenantId: number; jobId: number; data: BodyType<FlipCsvImportBody> }
+  > = (props) => {
+    const { tenantId, jobId, data } = props ?? {};
+
+    return flipCsvImportLive(tenantId, jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FlipCsvImportLiveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof flipCsvImportLive>>
+>;
+export type FlipCsvImportLiveMutationBody = BodyType<FlipCsvImportBody>;
+export type FlipCsvImportLiveMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Flip a staged CSV import live, inserting/updating live contacts (Conductor-only)
+ */
+export const useFlipCsvImportLive = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof flipCsvImportLive>>,
+    TError,
+    { tenantId: number; jobId: number; data: BodyType<FlipCsvImportBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof flipCsvImportLive>>,
+  TError,
+  { tenantId: number; jobId: number; data: BodyType<FlipCsvImportBody> },
+  TContext
+> => {
+  return useMutation(getFlipCsvImportLiveMutationOptions(options));
+};
+
+/**
+ * @summary Discard a staged CSV import and delete its staged rows (Conductor-only)
+ */
+export const getDiscardCsvImportUrl = (tenantId: number, jobId: number) => {
+  return `/api/tenants/${tenantId}/csv-imports/${jobId}/discard`;
+};
+
+export const discardCsvImport = async (
+  tenantId: number,
+  jobId: number,
+  options?: RequestInit,
+): Promise<CsvImportJob> => {
+  return customFetch<CsvImportJob>(getDiscardCsvImportUrl(tenantId, jobId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDiscardCsvImportMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discardCsvImport>>,
+    TError,
+    { tenantId: number; jobId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof discardCsvImport>>,
+  TError,
+  { tenantId: number; jobId: number },
+  TContext
+> => {
+  const mutationKey = ["discardCsvImport"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof discardCsvImport>>,
+    { tenantId: number; jobId: number }
+  > = (props) => {
+    const { tenantId, jobId } = props ?? {};
+
+    return discardCsvImport(tenantId, jobId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DiscardCsvImportMutationResult = NonNullable<
+  Awaited<ReturnType<typeof discardCsvImport>>
+>;
+
+export type DiscardCsvImportMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Discard a staged CSV import and delete its staged rows (Conductor-only)
+ */
+export const useDiscardCsvImport = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discardCsvImport>>,
+    TError,
+    { tenantId: number; jobId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof discardCsvImport>>,
+  TError,
+  { tenantId: number; jobId: number },
+  TContext
+> => {
+  return useMutation(getDiscardCsvImportMutationOptions(options));
 };
 
 /**

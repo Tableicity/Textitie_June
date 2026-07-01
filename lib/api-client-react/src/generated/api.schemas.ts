@@ -1923,6 +1923,43 @@ export interface StartMigrationInput {
   accessToken: string;
 }
 
+/**
+ * @nullable
+ */
+export type CsvImportJobSummary = { [key: string]: unknown } | null;
+
+export interface CsvImportJob {
+  id: number;
+  tenantId: number;
+  source: string;
+  /** review|complete|discarded|failed */
+  status: string;
+  /** @nullable */
+  originalFilename?: string | null;
+  /** @nullable */
+  summary?: CsvImportJobSummary;
+  /** @nullable */
+  createdBy?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * How to resolve rows whose phone already matches a live contact (update the existing contact vs skip the row)
+ */
+export type FlipCsvImportBodyDuplicateResolution =
+  (typeof FlipCsvImportBodyDuplicateResolution)[keyof typeof FlipCsvImportBodyDuplicateResolution];
+
+export const FlipCsvImportBodyDuplicateResolution = {
+  update: "update",
+  skip: "skip",
+} as const;
+
+export interface FlipCsvImportBody {
+  /** How to resolve rows whose phone already matches a live contact (update the existing contact vs skip the row) */
+  duplicateResolution: FlipCsvImportBodyDuplicateResolution;
+}
+
 export type ListTenantsParams = {
   /**
    * When true, include soft-archived tenants (default excludes them).
