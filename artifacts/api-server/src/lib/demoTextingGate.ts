@@ -154,10 +154,16 @@ export async function isTenantSendingExpired(tenantId: number): Promise<boolean>
       subscriptionStatus: tenantsTable.subscriptionStatus,
       billingBypass: tenantsTable.billingBypass,
       stripeCustomerId: tenantsTable.stripeCustomerId,
+      lifecycleStatus: tenantsTable.lifecycleStatus,
     })
     .from(tenantsTable)
     .where(eq(tenantsTable.id, tenantId))
     .limit(1);
+  // An archived tenant is fully deactivated: hard-stop every backend/scheduled
+  // send (campaign, survey) regardless of billing. This MUST come before the
+  // billingBypass unlock below — a bypass flag must never re-open an archived
+  // tenant's outbound.
+  if (tenant?.lifecycleStatus === "archived") return true;
   let subscriptionStatus = tenant?.subscriptionStatus ?? null;
   let billingBypass = tenant?.billingBypass ?? false;
   if (isTextingUnlocked(subscriptionStatus, billingBypass)) return false;

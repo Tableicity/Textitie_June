@@ -77,7 +77,7 @@ export default function Brain() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: tenants } = useListTenants({
+  const { data: tenants } = useListTenants(undefined, {
     query: { queryKey: getListTenantsQueryKey() },
   });
 

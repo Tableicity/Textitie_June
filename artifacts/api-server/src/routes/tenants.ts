@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { eq, sql, and, isNull, desc } from "drizzle-orm";
+import { eq, sql, and, isNull, ne, desc } from "drizzle-orm";
 import multer from "multer";
 import twilio from "twilio";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -35,27 +35,51 @@ import {
   AssignTenantConversationDepartmentParams,
   AssignTenantConversationDepartmentBody,
   AssignTenantConversationDepartmentResponse,
+  ArchiveTenantBody,
+  ArchiveTenantResponse,
+  RestoreTenantResponse,
+  UnassignTenantPhoneNumberBody,
+  UnassignTenantPhoneNumberResponse,
 } from "@workspace/api-zod";
 import { provisionChatwootInbox } from "../lib/chatwoot";
 import { requireTenantAuth } from "../middleware/tenantAuth";
 import {
   setTenantPrimaryNumber,
   setDepartmentNumber,
+  normalizePhoneE164,
   PhoneNumberConflictError,
 } from "../lib/phoneNumberRegistry";
 import { applyInboundWebhookByNumber } from "../lib/twilioNumberWebhook";
 import { syncCarrierBillingToStripe } from "../lib/carrierBilling";
+import {
+  hardDeleteTenant,
+  PROTECTED_TENANT_SLUGS,
+  PURGE_WINDOW_MS,
+} from "../lib/tenantLifecycle";
+import { cancelSubscription } from "../lib/stripe-stub";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-// Seed/demo tenants that seedDemoData re-creates on every boot. Deleting them is
-// pointless (they come back next boot) and risky, so the destructive delete
-// endpoint refuses them outright.
-const PROTECTED_TENANT_SLUGS = new Set(["acme"]);
+// PROTECTED_TENANT_SLUGS (seed/demo tenants that seedDemoData re-creates on every
+// boot — archiving or deleting them is pointless and risky) is imported from
+// ../lib/tenantLifecycle so the routes and the scheduled purge job share one
+// source of truth.
 
-router.get("/tenants", async (_req, res): Promise<void> => {
-  const rows = await db.select().from(tenantsTable).orderBy(tenantsTable.id);
+router.get("/tenants", async (req, res): Promise<void> => {
+  // By default the Conductor list hides soft-archived tenants; pass
+  // ?includeArchived=true to see them (for the restore / purge-review view).
+  const includeArchived =
+    req.query.includeArchived === "true" || req.query.includeArchived === "1";
+  const rows = await db
+    .select()
+    .from(tenantsTable)
+    .where(
+      includeArchived
+        ? undefined
+        : ne(tenantsTable.lifecycleStatus, "archived"),
+    )
+    .orderBy(tenantsTable.id);
   res.json(ListTenantsResponse.parse(rows));
 });
 
@@ -757,16 +781,189 @@ router.post(
   },
 );
 
-// Permanently delete a tenant and all of its scoped data. Conductor-only
-// (inherited from the `/api` mount) and DESTRUCTIVE, so the caller must echo the
-// tenant's slug (`?slug=` or JSON body `{ "slug": ... }`) to prove they mean
-// THIS account — an :id fat-finger can't silently wipe the wrong tenant.
-//
-// Several children of `tenants` are ON DELETE NO ACTION (conversations,
-// departments, contacts, dispositions, reminders, tenant_users) and messages ->
-// conversations is NO ACTION too, so we delete those explicitly in dependency
-// order inside one transaction; the remaining children are ON DELETE CASCADE and
-// go when the tenant row is removed.
+// --- Tenant lifecycle: soft-archive / restore / unassign-number -------------
+// These POST routes are more specific than GET "/tenants/:id" and are
+// Conductor-only (not in conductorAuth's tenant-JWT allow-list).
+
+router.post("/tenants/:id/archive", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid tenant id" });
+    return;
+  }
+  const body = ArchiveTenantBody.parse(req.body ?? {});
+
+  const [tenant] = await db
+    .select({
+      id: tenantsTable.id,
+      slug: tenantsTable.slug,
+      lifecycleStatus: tenantsTable.lifecycleStatus,
+    })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, id));
+  if (!tenant) {
+    res.status(404).json({ error: "Tenant not found" });
+    return;
+  }
+  if (PROTECTED_TENANT_SLUGS.has(tenant.slug)) {
+    res.status(400).json({
+      error: `Tenant "${tenant.slug}" is a protected seed tenant and cannot be archived.`,
+    });
+    return;
+  }
+
+  // Best-effort: cancel the Stripe subscription so an archived tenant stops
+  // billing. cancelSubscription throws when there is NO active/trialing sub —
+  // archiving must still succeed, so swallow only that case.
+  try {
+    await cancelSubscription(id, tenant.slug);
+  } catch (err) {
+    req.log.info(
+      { err, tenantId: id },
+      "Archive: no active subscription to cancel (ignored)",
+    );
+  }
+
+  const now = new Date();
+  await db
+    .update(tenantsTable)
+    .set({
+      lifecycleStatus: "archived",
+      archivedAt: now,
+      archivedBy: "conductor",
+      archiveReason: body.reason ?? null,
+      purgeAfter: new Date(now.getTime() + PURGE_WINDOW_MS),
+      purgeBlockedReason: null,
+    })
+    .where(eq(tenantsTable.id, id));
+
+  req.log.warn(
+    { tenantId: id, slug: tenant.slug },
+    "Tenant soft-archived via Conductor",
+  );
+
+  const [row] = await db
+    .select()
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, id));
+  res.json(ArchiveTenantResponse.parse(row));
+});
+
+router.post("/tenants/:id/restore", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid tenant id" });
+    return;
+  }
+
+  const [tenant] = await db
+    .select({ id: tenantsTable.id, slug: tenantsTable.slug })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, id));
+  if (!tenant) {
+    res.status(404).json({ error: "Tenant not found" });
+    return;
+  }
+
+  await db
+    .update(tenantsTable)
+    .set({
+      lifecycleStatus: "active",
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
+      purgeAfter: null,
+      purgeBlockedReason: null,
+    })
+    .where(eq(tenantsTable.id, id));
+
+  req.log.warn(
+    { tenantId: id, slug: tenant.slug },
+    "Tenant restored via Conductor",
+  );
+
+  const [row] = await db
+    .select()
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, id));
+  res.json(RestoreTenantResponse.parse(row));
+});
+
+router.post(
+  "/tenants/:id/phone-numbers/unassign",
+  async (req, res): Promise<void> => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid tenant id" });
+      return;
+    }
+    const body = UnassignTenantPhoneNumberBody.parse(req.body ?? {});
+    const norm = normalizePhoneE164(body.phoneNumber);
+    if (!norm) {
+      res.status(400).json({ error: "Invalid phone number" });
+      return;
+    }
+
+    const [tenant] = await db
+      .select({ id: tenantsTable.id })
+      .from(tenantsTable)
+      .where(eq(tenantsTable.id, id));
+    if (!tenant) {
+      res.status(404).json({ error: "Tenant not found" });
+      return;
+    }
+
+    // The number must currently be owned by THIS tenant. The canonical row's
+    // kind decides which registry clear-path returns it to the pool (both delete
+    // the phone_numbers row + clear the denormalized column in one transaction).
+    const [owned] = await db
+      .select()
+      .from(phoneNumbersTable)
+      .where(
+        and(
+          eq(phoneNumbersTable.phoneNumber, norm),
+          eq(phoneNumbersTable.tenantId, id),
+        ),
+      );
+    if (!owned) {
+      res
+        .status(404)
+        .json({ error: "This number is not assigned to this tenant." });
+      return;
+    }
+
+    try {
+      if (owned.kind === "department" && owned.departmentId != null) {
+        await setDepartmentNumber(id, owned.departmentId, null);
+      } else {
+        await setTenantPrimaryNumber(id, null);
+      }
+    } catch (err) {
+      if (err instanceof PhoneNumberConflictError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+
+    req.log.warn(
+      { tenantId: id, phoneNumber: norm, kind: owned.kind },
+      "Phone number unassigned (returned to pool) via Conductor",
+    );
+
+    res.json(
+      UnassignTenantPhoneNumberResponse.parse({ success: true, phoneNumber: norm }),
+    );
+  },
+);
+
+// Permanently delete a tenant and all of its scoped data — the manual
+// "Clean the slate" hard-purge. Conductor-only (inherited from the `/api` mount)
+// and DESTRUCTIVE, so the caller must echo the tenant's slug (`?slug=` or JSON
+// body `{ "slug": ... }`) to prove they mean THIS account — an :id fat-finger
+// can't silently wipe the wrong tenant. The dependency-ordered deletion lives in
+// lib/tenantLifecycle.hardDeleteTenant (shared with the scheduled purge job); it
+// deletes phone_numbers BEFORE the tenant row so the RESTRICT FK is satisfied.
 router.delete("/tenants/:id", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -804,18 +1001,7 @@ router.delete("/tenants/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE tenant_id = ${id})`,
-    );
-    await tx.execute(sql`DELETE FROM reminders WHERE tenant_id = ${id}`);
-    await tx.execute(sql`DELETE FROM conversations WHERE tenant_id = ${id}`);
-    await tx.execute(sql`DELETE FROM contacts WHERE tenant_id = ${id}`);
-    await tx.execute(sql`DELETE FROM dispositions WHERE tenant_id = ${id}`);
-    await tx.execute(sql`DELETE FROM departments WHERE tenant_id = ${id}`);
-    await tx.execute(sql`DELETE FROM tenant_users WHERE tenant_id = ${id}`);
-    await tx.execute(sql`DELETE FROM tenants WHERE id = ${id}`);
-  });
+  await hardDeleteTenant(id);
 
   req.log.warn(
     { tenantId: id, slug: tenant.slug },

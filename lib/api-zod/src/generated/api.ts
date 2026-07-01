@@ -30,6 +30,15 @@ export const ListTiersResponse = zod.array(ListTiersResponseItem);
 /**
  * @summary List tenants
  */
+export const ListTenantsQueryParams = zod.object({
+  includeArchived: zod.coerce
+    .boolean()
+    .optional()
+    .describe(
+      "When true, include soft-archived tenants (default excludes them).",
+    ),
+});
+
 export const ListTenantsResponseItem = zod.object({
   id: zod.number(),
   slug: zod.string().describe('Tenant slug, e.g. \"acme\" → acme.sama.io'),
@@ -80,6 +89,35 @@ export const ListTenantsResponseItem = zod.object({
     .boolean()
     .describe(
       'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing.',
+    ),
+  lifecycleStatus: zod
+    .string()
+    .describe(
+      'Tenant lifecycle state: \"active\" (default) or \"archived\". Archived tenants are hidden from the default Conductor list, blocked from login + inbound processing, and eligible for the scheduled hard purge.',
+    ),
+  archivedAt: zod.coerce
+    .date()
+    .nullable()
+    .describe("When the tenant was soft-archived. Null = active."),
+  archivedBy: zod
+    .string()
+    .nullable()
+    .describe('Who archived the tenant (e.g. \"conductor\"). Null = active.'),
+  archiveReason: zod
+    .string()
+    .nullable()
+    .describe("Optional operator note captured at archive time."),
+  purgeAfter: zod.coerce
+    .date()
+    .nullable()
+    .describe(
+      "When set, the purge job hard-deletes this archived tenant once this time passes. Null = never auto-purge.",
+    ),
+  purgeBlockedReason: zod
+    .string()
+    .nullable()
+    .describe(
+      "Why the last scheduled purge attempt was skipped (e.g. still owns phone numbers). Null = not blocked.",
     ),
   createdAt: zod.coerce.date(),
 });
@@ -200,6 +238,35 @@ export const GetTenantResponse = zod.object({
     .describe(
       'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing.',
     ),
+  lifecycleStatus: zod
+    .string()
+    .describe(
+      'Tenant lifecycle state: \"active\" (default) or \"archived\". Archived tenants are hidden from the default Conductor list, blocked from login + inbound processing, and eligible for the scheduled hard purge.',
+    ),
+  archivedAt: zod.coerce
+    .date()
+    .nullable()
+    .describe("When the tenant was soft-archived. Null = active."),
+  archivedBy: zod
+    .string()
+    .nullable()
+    .describe('Who archived the tenant (e.g. \"conductor\"). Null = active.'),
+  archiveReason: zod
+    .string()
+    .nullable()
+    .describe("Optional operator note captured at archive time."),
+  purgeAfter: zod.coerce
+    .date()
+    .nullable()
+    .describe(
+      "When set, the purge job hard-deletes this archived tenant once this time passes. Null = never auto-purge.",
+    ),
+  purgeBlockedReason: zod
+    .string()
+    .nullable()
+    .describe(
+      "Why the last scheduled purge attempt was skipped (e.g. still owns phone numbers). Null = not blocked.",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -307,7 +374,253 @@ export const UpdateTenantResponse = zod.object({
     .describe(
       'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing.',
     ),
+  lifecycleStatus: zod
+    .string()
+    .describe(
+      'Tenant lifecycle state: \"active\" (default) or \"archived\". Archived tenants are hidden from the default Conductor list, blocked from login + inbound processing, and eligible for the scheduled hard purge.',
+    ),
+  archivedAt: zod.coerce
+    .date()
+    .nullable()
+    .describe("When the tenant was soft-archived. Null = active."),
+  archivedBy: zod
+    .string()
+    .nullable()
+    .describe('Who archived the tenant (e.g. \"conductor\"). Null = active.'),
+  archiveReason: zod
+    .string()
+    .nullable()
+    .describe("Optional operator note captured at archive time."),
+  purgeAfter: zod.coerce
+    .date()
+    .nullable()
+    .describe(
+      "When set, the purge job hard-deletes this archived tenant once this time passes. Null = never auto-purge.",
+    ),
+  purgeBlockedReason: zod
+    .string()
+    .nullable()
+    .describe(
+      "Why the last scheduled purge attempt was skipped (e.g. still owns phone numbers). Null = not blocked.",
+    ),
   createdAt: zod.coerce.date(),
+});
+
+/**
+ * Reversibly deactivates a tenant: hides it from the default list, blocks login + inbound processing, cancels its subscription (best-effort), and schedules a hard purge after the grace window. Reverse with restoreTenant.
+ * @summary Soft-archive a tenant (Conductor)
+ */
+export const ArchiveTenantParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const archiveTenantBodyReasonMax = 500;
+
+export const ArchiveTenantBody = zod
+  .object({
+    reason: zod
+      .string()
+      .max(archiveTenantBodyReasonMax)
+      .nullish()
+      .describe(
+        "Optional operator note explaining why the tenant is archived.",
+      ),
+  })
+  .describe("Optional metadata captured when soft-archiving a tenant.");
+
+export const ArchiveTenantResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string().describe('Tenant slug, e.g. \"acme\" → acme.sama.io'),
+  name: zod.string(),
+  region: zod
+    .enum(["DE", "EE", "US"])
+    .describe("Sovereign data residency region"),
+  tierCode: zod.enum(["starter", "growth", "enterprise"]),
+  sovereignToggle: zod.boolean().describe("Enterprise-only DE residency lock"),
+  phoneNumber: zod
+    .string()
+    .nullable()
+    .describe(
+      "E.164 number this tenant owns (used as outbound From and inbound routing key)",
+    ),
+  chatwootAccountId: zod.number().nullable(),
+  chatwootInboxId: zod.number().nullable(),
+  knowledgeBase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Free-text knowledge base used by the AI Student to draft Whispers",
+    ),
+  brandScope: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set short brand\/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. \"B2B HVAC parts supplier; answer product\/ordering\/support questions only\"). null = router fails open to the Classroom\/Professor draft path.',
+    ),
+  fallbackPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom\/KB match), the pipeline drafts this verbatim instead of letting the Student\/Professor guess. null\/empty = existing Student\/Professor draft path.",
+    ),
+  autopilotHoldingPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set Auto-Pilot \"graceful handback\" holding phrase. When Auto-Pilot refuses to auto-send (fail-closed gate) or its AI draft fails, the pipeline auto-sends THIS verbatim as a content-free acknowledgment and KEEPS the Blue handback for a human. Sent verbatim (unlike fallbackPhrase, which is a Co-Pilot draft a human edits). null\/empty = today\'s silent handback (fail-safe).',
+    ),
+  unregisteredSurchargeEnabled: zod
+    .boolean()
+    .describe(
+      "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
+    ),
+  billingBypass: zod
+    .boolean()
+    .describe(
+      'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing.',
+    ),
+  lifecycleStatus: zod
+    .string()
+    .describe(
+      'Tenant lifecycle state: \"active\" (default) or \"archived\". Archived tenants are hidden from the default Conductor list, blocked from login + inbound processing, and eligible for the scheduled hard purge.',
+    ),
+  archivedAt: zod.coerce
+    .date()
+    .nullable()
+    .describe("When the tenant was soft-archived. Null = active."),
+  archivedBy: zod
+    .string()
+    .nullable()
+    .describe('Who archived the tenant (e.g. \"conductor\"). Null = active.'),
+  archiveReason: zod
+    .string()
+    .nullable()
+    .describe("Optional operator note captured at archive time."),
+  purgeAfter: zod.coerce
+    .date()
+    .nullable()
+    .describe(
+      "When set, the purge job hard-deletes this archived tenant once this time passes. Null = never auto-purge.",
+    ),
+  purgeBlockedReason: zod
+    .string()
+    .nullable()
+    .describe(
+      "Why the last scheduled purge attempt was skipped (e.g. still owns phone numbers). Null = not blocked.",
+    ),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * Reverses archiveTenant — clears the archive + purge fields and returns the tenant to active. Does NOT re-create a subscription.
+ * @summary Restore a soft-archived tenant (Conductor)
+ */
+export const RestoreTenantParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RestoreTenantResponse = zod.object({
+  id: zod.number(),
+  slug: zod.string().describe('Tenant slug, e.g. \"acme\" → acme.sama.io'),
+  name: zod.string(),
+  region: zod
+    .enum(["DE", "EE", "US"])
+    .describe("Sovereign data residency region"),
+  tierCode: zod.enum(["starter", "growth", "enterprise"]),
+  sovereignToggle: zod.boolean().describe("Enterprise-only DE residency lock"),
+  phoneNumber: zod
+    .string()
+    .nullable()
+    .describe(
+      "E.164 number this tenant owns (used as outbound From and inbound routing key)",
+    ),
+  chatwootAccountId: zod.number().nullable(),
+  chatwootInboxId: zod.number().nullable(),
+  knowledgeBase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Free-text knowledge base used by the AI Student to draft Whispers",
+    ),
+  brandScope: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set short brand\/vertical blurb the inbound triage router uses to decide whether an inbound SMS is in-scope (e.g. \"B2B HVAC parts supplier; answer product\/ordering\/support questions only\"). null = router fails open to the Classroom\/Professor draft path.',
+    ),
+  fallbackPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      "Conductor-set Co-Pilot holding-phrase draft. When an inbound is tenant-specific but ungrounded (no Classroom\/KB match), the pipeline drafts this verbatim instead of letting the Student\/Professor guess. null\/empty = existing Student\/Professor draft path.",
+    ),
+  autopilotHoldingPhrase: zod
+    .string()
+    .nullable()
+    .describe(
+      'Conductor-set Auto-Pilot \"graceful handback\" holding phrase. When Auto-Pilot refuses to auto-send (fail-closed gate) or its AI draft fails, the pipeline auto-sends THIS verbatim as a content-free acknowledgment and KEEPS the Blue handback for a human. Sent verbatim (unlike fallbackPhrase, which is a Co-Pilot draft a human edits). null\/empty = today\'s silent handback (fail-safe).',
+    ),
+  unregisteredSurchargeEnabled: zod
+    .boolean()
+    .describe(
+      "When false, the per-number unregistered carrier surcharge is waived for this tenant (carrier fee still applies).",
+    ),
+  billingBypass: zod
+    .boolean()
+    .describe(
+      'Operator \"Auto Approve \/ Auto Subscribed\" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing.',
+    ),
+  lifecycleStatus: zod
+    .string()
+    .describe(
+      'Tenant lifecycle state: \"active\" (default) or \"archived\". Archived tenants are hidden from the default Conductor list, blocked from login + inbound processing, and eligible for the scheduled hard purge.',
+    ),
+  archivedAt: zod.coerce
+    .date()
+    .nullable()
+    .describe("When the tenant was soft-archived. Null = active."),
+  archivedBy: zod
+    .string()
+    .nullable()
+    .describe('Who archived the tenant (e.g. \"conductor\"). Null = active.'),
+  archiveReason: zod
+    .string()
+    .nullable()
+    .describe("Optional operator note captured at archive time."),
+  purgeAfter: zod.coerce
+    .date()
+    .nullable()
+    .describe(
+      "When set, the purge job hard-deletes this archived tenant once this time passes. Null = never auto-purge.",
+    ),
+  purgeBlockedReason: zod
+    .string()
+    .nullable()
+    .describe(
+      "Why the last scheduled purge attempt was skipped (e.g. still owns phone numbers). Null = not blocked.",
+    ),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * Removes internal ownership of a canonical number from this tenant so it returns to the unassigned pool (still on the Twilio account). Required before an archived tenant can be purged.
+ * @summary Unassign a tenant's phone number, returning it to the pool (Conductor)
+ */
+export const UnassignTenantPhoneNumberParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UnassignTenantPhoneNumberBody = zod.object({
+  phoneNumber: zod
+    .string()
+    .describe("The E.164 canonical number to remove from this tenant."),
+});
+
+export const UnassignTenantPhoneNumberResponse = zod.object({
+  success: zod.boolean(),
+  phoneNumber: zod
+    .string()
+    .describe("The number that was returned to the pool."),
 });
 
 /**

@@ -106,12 +106,35 @@ router.post("/webhooks/:source", async (req, res): Promise<void> => {
       // create/update, no realtime push, no automation/attribution. We still
       // record a tenant-scoped audit-log entry (and the raw webhook event
       // below) so there is a trail of the suppressed inbound for compliance.
+      // ---- Archived-tenant gate (inbound) ----
+      // A soft-archived tenant is deactivated: drop its inbound entirely (no
+      // conversation create/update, no AI, no automation, no realtime push),
+      // mirroring the blocked-sender drop. The raw webhook event is still
+      // persisted below and we 200 so the carrier does not retry.
+      const tenantArchived =
+        tenant != null && tenant.lifecycleStatus === "archived";
+
       const senderBlocked =
-        tenant != null && fromNumber != null
+        tenant != null && fromNumber != null && !tenantArchived
           ? await isBlocked(tenant.slug, tenant.id, fromNumber)
           : false;
 
-      if (tenant && senderBlocked) {
+      if (tenant && tenantArchived) {
+        req.log.info(
+          { tenantSlug: tenant.slug, from: fromNumber },
+          "SAMA Inbound Router: dropped message for archived tenant",
+        );
+        payload = {
+          ...rawBody,
+          _sama: {
+            routed: false,
+            archived: true,
+            tenantId: tenant.id,
+            tenantSlug: tenant.slug,
+            reason: "tenant is archived",
+          },
+        };
+      } else if (tenant && senderBlocked) {
         try {
           await db.insert(auditLogsTable).values({
             tenantId: tenant.id,

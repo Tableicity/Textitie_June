@@ -28,7 +28,8 @@ const formSchema = z.object({
 });
 
 export default function Tenants() {
-  const { data: tenants, isLoading } = useListTenants();
+  const [showArchived, setShowArchived] = useState(false);
+  const { data: tenants, isLoading } = useListTenants({ includeArchived: showArchived });
   const createTenant = useCreateTenant();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -87,7 +88,12 @@ export default function Tenants() {
           <p className="text-muted-foreground mt-2">Manage SAMA platform tenants.</p>
         </div>
 
-        <Dialog open={open} onOpenChange={setOpen}>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+            <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+            Show archived
+          </label>
+          <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2"><Plus size={16} /> New Tenant</Button>
           </DialogTrigger>
@@ -231,6 +237,7 @@ export default function Tenants() {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="border rounded-lg bg-card">
@@ -255,7 +262,14 @@ export default function Tenants() {
               tenants?.map((t) => (
                 <TableRow key={t.id} className="group cursor-pointer">
                   <TableCell className="font-medium">
-                    <Link href={`/tenants/${t.id}`} className="block">{t.name}</Link>
+                    <Link href={`/tenants/${t.id}`} className="flex items-center gap-2">
+                      {t.name}
+                      {t.lifecycleStatus === "archived" && (
+                        <Badge variant="outline" className="border-amber-400 text-amber-600 text-xs">
+                          Archived
+                        </Badge>
+                      )}
+                    </Link>
                   </TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     <Link href={`/tenants/${t.id}`} className="block">{t.slug}</Link>

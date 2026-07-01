@@ -6,6 +6,7 @@ import { processDueReminders } from "../routes/reminders";
 import { processCrmSyncQueue } from "./integrations/syncWorker";
 import { processPendingSurveys } from "./surveyDispatcher";
 import { processTrialLifecycle } from "./trialLifecycle";
+import { processTenantPurge } from "./tenantLifecycle";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -26,13 +27,20 @@ export function startTimerEngine(): void {
   }, POLL_INTERVAL_MS);
 }
 
-async function listTenants(): Promise<{ slug: string }[]> {
-  return db.select({ slug: tenantsTable.slug }).from(tenantsTable);
+async function listTenants(): Promise<{ slug: string; lifecycleStatus: string }[]> {
+  return db
+    .select({ slug: tenantsTable.slug, lifecycleStatus: tenantsTable.lifecycleStatus })
+    .from(tenantsTable);
 }
 
 async function runTimerCycle(): Promise<void> {
   const tenants = await listTenants();
   for (const t of tenants) {
+    // Archived tenants are deactivated: no scheduled follow-ups, auto-resolve, or
+    // campaign fires. Inbound is already dropped in the webhook and login is
+    // 403'd; this closes the backend-scheduled OUTBOUND path too (archive sets
+    // Stripe status to 'canceled', which the send gate would otherwise let past).
+    if (t.lifecycleStatus === "archived") continue;
     try {
       await processFollowUpTimers(t.slug);
       await processAutoResolve(t.slug);
@@ -69,6 +77,14 @@ async function runTimerCycle(): Promise<void> {
     }
   } catch (err) {
     logger.error({ err }, "processPendingSurveys failed");
+  }
+  try {
+    const purged = await processTenantPurge();
+    if (purged > 0) {
+      logger.info({ count: purged }, "Archived tenants hard-purged (past retention window)");
+    }
+  } catch (err) {
+    logger.error({ err }, "processTenantPurge failed");
   }
 }
 

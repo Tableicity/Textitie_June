@@ -20,6 +20,10 @@ import {
   useGetTenantUnassignedConversations,
   getGetTenantUnassignedConversationsQueryKey,
   useAssignTenantConversationDepartment,
+  useArchiveTenant,
+  useRestoreTenant,
+  useUnassignTenantPhoneNumber,
+  getListTenantsQueryKey,
 } from "@workspace/api-client-react";
 import { getStoredAuthHeader } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,8 +41,9 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users, Receipt, GraduationCap, Building2 } from "lucide-react";
+import { ShieldCheck, Zap, Server, Shield, BookOpen, Phone, MessageSquare, Upload, Users, Receipt, GraduationCap, Building2, Archive, RotateCcw, PhoneOff } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import MigrationsPanel from "@/components/MigrationsPanel";
 import BrandSafetyPanel from "@/components/BrandSafetyPanel";
 
@@ -111,6 +116,105 @@ export default function TenantDetail() {
       },
     });
   const departments = departmentsData?.departments ?? [];
+
+  // --- Tenant lifecycle: archive / restore / return-number-to-pool ---------
+  const archiveTenant = useArchiveTenant();
+  const restoreTenant = useRestoreTenant();
+  const unassignNumber = useUnassignTenantPhoneNumber();
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveReason, setArchiveReason] = useState("");
+
+  const invalidateLifecycle = () => {
+    queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenantId) });
+    queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey() });
+  };
+
+  const onArchive = () => {
+    archiveTenant.mutate(
+      { id: tenantId, data: { reason: archiveReason.trim() || null } },
+      {
+        onSuccess: () => {
+          invalidateLifecycle();
+          setArchiveOpen(false);
+          setArchiveReason("");
+          toast({
+            title: "Tenant archived",
+            description:
+              "Login, inbound SMS, and billing are now disabled. Restore anytime before the purge window.",
+          });
+        },
+        onError: (err) => {
+          toast({
+            title: "Archive failed",
+            description: err.message || "Could not archive tenant",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const onRestore = () => {
+    restoreTenant.mutate(
+      { id: tenantId },
+      {
+        onSuccess: () => {
+          invalidateLifecycle();
+          toast({
+            title: "Tenant restored",
+            description: "The workspace is active again.",
+          });
+        },
+        onError: (err) => {
+          toast({
+            title: "Restore failed",
+            description: err.message || "Could not restore tenant",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const onUnassignNumber = (phoneNumber: string) => {
+    unassignNumber.mutate(
+      { id: tenantId, data: { phoneNumber } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenantId) });
+          queryClient.invalidateQueries({
+            queryKey: getGetTenantDepartmentsQueryKey(tenantId),
+          });
+          toast({
+            title: "Number returned to pool",
+            description: `${phoneNumber} is now unassigned and available.`,
+          });
+        },
+        onError: (err) => {
+          toast({
+            title: "Unassign failed",
+            description: err.message || "Could not unassign number",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  // Numbers currently assigned to this tenant (primary + department numbers),
+  // deduped — each can be returned to the shared pool.
+  const assignedNumbers: { phoneNumber: string; label: string }[] = [];
+  if (tenant?.phoneNumber) {
+    assignedNumbers.push({ phoneNumber: tenant.phoneNumber, label: "Tenant primary" });
+  }
+  for (const d of departments) {
+    if (
+      d.phoneNumber &&
+      !assignedNumbers.some((a) => a.phoneNumber === d.phoneNumber)
+    ) {
+      assignedNumbers.push({ phoneNumber: d.phoneNumber, label: `Dept · ${d.name}` });
+    }
+  }
   const assignDeptNumber = useAssignTenantDepartmentNumber();
 
   const createDept = useCreateTenantDepartment();
@@ -496,7 +600,14 @@ export default function TenantDetail() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">{tenant.name}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold tracking-tight">{tenant.name}</h1>
+          {tenant.lifecycleStatus === "archived" && (
+            <Badge variant="outline" className="border-amber-400 text-amber-600 gap-1">
+              <Archive size={12} /> Archived
+            </Badge>
+          )}
+        </div>
         <p className="text-muted-foreground mt-2 font-mono text-sm">{tenant.slug}.sama.io</p>
       </div>
 
@@ -1168,6 +1279,165 @@ export default function TenantDetail() {
               </div>
             </form>
           </Form>
+        </CardContent>
+      </Card>
+
+      <Card
+        className={
+          tenant.lifecycleStatus === "archived"
+            ? "border-amber-400/40 bg-amber-50/40"
+            : "border-destructive/30"
+        }
+      >
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Archive size={20} /> Tenant Lifecycle
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Soft-archive deactivates login, inbound SMS, and billing but keeps all
+            data — fully reversible. Archived tenants are automatically purged after
+            the retention window, but only once they own no numbers.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">Status</span>
+                {tenant.lifecycleStatus === "archived" ? (
+                  <Badge variant="outline" className="border-amber-400 text-amber-600">
+                    Archived
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="border-emerald-400 text-emerald-600">
+                    Active
+                  </Badge>
+                )}
+              </div>
+              {tenant.lifecycleStatus === "archived" && (
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  {tenant.archivedAt && (
+                    <div>
+                      Archived {new Date(tenant.archivedAt).toLocaleString()}
+                      {tenant.archivedBy ? ` by ${tenant.archivedBy}` : ""}
+                    </div>
+                  )}
+                  {tenant.archiveReason && <div>Reason: {tenant.archiveReason}</div>}
+                  {tenant.purgeAfter && (
+                    <div className="text-amber-600">
+                      Scheduled purge: {new Date(tenant.purgeAfter).toLocaleString()}
+                    </div>
+                  )}
+                  {tenant.purgeBlockedReason && (
+                    <div className="text-destructive">
+                      Purge blocked: {tenant.purgeBlockedReason}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {tenant.lifecycleStatus === "archived" ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                disabled={restoreTenant.isPending}
+                onClick={onRestore}
+              >
+                <RotateCcw size={16} />
+                {restoreTenant.isPending ? "Restoring…" : "Restore Tenant"}
+              </Button>
+            ) : (
+              <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2 border-amber-400 text-amber-600 hover:bg-amber-50"
+                  >
+                    <Archive size={16} /> Archive Tenant
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Archive {tenant.name}?</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      This disables login, inbound SMS, and billing for this tenant.
+                      No data is deleted and you can restore it anytime before the
+                      scheduled purge. Add an optional reason for the audit trail.
+                    </p>
+                    <Textarea
+                      placeholder="Reason (optional)…"
+                      value={archiveReason}
+                      onChange={(e) => setArchiveReason(e.target.value)}
+                      className="min-h-[80px]"
+                    />
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setArchiveOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        className="gap-2"
+                        disabled={archiveTenant.isPending}
+                        onClick={onArchive}
+                      >
+                        <Archive size={16} />
+                        {archiveTenant.isPending ? "Archiving…" : "Archive Tenant"}
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+
+          <div className="space-y-2 border-t pt-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <PhoneOff size={16} /> Assigned Numbers
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Return a number to the shared pool so it can be reassigned to another
+              tenant. A tenant must own no numbers before it can be auto-purged.
+            </p>
+            {assignedNumbers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No numbers assigned to this tenant.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {assignedNumbers.map((n) => (
+                  <div
+                    key={n.phoneNumber}
+                    className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                  >
+                    <div className="text-sm">
+                      <span className="font-mono">{n.phoneNumber}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {n.label}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-1"
+                      disabled={unassignNumber.isPending}
+                      onClick={() => onUnassignNumber(n.phoneNumber)}
+                    >
+                      <PhoneOff size={14} /> Return to pool
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
         </TabsContent>

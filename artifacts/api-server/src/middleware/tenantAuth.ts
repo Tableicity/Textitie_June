@@ -40,6 +40,29 @@ async function lookupSlug(tenantId: number): Promise<string | null> {
   return rows[0].slug;
 }
 
+// Soft-archived tenants are deactivated: every authenticated request (reads AND
+// sends) for a live session must be rejected, not just fresh logins. A short TTL
+// keeps this to one DB hit per tenant per 30s while still taking effect within
+// 30s of an archive/restore.
+const archivedCache = new Map<number, { archived: boolean; expires: number }>();
+const ARCHIVED_CACHE_TTL_MS = 30 * 1000;
+
+async function isTenantArchived(tenantId: number): Promise<boolean> {
+  const cached = archivedCache.get(tenantId);
+  if (cached && cached.expires > Date.now()) return cached.archived;
+  const rows = await db
+    .select({ lifecycleStatus: tenantsTable.lifecycleStatus })
+    .from(tenantsTable)
+    .where(eq(tenantsTable.id, tenantId))
+    .limit(1);
+  const archived = rows.length > 0 && rows[0].lifecycleStatus === "archived";
+  archivedCache.set(tenantId, {
+    archived,
+    expires: Date.now() + ARCHIVED_CACHE_TTL_MS,
+  });
+  return archived;
+}
+
 export const requireTenantAuth: RequestHandler = async (req, res, next) => {
   const header = req.header("authorization") ?? "";
   if (!header.startsWith("Bearer ")) {
@@ -65,6 +88,17 @@ export const requireTenantAuth: RequestHandler = async (req, res, next) => {
       return;
     }
     tenantSlug = looked;
+  }
+
+  if (
+    typeof payload.tenantId === "number" &&
+    (await isTenantArchived(payload.tenantId))
+  ) {
+    res.status(403).json({
+      error:
+        "This workspace has been archived. Contact support to restore access.",
+    });
+    return;
   }
 
   req.tenantUser = { ...payload, tenantSlug } as TenantAuthPayload;

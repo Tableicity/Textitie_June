@@ -381,6 +381,7 @@ router.post("/tenant-auth/login", async (req, res) => {
         passwordHash: tenantUsersTable.passwordHash,
         tenantSlug: tenantsTable.slug,
         tenantName: tenantsTable.name,
+        tenantLifecycleStatus: tenantsTable.lifecycleStatus,
       })
       .from(tenantUsersTable)
       .innerJoin(tenantsTable, eq(tenantUsersTable.tenantId, tenantsTable.id))
@@ -396,6 +397,17 @@ router.post("/tenant-auth/login", async (req, res) => {
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
       res.status(401).json({ error: "Invalid credentials" });
+      return;
+    }
+
+    // Soft-archived workspaces are deactivated: block login even with valid
+    // credentials (checked only AFTER the password so we never leak which
+    // accounts exist). Restore re-enables it.
+    if (user.tenantLifecycleStatus === "archived") {
+      res.status(403).json({
+        error:
+          "This workspace has been archived. Contact support to restore access.",
+      });
       return;
     }
 

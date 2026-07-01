@@ -28,9 +28,17 @@ import { departmentsTable } from "./departments";
  */
 export const phoneNumbersTable = pgTable("phone_numbers", {
   phoneNumber: text("phone_number").primaryKey(),
+  // RESTRICT (not CASCADE) is deliberate: deleting a tenant while it still owns
+  // canonical numbers must FAIL LOUDLY rather than silently drop routing rows for
+  // numbers that stay live + BILLED on the Twilio account. The tenant hard-delete
+  // path (see lib/tenantLifecycle.hardDeleteTenant) deletes phone_numbers rows
+  // explicitly first; the scheduled purge refuses tenants that still own numbers.
+  // This FK is the backstop for any other/future delete path.
   tenantId: integer("tenant_id")
     .notNull()
-    .references(() => tenantsTable.id, { onDelete: "cascade" }),
+    .references(() => tenantsTable.id, { onDelete: "restrict" }),
+  // department_id stays CASCADE: DELETE /departments/:id relies on it to drop the
+  // department's canonical number row in the same statement.
   departmentId: integer("department_id").references(() => departmentsTable.id, {
     onDelete: "cascade",
   }),

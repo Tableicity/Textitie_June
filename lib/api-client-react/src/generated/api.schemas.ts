@@ -116,6 +116,33 @@ export interface Tenant {
   unregisteredSurchargeEnabled: boolean;
   /** Operator "Auto Approve / Auto Subscribed" override. When true the tenant is treated as a paid subscriber and bypasses the demo paywall (may text any compliant contact) regardless of subscriptionStatus — for testing the paid experience without going through billing. */
   billingBypass: boolean;
+  /** Tenant lifecycle state: "active" (default) or "archived". Archived tenants are hidden from the default Conductor list, blocked from login + inbound processing, and eligible for the scheduled hard purge. */
+  lifecycleStatus: string;
+  /**
+   * When the tenant was soft-archived. Null = active.
+   * @nullable
+   */
+  archivedAt: string | null;
+  /**
+   * Who archived the tenant (e.g. "conductor"). Null = active.
+   * @nullable
+   */
+  archivedBy: string | null;
+  /**
+   * Optional operator note captured at archive time.
+   * @nullable
+   */
+  archiveReason: string | null;
+  /**
+   * When set, the purge job hard-deletes this archived tenant once this time passes. Null = never auto-purge.
+   * @nullable
+   */
+  purgeAfter: string | null;
+  /**
+   * Why the last scheduled purge attempt was skipped (e.g. still owns phone numbers). Null = not blocked.
+   * @nullable
+   */
+  purgeBlockedReason: string | null;
   createdAt: string;
 }
 
@@ -178,6 +205,29 @@ export interface UpdateTenantInput {
   unregisteredSurchargeEnabled?: boolean;
   /** Operator "Auto Approve / Auto Subscribed" override. When true the tenant bypasses the demo paywall and texts as a paid subscriber (for testing the paid experience without going through billing). */
   billingBypass?: boolean;
+}
+
+/**
+ * Optional metadata captured when soft-archiving a tenant.
+ */
+export interface ArchiveTenantInput {
+  /**
+   * Optional operator note explaining why the tenant is archived.
+   * @maxLength 500
+   * @nullable
+   */
+  reason?: string | null;
+}
+
+export interface UnassignTenantPhoneNumberInput {
+  /** The E.164 canonical number to remove from this tenant. */
+  phoneNumber: string;
+}
+
+export interface UnassignPhoneNumberResult {
+  success: boolean;
+  /** The number that was returned to the pool. */
+  phoneNumber: string;
 }
 
 export interface InjectMessageInput {
@@ -1872,6 +1922,13 @@ export interface StartMigrationInput {
    */
   accessToken: string;
 }
+
+export type ListTenantsParams = {
+  /**
+   * When true, include soft-archived tenants (default excludes them).
+   */
+  includeArchived?: boolean;
+};
 
 export type ListInjectionsParams = {
   /**

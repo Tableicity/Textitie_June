@@ -30,6 +30,7 @@ import type {
   AnalyticsOverview,
   AnalyticsVolumePoint,
   ApiError,
+  ArchiveTenantInput,
   AreaCodeSuggestionsResult,
   AssignDepartmentNumberInput,
   AssignDepartmentNumberResult,
@@ -99,6 +100,7 @@ import type {
   ListConversationsParams,
   ListInjectionsParams,
   ListRemindersParams,
+  ListTenantsParams,
   ListWebhookEventsParams,
   Message,
   MigrationJob,
@@ -144,6 +146,8 @@ import type {
   TopUpInput,
   TopUpResult,
   TransferInput,
+  UnassignPhoneNumberResult,
+  UnassignTenantPhoneNumberInput,
   UpdateAgentInput,
   UpdateAutomationInput,
   UpdateBrandSafetyConfigInput,
@@ -314,39 +318,57 @@ export function useListTiers<
 /**
  * @summary List tenants
  */
-export const getListTenantsUrl = () => {
-  return `/api/tenants`;
+export const getListTenantsUrl = (params?: ListTenantsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/tenants?${stringifiedParams}`
+    : `/api/tenants`;
 };
 
-export const listTenants = async (options?: RequestInit): Promise<Tenant[]> => {
-  return customFetch<Tenant[]>(getListTenantsUrl(), {
+export const listTenants = async (
+  params?: ListTenantsParams,
+  options?: RequestInit,
+): Promise<Tenant[]> => {
+  return customFetch<Tenant[]>(getListTenantsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListTenantsQueryKey = () => {
-  return [`/api/tenants`] as const;
+export const getListTenantsQueryKey = (params?: ListTenantsParams) => {
+  return [`/api/tenants`, ...(params ? [params] : [])] as const;
 };
 
 export const getListTenantsQueryOptions = <
   TData = Awaited<ReturnType<typeof listTenants>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listTenants>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListTenantsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTenants>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListTenantsQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getListTenantsQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listTenants>>> = ({
     signal,
-  }) => listTenants({ signal, ...requestOptions });
+  }) => listTenants(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listTenants>>,
@@ -367,15 +389,18 @@ export type ListTenantsQueryError = ErrorType<unknown>;
 export function useListTenants<
   TData = Awaited<ReturnType<typeof listTenants>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listTenants>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListTenantsQueryOptions(options);
+>(
+  params?: ListTenantsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTenants>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTenantsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -795,6 +820,271 @@ export const useUpdateTenant = <
   TContext
 > => {
   return useMutation(getUpdateTenantMutationOptions(options));
+};
+
+/**
+ * Reversibly deactivates a tenant: hides it from the default list, blocks login + inbound processing, cancels its subscription (best-effort), and schedules a hard purge after the grace window. Reverse with restoreTenant.
+ * @summary Soft-archive a tenant (Conductor)
+ */
+export const getArchiveTenantUrl = (id: number) => {
+  return `/api/tenants/${id}/archive`;
+};
+
+export const archiveTenant = async (
+  id: number,
+  archiveTenantInput?: ArchiveTenantInput,
+  options?: RequestInit,
+): Promise<Tenant> => {
+  return customFetch<Tenant>(getArchiveTenantUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(archiveTenantInput),
+  });
+};
+
+export const getArchiveTenantMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveTenant>>,
+    TError,
+    { id: number; data: BodyType<ArchiveTenantInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveTenant>>,
+  TError,
+  { id: number; data: BodyType<ArchiveTenantInput> },
+  TContext
+> => {
+  const mutationKey = ["archiveTenant"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveTenant>>,
+    { id: number; data: BodyType<ArchiveTenantInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return archiveTenant(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveTenantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof archiveTenant>>
+>;
+export type ArchiveTenantMutationBody = BodyType<ArchiveTenantInput>;
+export type ArchiveTenantMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Soft-archive a tenant (Conductor)
+ */
+export const useArchiveTenant = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveTenant>>,
+    TError,
+    { id: number; data: BodyType<ArchiveTenantInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof archiveTenant>>,
+  TError,
+  { id: number; data: BodyType<ArchiveTenantInput> },
+  TContext
+> => {
+  return useMutation(getArchiveTenantMutationOptions(options));
+};
+
+/**
+ * Reverses archiveTenant — clears the archive + purge fields and returns the tenant to active. Does NOT re-create a subscription.
+ * @summary Restore a soft-archived tenant (Conductor)
+ */
+export const getRestoreTenantUrl = (id: number) => {
+  return `/api/tenants/${id}/restore`;
+};
+
+export const restoreTenant = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Tenant> => {
+  return customFetch<Tenant>(getRestoreTenantUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRestoreTenantMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreTenant>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof restoreTenant>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["restoreTenant"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof restoreTenant>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return restoreTenant(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RestoreTenantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof restoreTenant>>
+>;
+
+export type RestoreTenantMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Restore a soft-archived tenant (Conductor)
+ */
+export const useRestoreTenant = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restoreTenant>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof restoreTenant>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRestoreTenantMutationOptions(options));
+};
+
+/**
+ * Removes internal ownership of a canonical number from this tenant so it returns to the unassigned pool (still on the Twilio account). Required before an archived tenant can be purged.
+ * @summary Unassign a tenant's phone number, returning it to the pool (Conductor)
+ */
+export const getUnassignTenantPhoneNumberUrl = (id: number) => {
+  return `/api/tenants/${id}/phone-numbers/unassign`;
+};
+
+export const unassignTenantPhoneNumber = async (
+  id: number,
+  unassignTenantPhoneNumberInput: UnassignTenantPhoneNumberInput,
+  options?: RequestInit,
+): Promise<UnassignPhoneNumberResult> => {
+  return customFetch<UnassignPhoneNumberResult>(
+    getUnassignTenantPhoneNumberUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(unassignTenantPhoneNumberInput),
+    },
+  );
+};
+
+export const getUnassignTenantPhoneNumberMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unassignTenantPhoneNumber>>,
+    TError,
+    { id: number; data: BodyType<UnassignTenantPhoneNumberInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unassignTenantPhoneNumber>>,
+  TError,
+  { id: number; data: BodyType<UnassignTenantPhoneNumberInput> },
+  TContext
+> => {
+  const mutationKey = ["unassignTenantPhoneNumber"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unassignTenantPhoneNumber>>,
+    { id: number; data: BodyType<UnassignTenantPhoneNumberInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return unassignTenantPhoneNumber(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnassignTenantPhoneNumberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unassignTenantPhoneNumber>>
+>;
+export type UnassignTenantPhoneNumberMutationBody =
+  BodyType<UnassignTenantPhoneNumberInput>;
+export type UnassignTenantPhoneNumberMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Unassign a tenant's phone number, returning it to the pool (Conductor)
+ */
+export const useUnassignTenantPhoneNumber = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unassignTenantPhoneNumber>>,
+    TError,
+    { id: number; data: BodyType<UnassignTenantPhoneNumberInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unassignTenantPhoneNumber>>,
+  TError,
+  { id: number; data: BodyType<UnassignTenantPhoneNumberInput> },
+  TContext
+> => {
+  return useMutation(getUnassignTenantPhoneNumberMutationOptions(options));
 };
 
 /**

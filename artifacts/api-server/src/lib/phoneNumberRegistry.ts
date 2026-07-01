@@ -343,7 +343,7 @@ export async function ensurePhoneNumbersSchema(): Promise<void> {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS phone_numbers (
       phone_number text PRIMARY KEY,
-      tenant_id integer NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      tenant_id integer NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
       department_id integer REFERENCES departments(id) ON DELETE CASCADE,
       twilio_sid text,
       kind text NOT NULL DEFAULT 'primary',

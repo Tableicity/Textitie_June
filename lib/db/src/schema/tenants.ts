@@ -104,6 +104,23 @@ export const tenantsTable = pgTable("tenants", {
   // returns true) regardless of subscriptionStatus — lets an operator test the
   // paid experience without going through the payment gateway. Default false.
   billingBypass: boolean("billing_bypass").notNull().default(false),
+  // ---- Tenant lifecycle (reversible soft-archive → scheduled/manual purge) ----
+  // Reversible deactivation state. Plain text + app-level validation (NO DB
+  // enum/check — a bad value must never 500 the raw-row tenants list). Canonical
+  // values: "active" (default) | "archived". Archived tenants are hidden from
+  // the default Conductor list, blocked from tenant login + inbound processing,
+  // and eligible for the purge job. Unknown values are treated as "active".
+  lifecycleStatus: text("lifecycle_status").notNull().default("active"),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  archivedBy: text("archived_by"),
+  archiveReason: text("archive_reason"),
+  // Archive stamps this to now()+30d; the 60s purge job hard-deletes the tenant
+  // once purgeAfter <= now(). Operator-overridable. Null = never auto-purge.
+  purgeAfter: timestamp("purge_after", { withTimezone: true }),
+  // Last reason the purge job SKIPPED this tenant (e.g. still owns phone numbers
+  // — external Twilio resources are never auto-released). Visibility only;
+  // cleared on restore. Null = not blocked.
+  purgeBlockedReason: text("purge_blocked_reason"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
