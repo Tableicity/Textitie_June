@@ -409,7 +409,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div
               className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/30"
               role="dialog"
-              aria-modal="true"
               aria-labelledby="trial-expired-title"
               data-testid="trial-expired-overlay"
             >
