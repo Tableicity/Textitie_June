@@ -59,7 +59,7 @@ const phoneSchema = z.object({
     .regex(/^\+[1-9]\d{6,14}$|^$/, "Must be E.164 format (e.g. +19094904265) or empty"),
 });
 
-const TENANT_TABS = ["migrations", "brand-safety", "overview"] as const;
+const TENANT_TABS = ["overview", "brand-safety", "migrations"] as const;
 type TenantTab = (typeof TENANT_TABS)[number];
 
 function isTenantTab(value: string | null): value is TenantTab {
@@ -71,13 +71,13 @@ export default function TenantDetail() {
   const tenantId = params.id ? parseInt(params.id, 10) : 0;
 
   // Tab selection is URL-addressable via ?tab=; an unknown/absent value falls
-  // back to "migrations". Switching tabs preserves every other query param and
+  // back to "overview". Switching tabs preserves every other query param and
   // never leaves a dangling "?".
   const search = useSearch();
   const [location, setLocation] = useLocation();
   const activeTab: TenantTab = (() => {
     const t = new URLSearchParams(search).get("tab");
-    return isTenantTab(t) ? t : "migrations";
+    return isTenantTab(t) ? t : "overview";
   })();
   const handleTabChange = (value: string) => {
     const next = new URLSearchParams(search);
@@ -613,9 +613,9 @@ export default function TenantDetail() {
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList>
-          <TabsTrigger value="migrations">Migrations</TabsTrigger>
-          <TabsTrigger value="brand-safety">Brand Safety</TabsTrigger>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="brand-safety">Brand Safety</TabsTrigger>
+          <TabsTrigger value="migrations">Migrations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="migrations">
