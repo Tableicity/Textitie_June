@@ -19,8 +19,8 @@ const TIER_PRICING = [
   {
     code: "starter",
     name: "Essentials",
-    description: "1 agent seat, shared 10DLC pool — for solo operators kicking the tires.",
-    features: ["1 agent seat", "1 phone number", "600 SMS credits/mo", "Shared 10DLC pool", "Email support"],
+    description: "Up to 3 agents, shared 10DLC pool — for small teams getting started.",
+    features: ["Up to 3 agents", "1 phone number", "600 SMS credits/mo", "Shared 10DLC pool", "Email support"],
     monthlyPriceCents: 14900,
     includedCredits: 600,
     trialDays: 14,
