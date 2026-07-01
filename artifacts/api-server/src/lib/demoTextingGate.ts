@@ -140,19 +140,58 @@ export async function isDemoTextingBlockedForTenant(
  * tenants are never stopped; legacy "none"/"trialing" tenants are NOT stopped
  * here (they stay governed by the per-contact demo gate on the conversation
  * send path) — this mirrors the "expired"-only scope of evaluateDemoTextingGate.
+ *
+ * Self-healing: before hard-stopping a locked-looking tenant that has a real
+ * Stripe customer, it verifies against Stripe via reconcileTenantBillingFromStripe
+ * (throttled, never-throws, cost-gated) so a tenant that actually paid but whose
+ * activation webhook failed is not blocked from launching a campaign/survey — the
+ * only other heal path (the App billing screen) is never touched by these
+ * backend/scheduled sends.
  */
 export async function isTenantSendingExpired(tenantId: number): Promise<boolean> {
   const [tenant] = await db
     .select({
       subscriptionStatus: tenantsTable.subscriptionStatus,
       billingBypass: tenantsTable.billingBypass,
+      stripeCustomerId: tenantsTable.stripeCustomerId,
     })
     .from(tenantsTable)
     .where(eq(tenantsTable.id, tenantId))
     .limit(1);
-  const subscriptionStatus = tenant?.subscriptionStatus ?? null;
-  const billingBypass = tenant?.billingBypass ?? false;
+  let subscriptionStatus = tenant?.subscriptionStatus ?? null;
+  let billingBypass = tenant?.billingBypass ?? false;
   if (isTextingUnlocked(subscriptionStatus, billingBypass)) return false;
+
+  // Self-healing billing: a tenant that actually PAID but whose activation never
+  // landed (e.g. a dropped/failed Stripe webhook) would otherwise be wrongly
+  // hard-stopped from launching a campaign/survey — this backend/scheduled path
+  // never opens the App billing screen, so nothing else would ever heal it.
+  // When the tenant looks locked but has a real Stripe customer, verify against
+  // Stripe (throttled; no-ops otherwise) and re-read the possibly-upgraded
+  // status before deciding. A reconcile error never blocks — we fall through to
+  // the stored status. Mirrors the pattern in evaluateDemoTextingGate.
+  if (
+    !isTextingUnlocked(subscriptionStatus, billingBypass) &&
+    tenant?.stripeCustomerId
+  ) {
+    const result = await reconcileTenantBillingFromStripe(tenantId).catch(
+      () => ({ reconciled: false }) as const,
+    );
+    if (result.reconciled) {
+      const [fresh] = await db
+        .select({
+          subscriptionStatus: tenantsTable.subscriptionStatus,
+          billingBypass: tenantsTable.billingBypass,
+        })
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, tenantId))
+        .limit(1);
+      subscriptionStatus = fresh?.subscriptionStatus ?? subscriptionStatus;
+      billingBypass = fresh?.billingBypass ?? billingBypass;
+      if (isTextingUnlocked(subscriptionStatus, billingBypass)) return false;
+    }
+  }
+
   return subscriptionStatus === "expired";
 }
 
