@@ -24,22 +24,38 @@ import {
 // ===========================================================================
 
 let stripeSubs: Array<Record<string, unknown>> = [];
+// Fail-safe drivers: when set, the Stripe seam simulates an outage so we can
+// prove reconcile NEVER throws and always serves the stored status.
+//   - stripeClientThrows: getUncachableStripeClient throws (Stripe unconfigured)
+//   - stripeListRejects:  subscriptions.list rejects (Stripe API error/outage)
+let stripeClientThrows = false;
+let stripeListRejects = false;
 
 vi.mock("./stripeClient", () => ({
-  getUncachableStripeClient: async () => ({
-    subscriptions: {
-      list: async () => ({ data: stripeSubs }),
-      // syncCarrierBillingToStripe (best-effort, called at the tail of
-      // activateSubscription and try/caught there) may hit these — give it
-      // harmless no-ops so activation completes cleanly.
-      retrieve: async () => ({ items: { data: [] } }),
-    },
-    subscriptionItems: {
-      del: async () => {},
-      create: async () => {},
-      update: async () => {},
-    },
-  }),
+  getUncachableStripeClient: async () => {
+    if (stripeClientThrows) {
+      throw new Error("Stripe unconfigured (test)");
+    }
+    return {
+      subscriptions: {
+        list: async () => {
+          if (stripeListRejects) {
+            throw new Error("Stripe API outage (test)");
+          }
+          return { data: stripeSubs };
+        },
+        // syncCarrierBillingToStripe (best-effort, called at the tail of
+        // activateSubscription and try/caught there) may hit these — give it
+        // harmless no-ops so activation completes cleanly.
+        retrieve: async () => ({ items: { data: [] } }),
+      },
+      subscriptionItems: {
+        del: async () => {},
+        create: async () => {},
+        update: async () => {},
+      },
+    };
+  },
 }));
 
 // Import AFTER the mock is registered so the module graph binds the stubbed
@@ -139,6 +155,8 @@ beforeEach(async () => {
     })
     .onConflictDoNothing({ target: tiersTable.code });
   stripeSubs = [];
+  stripeClientThrows = false;
+  stripeListRejects = false;
 });
 
 afterEach(() => {
@@ -249,6 +267,49 @@ describe("reconcileTenantBillingFromStripe (DB-backed orchestrator)", () => {
     expect(await countBillingEvents(tenantId)).toBe(0);
     // The claim slot WAS stamped (we reached Stripe) — proves the tenant stayed
     // locked by the selection, not by the throttle gate.
+    expect(tenant.lastBillingSyncAt).not.toBeNull();
+  });
+
+  it("Stripe unconfigured (client throws): returns stripe_unconfigured, does NOT throw, and leaves the tenant's billing state locked", async () => {
+    const tenantId = await makeLockedTenant();
+    // getUncachableStripeClient throws — as it does when Stripe is unconfigured.
+    stripeClientThrows = true;
+    stripeSubs = [activeSub()]; // present but must never be consulted
+
+    // The whole point of the fail-safe: this call must resolve, not reject, even
+    // though the Stripe client blew up. If reconcile ever let the error bubble,
+    // this await would throw and a paying customer's send/billing screen 500s.
+    const result = await reconcileTenantBillingFromStripe(tenantId);
+    expect(result).toEqual({ reconciled: false, reason: "stripe_unconfigured" });
+
+    const tenant = await getTenant(tenantId);
+    // Billing state is untouched — the tenant is served its stored status.
+    expect(tenant.subscriptionStatus).toBe("expired");
+    expect(tenant.planTierCode).toBeNull();
+    expect(tenant.stripeSubscriptionId).toBeNull();
+    expect(await countBillingEvents(tenantId)).toBe(0);
+    // The throttle claim WAS stamped (before the Stripe call), so a hammering
+    // caller is throttled rather than pounding an unconfigured/failing Stripe.
+    expect(tenant.lastBillingSyncAt).not.toBeNull();
+  });
+
+  it("Stripe API outage (subscriptions.list rejects): returns stripe_error, does NOT throw, and the tenant stays locked with no billing_events row", async () => {
+    const tenantId = await makeLockedTenant();
+    // The client resolves, but the live Stripe call fails — a real API
+    // error/timeout/outage. reconcile must catch it and serve stored status.
+    stripeListRejects = true;
+    stripeSubs = [activeSub()]; // would activate if it were ever read
+
+    const result = await reconcileTenantBillingFromStripe(tenantId);
+    expect(result).toEqual({ reconciled: false, reason: "stripe_error" });
+
+    const tenant = await getTenant(tenantId);
+    expect(tenant.subscriptionStatus).toBe("expired");
+    expect(tenant.planTierCode).toBeNull();
+    expect(tenant.stripeSubscriptionId).toBeNull();
+    expect(await countBillingEvents(tenantId)).toBe(0);
+    // The throttle claim WAS stamped (before the Stripe call) so a burst of
+    // retries during the outage is throttled — matching orchestrator behavior.
     expect(tenant.lastBillingSyncAt).not.toBeNull();
   });
 
