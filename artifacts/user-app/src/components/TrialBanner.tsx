@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetSubscriptionQueryKey } from "@workspace/api-client-react";
-import { Clock, AlertTriangle, ArrowRight } from "lucide-react";
+import { Clock, AlertTriangle } from "lucide-react";
 import { getTrialBannerPhase } from "./trialBanner.logic";
 
 type TrialBannerProps = {
@@ -117,11 +117,10 @@ export default function TrialBanner({
       {isOwner ? (
         <Link
           href="/billing"
-          className="inline-flex items-center gap-1 rounded-md bg-white/20 px-2.5 py-1 text-xs font-semibold transition-colors hover:bg-white/30"
+          className="text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
           data-testid="button-trial-upgrade"
         >
           {phase === "normal" ? "Upgrade" : "Upgrade now"}
-          <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       ) : (
         <span className="text-xs opacity-90">Ask your owner to upgrade</span>
