@@ -92,8 +92,14 @@ export class WebhookHandlers {
             customer: string;
             status: string;
             trial_end: number | null;
-            current_period_start: number;
-            current_period_end: number;
+            current_period_start: number | null;
+            current_period_end: number | null;
+            items?: {
+              data?: Array<{
+                current_period_start?: number | null;
+                current_period_end?: number | null;
+              }>;
+            };
             metadata?: Record<string, string>;
           };
           const tierCode = sub.metadata?.tierCode;
@@ -112,6 +118,7 @@ export class WebhookHandlers {
             trial_end: sub.trial_end,
             current_period_start: sub.current_period_start,
             current_period_end: sub.current_period_end,
+            items: sub.items,
           });
           break;
         }

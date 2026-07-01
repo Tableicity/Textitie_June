@@ -8,6 +8,11 @@ import {
   PHONE_ADDON_CENTS,
 } from "./stripe-stub";
 import { syncCarrierBillingToStripe } from "./carrierBilling";
+import {
+  resolveSubscriptionPeriod,
+  unixSecondsToDate,
+  type SubscriptionPeriodSource,
+} from "./stripeSubscriptionPeriod";
 
 export { OVERAGE_RATE_CENTS, PHONE_ADDON_CENTS };
 
@@ -137,13 +142,7 @@ export async function handleCheckoutSessionCompleted(
     return;
   }
 
-  const sub = rawSub as unknown as {
-    id: string;
-    status: string;
-    trial_end: number | null;
-    current_period_start: number;
-    current_period_end: number;
-  };
+  const sub = rawSub as unknown as { id: string } & SubscriptionPeriodSource;
 
   await activateSubscription(tenantId, tenantSlug, tierCode, sub.id, sub);
 }
@@ -153,12 +152,7 @@ export async function activateSubscription(
   tenantSlug: string,
   tierCode: string,
   subscriptionId: string,
-  sub: {
-    status: string;
-    trial_end: number | null;
-    current_period_start: number;
-    current_period_end: number;
-  },
+  sub: SubscriptionPeriodSource,
 ): Promise<void> {
   const tiers = await db
     .select()
@@ -172,9 +166,14 @@ export async function activateSubscription(
   const tier = tiers[0];
 
   const isTrialing = sub.status === "trialing";
-  const trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
-  const periodStart = new Date(sub.current_period_start * 1000);
-  const periodEnd = new Date(sub.current_period_end * 1000);
+  const trialEnd = unixSecondsToDate(sub.trial_end);
+  const { periodStart, periodEnd } = resolveSubscriptionPeriod(sub);
+  if ((isTrialing || sub.status === "active") && (!periodStart || !periodEnd)) {
+    logger.warn(
+      { tenantId, subscriptionId, status: sub.status },
+      "Active/trialing subscription resolved with a null billing period — storing null (Stripe payload drift?)",
+    );
+  }
 
   const existing = await db
     .select({ stripeSubscriptionId: tenantsTable.stripeSubscriptionId, trialUsed: tenantsTable.trialUsed })
@@ -231,21 +230,20 @@ export async function handleSubscriptionUpdated(
   tenantId: number,
   tenantSlug: string,
   tierCode: string,
-  sub: {
-    id: string;
-    status: string;
-    trial_end: number | null;
-    current_period_start: number;
-    current_period_end: number;
-  },
+  sub: { id: string; status: string } & SubscriptionPeriodSource,
 ): Promise<void> {
-  const trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
-  const periodStart = new Date(sub.current_period_start * 1000);
-  const periodEnd = new Date(sub.current_period_end * 1000);
+  const trialEnd = unixSecondsToDate(sub.trial_end);
+  const { periodStart, periodEnd } = resolveSubscriptionPeriod(sub);
 
   let dbStatus: string = sub.status;
   if (!["trialing", "active", "past_due", "canceled", "incomplete"].includes(dbStatus)) {
     dbStatus = "active";
+  }
+  if ((dbStatus === "active" || dbStatus === "trialing") && (!periodStart || !periodEnd)) {
+    logger.warn(
+      { tenantId, subId: sub.id, status: dbStatus },
+      "Active/trialing subscription resolved with a null billing period — storing null (Stripe payload drift?)",
+    );
   }
 
   await db
