@@ -8,6 +8,7 @@ import {
   handlePaymentSucceeded,
   handlePaymentFailed,
 } from "./stripeCheckout";
+import { handleSetupCheckoutCompleted } from "./autoRecharge";
 import { db, tenantsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -92,9 +93,18 @@ export class WebhookHandlers {
     try {
       switch (event.type) {
         case "checkout.session.completed": {
-          const session = event.data.object as { id: string; metadata?: Record<string, string> };
+          const session = event.data.object as {
+            id: string;
+            mode?: string;
+            metadata?: Record<string, string>;
+          };
           if (session.metadata?.kind === "addon_credits") {
             await handleCreditCheckoutCompleted(session.id);
+          } else if (
+            session.mode === "setup" ||
+            session.metadata?.kind === "auto_recharge_setup"
+          ) {
+            await handleSetupCheckoutCompleted(session.id);
           } else {
             await handleCheckoutSessionCompleted(session.id);
           }

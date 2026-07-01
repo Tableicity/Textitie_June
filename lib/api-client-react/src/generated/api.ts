@@ -38,6 +38,9 @@ import type {
   AssignTenantConversationDepartmentInput,
   AudiencePreviewInput,
   AudiencePreviewResult,
+  AutoRechargeSettings,
+  AutoRechargeSetupInput,
+  AutoRechargeUpdateInput,
   AutoRouteResult,
   AutomationRuleItem,
   AvailableNumberItem,
@@ -5432,6 +5435,259 @@ export const useCreateCreditCheckout = <
   TContext
 > => {
   return useMutation(getCreateCreditCheckoutMutationOptions(options));
+};
+
+/**
+ * @summary Get automatic backup-credit (auto-recharge) settings for the tenant
+ */
+export const getGetBillingAutoRechargeUrl = () => {
+  return `/api/billing/auto-recharge`;
+};
+
+export const getBillingAutoRecharge = async (
+  options?: RequestInit,
+): Promise<AutoRechargeSettings> => {
+  return customFetch<AutoRechargeSettings>(getGetBillingAutoRechargeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBillingAutoRechargeQueryKey = () => {
+  return [`/api/billing/auto-recharge`] as const;
+};
+
+export const getGetBillingAutoRechargeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBillingAutoRecharge>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBillingAutoRecharge>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetBillingAutoRechargeQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBillingAutoRecharge>>
+  > = ({ signal }) => getBillingAutoRecharge({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBillingAutoRecharge>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBillingAutoRechargeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBillingAutoRecharge>>
+>;
+export type GetBillingAutoRechargeQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get automatic backup-credit (auto-recharge) settings for the tenant
+ */
+
+export function useGetBillingAutoRecharge<
+  TData = Awaited<ReturnType<typeof getBillingAutoRecharge>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBillingAutoRecharge>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBillingAutoRechargeQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update automatic backup-credit (auto-recharge) settings
+ */
+export const getUpdateBillingAutoRechargeUrl = () => {
+  return `/api/billing/auto-recharge`;
+};
+
+export const updateBillingAutoRecharge = async (
+  autoRechargeUpdateInput: AutoRechargeUpdateInput,
+  options?: RequestInit,
+): Promise<AutoRechargeSettings> => {
+  return customFetch<AutoRechargeSettings>(getUpdateBillingAutoRechargeUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(autoRechargeUpdateInput),
+  });
+};
+
+export const getUpdateBillingAutoRechargeMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBillingAutoRecharge>>,
+    TError,
+    { data: BodyType<AutoRechargeUpdateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateBillingAutoRecharge>>,
+  TError,
+  { data: BodyType<AutoRechargeUpdateInput> },
+  TContext
+> => {
+  const mutationKey = ["updateBillingAutoRecharge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateBillingAutoRecharge>>,
+    { data: BodyType<AutoRechargeUpdateInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateBillingAutoRecharge(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateBillingAutoRechargeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateBillingAutoRecharge>>
+>;
+export type UpdateBillingAutoRechargeMutationBody =
+  BodyType<AutoRechargeUpdateInput>;
+export type UpdateBillingAutoRechargeMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Update automatic backup-credit (auto-recharge) settings
+ */
+export const useUpdateBillingAutoRecharge = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBillingAutoRecharge>>,
+    TError,
+    { data: BodyType<AutoRechargeUpdateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateBillingAutoRecharge>>,
+  TError,
+  { data: BodyType<AutoRechargeUpdateInput> },
+  TContext
+> => {
+  return useMutation(getUpdateBillingAutoRechargeMutationOptions(options));
+};
+
+/**
+ * @summary Create a Stripe Checkout (setup mode) session to save a card for auto-recharge
+ */
+export const getCreateBillingAutoRechargeSetupUrl = () => {
+  return `/api/billing/auto-recharge/setup`;
+};
+
+export const createBillingAutoRechargeSetup = async (
+  autoRechargeSetupInput?: AutoRechargeSetupInput,
+  options?: RequestInit,
+): Promise<CheckoutSessionResult> => {
+  return customFetch<CheckoutSessionResult>(
+    getCreateBillingAutoRechargeSetupUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(autoRechargeSetupInput),
+    },
+  );
+};
+
+export const getCreateBillingAutoRechargeSetupMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBillingAutoRechargeSetup>>,
+    TError,
+    { data: BodyType<AutoRechargeSetupInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createBillingAutoRechargeSetup>>,
+  TError,
+  { data: BodyType<AutoRechargeSetupInput> },
+  TContext
+> => {
+  const mutationKey = ["createBillingAutoRechargeSetup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createBillingAutoRechargeSetup>>,
+    { data: BodyType<AutoRechargeSetupInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createBillingAutoRechargeSetup(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateBillingAutoRechargeSetupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createBillingAutoRechargeSetup>>
+>;
+export type CreateBillingAutoRechargeSetupMutationBody =
+  BodyType<AutoRechargeSetupInput>;
+export type CreateBillingAutoRechargeSetupMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Create a Stripe Checkout (setup mode) session to save a card for auto-recharge
+ */
+export const useCreateBillingAutoRechargeSetup = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBillingAutoRechargeSetup>>,
+    TError,
+    { data: BodyType<AutoRechargeSetupInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createBillingAutoRechargeSetup>>,
+  TError,
+  { data: BodyType<AutoRechargeSetupInput> },
+  TContext
+> => {
+  return useMutation(getCreateBillingAutoRechargeSetupMutationOptions(options));
 };
 
 /**

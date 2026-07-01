@@ -70,6 +70,36 @@ export const tenantsTable = pgTable("tenants", {
   // Max Backup auto-top-ups per billing cycle before a HARD FREEZE (runaway-loop
   // guard). The per-cycle counter lives on usage_records.backupTopupsCount.
   backupTopupCapPerCycle: integer("backup_topup_cap_per_cycle").notNull().default(4),
+  // ---- Automatic backup credits (auto-recharge) ------------------------------
+  // Owner-configured proactive top-up: when the effective available balance
+  // (Included remaining + Add-On + Backup) drops to autoRechargeThresholdCredits,
+  // an OFF-hot-path worker charges the saved card off-session for
+  // autoRechargeAmountCredits worth of Backup credits ($0.04/credit, 250-credit
+  // blocks). Distinct from the (now neutralized) inline emergency replenish.
+  autoRechargeEnabled: boolean("auto_recharge_enabled").notNull().default(false),
+  // Low-water mark in total available credits. When balance <= this, recharge.
+  autoRechargeThresholdCredits: integer("auto_recharge_threshold_credits").notNull().default(0),
+  // Credits to buy per recharge. Multiple of 250 (one block = 250 @ $10). Clamped
+  // by backupTopupCapPerCycle at charge time.
+  autoRechargeAmountCredits: integer("auto_recharge_amount_credits").notNull().default(250),
+  // Saved Stripe payment method used for off-session charges. Null = no card on
+  // file → auto-recharge cannot be enabled. Card display fields mirror Stripe.
+  autoRechargePaymentMethodId: text("auto_recharge_payment_method_id"),
+  autoRechargeCardBrand: text("auto_recharge_card_brand"),
+  autoRechargeCardLast4: text("auto_recharge_card_last4"),
+  autoRechargeCardExpMonth: integer("auto_recharge_card_exp_month"),
+  autoRechargeCardExpYear: integer("auto_recharge_card_exp_year"),
+  autoRechargeLastAttemptAt: timestamp("auto_recharge_last_attempt_at", { withTimezone: true }),
+  autoRechargeLastSuccessAt: timestamp("auto_recharge_last_success_at", { withTimezone: true }),
+  autoRechargeLastFailureAt: timestamp("auto_recharge_last_failure_at", { withTimezone: true }),
+  autoRechargeLastFailureReason: text("auto_recharge_last_failure_reason"),
+  // Consecutive failure count; reset to 0 on a successful recharge or new card.
+  autoRechargeDeclineCount: integer("auto_recharge_decline_count").notNull().default(0),
+  // Frozen after a hard card decline or repeated failures — an owner must save a
+  // new card / re-enable to clear it. Null = not suspended.
+  autoRechargeSuspendedAt: timestamp("auto_recharge_suspended_at", { withTimezone: true }),
+  // Backoff gate: no attempt before this time. Null = eligible now.
+  autoRechargeNextRetryAt: timestamp("auto_recharge_next_retry_at", { withTimezone: true }),
   // One-time lazy-migration marker: on the first credit charge we copy the
   // legacy prepaidCredits balance into addonCredits and stamp this. Null = not
   // yet migrated.

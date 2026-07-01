@@ -20,6 +20,12 @@ import {
 } from "../lib/stripeCheckout";
 import { reconcileTenantBillingFromStripe } from "../lib/billingReconcile";
 import { computeCarrierBillingSnapshot } from "../lib/carrierBilling";
+import {
+  getAutoRechargeSettings,
+  updateAutoRechargeSettings,
+  createAutoRechargeSetupSession,
+  AutoRechargeValidationError,
+} from "../lib/autoRecharge";
 
 const router = Router();
 
@@ -91,6 +97,90 @@ router.post("/billing/credits-checkout", requireTenantAuth, requireTenantOwner, 
     res.status(400).json({ error: err.message ?? "Failed to create credit checkout session" });
   }
 });
+
+// --- Automatic backup credits (auto-recharge) ------------------------------
+
+router.get("/billing/auto-recharge", requireTenantAuth, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  try {
+    const settings = await getAutoRechargeSettings(tenantId);
+    res.json(settings);
+  } catch (err: any) {
+    logger.error({ err }, "Get auto-recharge settings error");
+    res.status(500).json({ error: "Failed to load auto-recharge settings" });
+  }
+});
+
+router.put(
+  "/billing/auto-recharge",
+  requireTenantAuth,
+  requireTenantOwner,
+  async (req, res) => {
+    const tenantId = req.tenantUser!.tenantId;
+    const { enabled, thresholdCredits, amountCredits } = req.body ?? {};
+
+    if (
+      typeof enabled !== "boolean" ||
+      typeof thresholdCredits !== "number" ||
+      typeof amountCredits !== "number"
+    ) {
+      res.status(400).json({
+        error: "enabled (boolean), thresholdCredits and amountCredits (numbers) are required",
+      });
+      return;
+    }
+
+    try {
+      const settings = await updateAutoRechargeSettings(tenantId, {
+        enabled,
+        thresholdCredits,
+        amountCredits,
+      });
+      res.json(settings);
+    } catch (err: any) {
+      if (err instanceof AutoRechargeValidationError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      logger.error({ err }, "Update auto-recharge settings error");
+      res.status(500).json({ error: "Failed to update auto-recharge settings" });
+    }
+  },
+);
+
+router.post(
+  "/billing/auto-recharge/setup",
+  requireTenantAuth,
+  requireTenantOwner,
+  async (req, res) => {
+    const tenantId = req.tenantUser!.tenantId;
+    const tenantSlug = req.tenantUser!.tenantSlug;
+    const { successUrl, cancelUrl } = req.body ?? {};
+
+    const baseUrl = `https://${(process.env["REPLIT_DOMAINS"] ?? "").split(",")[0]}`;
+    const resolvedSuccess =
+      typeof successUrl === "string" && successUrl
+        ? successUrl
+        : `${baseUrl}/onboarding/credits?setup=success`;
+    const resolvedCancel =
+      typeof cancelUrl === "string" && cancelUrl
+        ? cancelUrl
+        : `${baseUrl}/onboarding/credits?setup=canceled`;
+
+    try {
+      const result = await createAutoRechargeSetupSession(
+        tenantId,
+        tenantSlug,
+        resolvedSuccess,
+        resolvedCancel,
+      );
+      res.json(result);
+    } catch (err: any) {
+      logger.error({ err }, "Create auto-recharge setup session error");
+      res.status(400).json({ error: err.message ?? "Failed to create setup session" });
+    }
+  },
+);
 
 router.get("/billing/plans", requireTenantAuth, async (_req, res) => {
   try {

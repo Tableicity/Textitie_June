@@ -22,6 +22,11 @@ interface TenantBucketRow {
   prepaid_credits: number;
   credit_buckets_migrated_at: Date | null;
   overage_enabled: boolean;
+  auto_recharge_enabled: boolean;
+  auto_recharge_amount_credits: number;
+  auto_recharge_payment_method_id: string | null;
+  auto_recharge_suspended_at: Date | null;
+  auto_recharge_next_retry_at: Date | null;
 }
 
 interface UsageBucketRow {
@@ -45,7 +50,10 @@ async function readCoverage(tenantId: number): Promise<CoverageSnapshot> {
   const tr = await pool.query<TenantBucketRow>(
     `SELECT id, plan_tier_code, tier_code, addon_credits, backup_credits,
             credit_debt, backup_enabled, backup_topup_cap_per_cycle,
-            prepaid_credits, credit_buckets_migrated_at, overage_enabled
+            prepaid_credits, credit_buckets_migrated_at, overage_enabled,
+            auto_recharge_enabled, auto_recharge_amount_credits,
+            auto_recharge_payment_method_id, auto_recharge_suspended_at,
+            auto_recharge_next_retry_at
        FROM tenants WHERE id = $1 LIMIT 1`,
     [tenantId],
   );
@@ -80,11 +88,27 @@ async function readCoverage(tenantId: number): Promise<CoverageSnapshot> {
     ? Math.max(0, usage.credits_included - usage.included_credits_used)
     : 0;
 
+  // Coverage now counts the Backup still buyable this cycle via AUTO-RECHARGE
+  // (the inline replenish is neutralized). Eligible only when auto-recharge is
+  // on, a card is saved, and it is not suspended. Bounded by both the per-cycle
+  // cap AND one recharge's worth (autoRechargeAmountCredits).
   let replenishableBackup = 0;
-  if (t.backup_enabled && usage) {
+  const autoRechargeReady =
+    t.auto_recharge_enabled &&
+    !!t.auto_recharge_payment_method_id &&
+    t.auto_recharge_suspended_at == null &&
+    // In a decline-backoff window the recharge cannot fire yet, so it must NOT
+    // count toward coverage — otherwise a send passes preflight and lands in debt.
+    (t.auto_recharge_next_retry_at == null ||
+      t.auto_recharge_next_retry_at.getTime() <= Date.now());
+  if (autoRechargeReady && usage) {
     const cap = t.backup_topup_cap_per_cycle ?? 0;
     const blocksAvailable = Math.max(0, cap - usage.backup_topups_count);
-    replenishableBackup = blocksAvailable * BACKUP_BLOCK_SIZE;
+    const blocksPerRecharge = Math.ceil(
+      Math.max(0, t.auto_recharge_amount_credits) / BACKUP_BLOCK_SIZE,
+    );
+    const blocks = Math.min(blocksAvailable, blocksPerRecharge);
+    replenishableBackup = blocks * BACKUP_BLOCK_SIZE;
   }
 
   return {
@@ -273,6 +297,119 @@ export async function grantAddonCredits(
 
     await client.query("COMMIT");
     logger.info({ tenantId, added: credits, newBalance, source }, "Add-On credits granted");
+    return { granted: true, newBalance };
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export interface GrantBackupResult {
+  /** True only when THIS call actually applied the grant (ledger row inserted). */
+  granted: boolean;
+  /** The Backup balance after this movement (or the current balance on a no-op). */
+  newBalance: number;
+}
+
+/**
+ * Grant BACKUP credits IDEMPOTENTLY, keyed on `idempotencyKey`, and record the
+ * money-in on both the ledger (a `backup_topup` row) and the current usage
+ * record's per-cycle Backup counters (so backupTopupCapPerCycle stays enforced).
+ *
+ * This is the ONE money-safe primitive for the auto-recharge worker: the caller
+ * owns the key (`stripe:pi:<paymentIntentId>`) so a reconciler retry / duplicate
+ * webhook collapses to a no-op. `blocks`/`amountCents` are recorded for auditing
+ * and cap accounting; `credits` must equal blocks × 250.
+ */
+export async function grantBackupCredits(
+  tenantId: number,
+  credits: number,
+  blocks: number,
+  amountCents: number,
+  idempotencyKey: string,
+  source = "auto_recharge",
+): Promise<GrantBackupResult> {
+  if (!Number.isFinite(credits) || credits <= 0 || !Number.isInteger(credits)) {
+    throw new Error("grantBackupCredits: credits must be a positive integer");
+  }
+  if (!idempotencyKey) {
+    throw new Error("grantBackupCredits: idempotencyKey is required");
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const tr = await client.query<{ backup_credits: number }>(
+      `SELECT backup_credits FROM tenants WHERE id = $1 FOR UPDATE`,
+      [tenantId],
+    );
+    if (tr.rows.length === 0) {
+      await client.query("ROLLBACK");
+      throw new Error("Tenant not found");
+    }
+    const base = tr.rows[0].backup_credits;
+    const newBalance = base + credits;
+
+    // Anchor the ledger row to the current billing period (if any) so the
+    // backup_topup movement is attributable to the cycle it lands in.
+    const ur = await client.query<{ id: number; period_start: Date }>(
+      `SELECT id, period_start
+         FROM usage_records
+        WHERE tenant_id = $1 AND period_start <= NOW() AND period_end >= NOW()
+        ORDER BY period_start DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [tenantId],
+    );
+    const usage = ur.rows[0] ?? null;
+
+    const ins = await client.query<{ id: number }>(
+      `INSERT INTO credit_ledger
+         (tenant_id, idempotency_key, reason, credits, backup_delta, backup_after,
+          status, metadata, period_start)
+       VALUES ($1,$2,'backup_topup',$3,$3,$4,'applied',$5,$6)
+       ON CONFLICT (tenant_id, idempotency_key, reason) DO NOTHING
+       RETURNING id`,
+      [
+        tenantId,
+        idempotencyKey,
+        credits,
+        newBalance,
+        JSON.stringify({ source, blocks, amountCents }),
+        usage?.period_start ?? null,
+      ],
+    );
+
+    if (ins.rows.length === 0) {
+      await client.query("COMMIT");
+      logger.info({ tenantId, idempotencyKey }, "Backup grant already applied — no-op");
+      return { granted: false, newBalance: base };
+    }
+
+    await client.query(
+      `UPDATE tenants SET backup_credits = $2 WHERE id = $1`,
+      [tenantId, newBalance],
+    );
+
+    if (usage) {
+      await client.query(
+        `UPDATE usage_records
+            SET backup_topups_count = backup_topups_count + $2,
+                backup_topup_credits = backup_topup_credits + $3,
+                backup_topup_amount_cents = backup_topup_amount_cents + $4
+          WHERE id = $1`,
+        [usage.id, blocks, credits, amountCents],
+      );
+    }
+
+    await client.query("COMMIT");
+    logger.info({ tenantId, added: credits, newBalance, source }, "Backup credits granted");
     return { granted: true, newBalance };
   } catch (err) {
     try {

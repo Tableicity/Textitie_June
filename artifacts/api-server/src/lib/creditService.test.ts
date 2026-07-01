@@ -34,6 +34,9 @@ interface MakeTenantOpts {
   enterprise?: boolean;
   prepaid?: number;
   migrated?: boolean;
+  autoRechargeEnabled?: boolean;
+  autoRechargeAmount?: number;
+  autoRechargePm?: string | null;
   usage?: {
     creditsIncluded: number;
     includedCreditsUsed?: number;
@@ -60,6 +63,9 @@ async function makeTenant(opts: MakeTenantOpts = {}): Promise<number> {
       backupTopupCapPerCycle: opts.cap ?? 4,
       prepaidCredits: opts.prepaid ?? 0,
       creditBucketsMigratedAt: migrated ? new Date() : null,
+      autoRechargeEnabled: opts.autoRechargeEnabled ?? false,
+      autoRechargeAmountCredits: opts.autoRechargeAmount ?? 250,
+      autoRechargePaymentMethodId: opts.autoRechargePm ?? null,
     })
     .returning({ id: tenantsTable.id });
   createdTenantIds.push(t.id);
@@ -278,7 +284,7 @@ describe("chargeMessageCredits — inbound can never be blocked", () => {
 });
 
 describe("chargeMessageCredits — outbound backup auto-replenish", () => {
-  it("buys a 250-credit block to cover an outbound shortfall", async () => {
+  it("does NOT buy a block inline (inline replenish disabled); shortfall goes to debt", async () => {
     const tenantId = await makeTenant({
       addon: 0,
       backup: 0,
@@ -297,16 +303,17 @@ describe("chargeMessageCredits — outbound backup auto-replenish", () => {
       messageId: 4001,
     });
 
+    // Inline auto-replenish is neutralized — top-ups now happen OFF the send
+    // path via auto-recharge. With no coverage the shortfall falls to debt.
     expect(r.charged).toBe(true);
-    expect(r.debtDelta).toBe(0);
-    // +250 bought, -3 consumed ⇒ net +247 backup.
-    expect(r.backupDelta).toBe(247);
-    expect(r.balanceAfter.backup).toBe(247);
+    expect(r.backupDelta).toBe(0);
+    expect(r.debtDelta).toBe(3);
+    expect(r.balanceAfter.backup).toBe(0);
 
     const u = await readUsage(tenantId);
-    expect(u.backupTopupsCount).toBe(1);
-    expect(u.backupTopupCredits).toBe(250);
-    expect(u.backupTopupAmountCents).toBe(1000); // $0.04 × 250
+    expect(u.backupTopupsCount).toBe(0); // no inline block purchased
+    expect(u.backupTopupCredits).toBe(0);
+    expect(u.backupTopupAmountCents).toBe(0);
   });
 
   it("freezes to debt once the per-cycle top-up cap is exhausted", async () => {
@@ -427,10 +434,11 @@ describe("refundMessageCredits — rejection reversal", () => {
     expect(t.addon).toBe(5); // not double-refunded
   });
 
-  it("does NOT restore a backup TOP-UP purchase (real money already spent)", async () => {
+  it("refund restores consumed backup credits (a prior auto-recharge grant is never clawed back)", async () => {
+    // 250 backup already on hand — e.g. from an off-session auto-recharge grant.
     const tenantId = await makeTenant({
       addon: 0,
-      backup: 0,
+      backup: 250,
       backupEnabled: true,
       cap: 4,
       usage: { creditsIncluded: 0, backupTopupsCount: 0 },
@@ -440,7 +448,7 @@ describe("refundMessageCredits — rejection reversal", () => {
       tenantId,
       direction: "outbound",
       body: "x",
-      forceMms: true, // 3 credits, buys a 250 block ⇒ backup 247
+      forceMms: true, // 3 credits consumed from backup ⇒ 247
       idempotencyKey: "outbound:rf-topup",
       reason: "outbound_charge",
       messageId: 7101,
@@ -450,7 +458,7 @@ describe("refundMessageCredits — rejection reversal", () => {
 
     const refund = await refundMessageCredits({ tenantId, messageId: 7101 });
     expect(refund.refunded).toBe(true);
-    // The 3 consumed credits return to backup; the 250 purchase stays.
+    // The 3 consumed credits return to backup; the grant itself is untouched.
     t = await readTenant(tenantId);
     expect(t.backup).toBe(250);
   });
@@ -522,17 +530,20 @@ describe("assessOutboundCredit — read-only hard-stop preflight", () => {
     expect(a.shortfall).toBe(3);
   });
 
-  it("allows when replenishable backup covers the cost", async () => {
+  it("allows when replenishable backup (auto-recharge) covers the cost", async () => {
     const tenantId = await makeTenant({
       addon: 0,
       backup: 0,
       backupEnabled: true,
       cap: 4,
+      autoRechargeEnabled: true,
+      autoRechargePm: "pm_test_card",
+      autoRechargeAmount: 1000, // 4 blocks per recharge
       usage: { creditsIncluded: 0, backupTopupsCount: 0 },
     });
 
     const a = await assessOutboundCredit({ tenantId, body: "x", forceMms: true });
-    expect(a.replenishableBackup).toBe(1000); // 4 × 250
+    expect(a.replenishableBackup).toBe(1000); // min(cap 4, 4 blocks) × 250
     expect(a.allowed).toBe(true);
   });
 

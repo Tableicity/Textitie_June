@@ -35,4 +35,5 @@ export * from "./brandSafetyEvents";
 export * from "./migrations";
 export * from "./csvImports";
 export * from "./creditLedger";
+export * from "./creditAutoRechargeAttempts";
 export * from "./tenantNotifications";

@@ -7,6 +7,7 @@ import { processCrmSyncQueue } from "./integrations/syncWorker";
 import { processPendingSurveys } from "./surveyDispatcher";
 import { processTrialLifecycle } from "./trialLifecycle";
 import { processTenantPurge } from "./tenantLifecycle";
+import { reconcileAutoRecharge } from "./autoRecharge";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -85,6 +86,14 @@ async function runTimerCycle(): Promise<void> {
     }
   } catch (err) {
     logger.error({ err }, "processTenantPurge failed");
+  }
+  try {
+    const recharges = await reconcileAutoRecharge();
+    if (recharges > 0) {
+      logger.info({ count: recharges }, "Auto-recharge actions reconciled");
+    }
+  } catch (err) {
+    logger.error({ err }, "reconcileAutoRecharge failed");
   }
 }
 

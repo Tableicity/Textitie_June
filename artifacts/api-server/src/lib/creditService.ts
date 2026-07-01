@@ -5,6 +5,7 @@ import {
   authorizeBackupTopup,
   BACKUP_BLOCK_SIZE,
 } from "./backupTopupProvider";
+import { maybeTriggerAutoRecharge } from "./autoRecharge";
 
 // ===========================================================================
 // Transactional credit-deduction engine.
@@ -85,6 +86,11 @@ interface TenantRow {
   backup_topup_cap_per_cycle: number;
   prepaid_credits: number;
   credit_buckets_migrated_at: Date | null;
+  auto_recharge_enabled?: boolean;
+  auto_recharge_amount_credits?: number;
+  auto_recharge_payment_method_id?: string | null;
+  auto_recharge_suspended_at?: Date | null;
+  auto_recharge_next_retry_at?: Date | null;
 }
 
 interface UsageRow {
@@ -431,6 +437,13 @@ export async function chargeMessageCredits(
 
     await client.query("COMMIT");
 
+    // Auto-recharge is checked OFF the send path after a committed OUTBOUND
+    // charge (the only direction that lowers the spendable balance). Fully
+    // fire-and-forget: it swallows its own errors and never blocks the send.
+    if (direction === "outbound") {
+      void maybeTriggerAutoRecharge(tenantId);
+    }
+
     return {
       charged: true,
       duplicate: false,
@@ -771,7 +784,10 @@ export async function assessOutboundCredit(input: {
   const tr = await pool.query<TenantRow>(
     `SELECT id, plan_tier_code, tier_code, addon_credits, backup_credits,
             credit_debt, backup_enabled, backup_topup_cap_per_cycle,
-            prepaid_credits, credit_buckets_migrated_at
+            prepaid_credits, credit_buckets_migrated_at,
+            auto_recharge_enabled, auto_recharge_amount_credits,
+            auto_recharge_payment_method_id, auto_recharge_suspended_at,
+            auto_recharge_next_retry_at
        FROM tenants WHERE id = $1 LIMIT 1`,
     [input.tenantId],
   );
@@ -813,11 +829,26 @@ export async function assessOutboundCredit(input: {
     ? Math.max(0, usage.credits_included - usage.included_credits_used)
     : 0;
 
+  // Backup still buyable this cycle via AUTO-RECHARGE (inline replenish is
+  // neutralized). Eligible only when auto-recharge is on, a card is saved, and
+  // it is not suspended. Bounded by the per-cycle cap AND one recharge's worth.
   let replenishableBackup = 0;
-  if (t.backup_enabled && usage) {
+  const autoRechargeReady =
+    !!t.auto_recharge_enabled &&
+    !!t.auto_recharge_payment_method_id &&
+    t.auto_recharge_suspended_at == null &&
+    // In a decline-backoff window the recharge cannot fire yet, so it must NOT
+    // count toward coverage — otherwise a send passes preflight and lands in debt.
+    (t.auto_recharge_next_retry_at == null ||
+      t.auto_recharge_next_retry_at.getTime() <= Date.now());
+  if (autoRechargeReady && usage) {
     const cap = t.backup_topup_cap_per_cycle ?? 0;
     const blocksAvailable = Math.max(0, cap - usage.backup_topups_count);
-    replenishableBackup = blocksAvailable * BACKUP_BLOCK_SIZE;
+    const blocksPerRecharge = Math.ceil(
+      Math.max(0, t.auto_recharge_amount_credits ?? 0) / BACKUP_BLOCK_SIZE,
+    );
+    const blocks = Math.min(blocksAvailable, blocksPerRecharge);
+    replenishableBackup = blocks * BACKUP_BLOCK_SIZE;
   }
 
   // A tenant with no active usage record AND no credit history is unmetered.

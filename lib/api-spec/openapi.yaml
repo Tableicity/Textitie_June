@@ -1619,6 +1619,79 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /billing/auto-recharge:
+    get:
+      operationId: getBillingAutoRecharge
+      tags: [billing]
+      summary: Get automatic backup-credit (auto-recharge) settings for the tenant
+      responses:
+        "200":
+          description: Auto-recharge settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoRechargeSettings"
+    put:
+      operationId: updateBillingAutoRecharge
+      tags: [billing]
+      summary: Update automatic backup-credit (auto-recharge) settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoRechargeUpdateInput"
+      responses:
+        "200":
+          description: Updated auto-recharge settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoRechargeSettings"
+        "400":
+          description: Bad request (e.g. enabling without a saved card)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Only the workspace owner can change auto-recharge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /billing/auto-recharge/setup:
+    post:
+      operationId: createBillingAutoRechargeSetup
+      tags: [billing]
+      summary: Create a Stripe Checkout (setup mode) session to save a card for auto-recharge
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoRechargeSetupInput"
+      responses:
+        "200":
+          description: Checkout setup session URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutSessionResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Only the workspace owner can save a card for auto-recharge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /billing/subscribe:
     post:
       operationId: subscribe
@@ -5800,6 +5873,88 @@ components:
           type: string
           description: URL to redirect to if the user cancels checkout
       required: [credits]
+
+    AutoRechargeSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        thresholdCredits:
+          type: integer
+          description: When the spendable balance drops to/below this, a recharge fires.
+        amountCredits:
+          type: integer
+          description: Backup credits to buy per recharge (multiple of the block size).
+        hasPaymentMethod:
+          type: boolean
+        cardBrand:
+          type: string
+          nullable: true
+        cardLast4:
+          type: string
+          nullable: true
+        cardExpMonth:
+          type: integer
+          nullable: true
+        cardExpYear:
+          type: integer
+          nullable: true
+        suspendedAt:
+          type: string
+          nullable: true
+          description: Set when repeated declines suspended auto-recharge; owner must re-enable.
+        declineCount:
+          type: integer
+        lastAttemptAt:
+          type: string
+          nullable: true
+        lastSuccessAt:
+          type: string
+          nullable: true
+        lastFailureAt:
+          type: string
+          nullable: true
+        lastFailureReason:
+          type: string
+          nullable: true
+        nextRetryAt:
+          type: string
+          nullable: true
+        blockSizeCredits:
+          type: integer
+        blockPriceCents:
+          type: integer
+      required:
+        - enabled
+        - thresholdCredits
+        - amountCredits
+        - hasPaymentMethod
+        - declineCount
+        - blockSizeCredits
+        - blockPriceCents
+
+    AutoRechargeUpdateInput:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        thresholdCredits:
+          type: integer
+          minimum: 0
+        amountCredits:
+          type: integer
+          minimum: 250
+      required: [enabled, thresholdCredits, amountCredits]
+
+    AutoRechargeSetupInput:
+      type: object
+      properties:
+        successUrl:
+          type: string
+          description: URL to redirect to after the card is saved
+        cancelUrl:
+          type: string
+          description: URL to redirect to if the user cancels
 
     AudiencePreviewInput:
       type: object

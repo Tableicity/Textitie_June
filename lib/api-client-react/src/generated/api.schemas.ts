@@ -1304,6 +1304,44 @@ export interface CreditCheckoutInput {
   cancelUrl?: string;
 }
 
+export interface AutoRechargeSettings {
+  enabled: boolean;
+  /** When the spendable balance drops to/below this, a recharge fires. */
+  thresholdCredits: number;
+  /** Backup credits to buy per recharge (multiple of the block size). */
+  amountCredits: number;
+  hasPaymentMethod: boolean;
+  cardBrand?: string | null;
+  cardLast4?: string | null;
+  cardExpMonth?: number | null;
+  cardExpYear?: number | null;
+  /** Set when repeated declines suspended auto-recharge; owner must re-enable. */
+  suspendedAt?: string | null;
+  declineCount: number;
+  lastAttemptAt?: string | null;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  lastFailureReason?: string | null;
+  nextRetryAt?: string | null;
+  blockSizeCredits: number;
+  blockPriceCents: number;
+}
+
+export interface AutoRechargeUpdateInput {
+  enabled: boolean;
+  /** @minimum 0 */
+  thresholdCredits: number;
+  /** @minimum 250 */
+  amountCredits: number;
+}
+
+export interface AutoRechargeSetupInput {
+  /** URL to redirect to after the card is saved */
+  successUrl?: string;
+  /** URL to redirect to if the user cancels */
+  cancelUrl?: string;
+}
+
 export type AudiencePreviewInputSegmentFilter = {
   tags?: string[];
   status?: string;

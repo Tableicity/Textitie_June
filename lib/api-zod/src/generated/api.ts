@@ -2086,6 +2086,111 @@ export const CreateCreditCheckoutResponse = zod.object({
 });
 
 /**
+ * @summary Get automatic backup-credit (auto-recharge) settings for the tenant
+ */
+export const GetBillingAutoRechargeResponse = zod.object({
+  enabled: zod.boolean(),
+  thresholdCredits: zod
+    .number()
+    .describe(
+      "When the spendable balance drops to\/below this, a recharge fires.",
+    ),
+  amountCredits: zod
+    .number()
+    .describe(
+      "Backup credits to buy per recharge (multiple of the block size).",
+    ),
+  hasPaymentMethod: zod.boolean(),
+  cardBrand: zod.string().nullish(),
+  cardLast4: zod.string().nullish(),
+  cardExpMonth: zod.number().nullish(),
+  cardExpYear: zod.number().nullish(),
+  suspendedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set when repeated declines suspended auto-recharge; owner must re-enable.",
+    ),
+  declineCount: zod.number(),
+  lastAttemptAt: zod.string().nullish(),
+  lastSuccessAt: zod.string().nullish(),
+  lastFailureAt: zod.string().nullish(),
+  lastFailureReason: zod.string().nullish(),
+  nextRetryAt: zod.string().nullish(),
+  blockSizeCredits: zod.number(),
+  blockPriceCents: zod.number(),
+});
+
+/**
+ * @summary Update automatic backup-credit (auto-recharge) settings
+ */
+export const updateBillingAutoRechargeBodyThresholdCreditsMin = 0;
+
+export const updateBillingAutoRechargeBodyAmountCreditsMin = 250;
+
+export const UpdateBillingAutoRechargeBody = zod.object({
+  enabled: zod.boolean(),
+  thresholdCredits: zod
+    .number()
+    .min(updateBillingAutoRechargeBodyThresholdCreditsMin),
+  amountCredits: zod
+    .number()
+    .min(updateBillingAutoRechargeBodyAmountCreditsMin),
+});
+
+export const UpdateBillingAutoRechargeResponse = zod.object({
+  enabled: zod.boolean(),
+  thresholdCredits: zod
+    .number()
+    .describe(
+      "When the spendable balance drops to\/below this, a recharge fires.",
+    ),
+  amountCredits: zod
+    .number()
+    .describe(
+      "Backup credits to buy per recharge (multiple of the block size).",
+    ),
+  hasPaymentMethod: zod.boolean(),
+  cardBrand: zod.string().nullish(),
+  cardLast4: zod.string().nullish(),
+  cardExpMonth: zod.number().nullish(),
+  cardExpYear: zod.number().nullish(),
+  suspendedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "Set when repeated declines suspended auto-recharge; owner must re-enable.",
+    ),
+  declineCount: zod.number(),
+  lastAttemptAt: zod.string().nullish(),
+  lastSuccessAt: zod.string().nullish(),
+  lastFailureAt: zod.string().nullish(),
+  lastFailureReason: zod.string().nullish(),
+  nextRetryAt: zod.string().nullish(),
+  blockSizeCredits: zod.number(),
+  blockPriceCents: zod.number(),
+});
+
+/**
+ * @summary Create a Stripe Checkout (setup mode) session to save a card for auto-recharge
+ */
+export const CreateBillingAutoRechargeSetupBody = zod.object({
+  successUrl: zod
+    .string()
+    .optional()
+    .describe("URL to redirect to after the card is saved"),
+  cancelUrl: zod
+    .string()
+    .optional()
+    .describe("URL to redirect to if the user cancels"),
+});
+
+export const CreateBillingAutoRechargeSetupResponse = zod.object({
+  checkoutUrl: zod.string(),
+  sessionId: zod.string(),
+});
+
+/**
  * @summary Start a new subscription (with trial if eligible)
  */
 export const SubscribeBody = zod.object({

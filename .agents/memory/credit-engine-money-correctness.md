@@ -38,17 +38,20 @@ Core code: `artifacts/api-server/src/lib/creditService.ts`,
 
 ## Known scope boundaries (deliberate, not bugs)
 
-- **Backup hard-stop on DECLINE is not enforced yet.** The locked rule is
-  "Backup off/declined ⇒ OUTBOUND hard-stop." The **off** case IS enforced at preflight
-  (`assessOutboundCredit` excludes replenishable Backup when `backupEnabled=false`). The
-  **declined** case needs authorizing the card BEFORE the carrier send
-  (reserve-then-send) + the real Stripe backup provider. `backupTopupProvider` is a stub
-  that always authorizes, so declines can't happen in dev. Until reserve-before-send is
-  wired, a decline detected at charge time (message already sent) becomes `creditDebt` —
-  it never mints phantom credits and never consumes the per-cycle cap.
+- **Inline backup replenish is now PERMANENTLY DISABLED — top-ups moved off-path.**
+  `authorizeBackupTopup` always returns `authorized:false` now, so the block-purchase
+  branch inside `chargeMessageCredits` never fires; an outbound shortfall falls through to
+  `creditDebt` (never mints phantom credits, never consumes the per-cycle cap). The real
+  card charge happens off the send path via **auto-recharge** — see
+  [auto-recharge off-session](auto-recharge-offsession.md). The **off** case is still
+  enforced at preflight (`assessOutboundCredit` excludes replenishable Backup when
+  `backupEnabled=false`), and preflight now also excludes the recharge during a
+  decline-backoff window (`auto_recharge_next_retry_at`).
 
 - **Post-send charge failures are best-effort logged — no durable outbox/reconciler.**
   If `chargeMessageCredits` throws after a confirmed carrier send (outbound, campaign) or
   on the fire-and-forget inbound path, the charge is lost. The idempotent ledger keys
   (`unique(tenant_id, idempotency_key, reason)`) make a future reconciler/outbox safe to
-  add — that subsystem was out of scope for the engine-build phase.
+  add — that subsystem was out of scope for the engine-build phase. (The auto-recharge
+  worker has its OWN reconciler for card top-ups; this note is about the per-message
+  consumption ledger, which still has none.)

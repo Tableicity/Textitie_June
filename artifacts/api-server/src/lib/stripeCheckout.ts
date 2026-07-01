@@ -360,7 +360,7 @@ export const MAX_CREDIT_PURCHASE = 1_000_000;
  * Ensure the tenant has a REAL Stripe customer id, creating one on first use.
  * Stub/dev ids (not `cus_*`, or `cus_stub*`) are treated as missing.
  */
-async function ensureStripeCustomerId(
+export async function ensureStripeCustomerId(
   stripe: Stripe,
   tenantId: number,
   tenantSlug: string,
