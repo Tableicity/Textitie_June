@@ -407,15 +407,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           {showTrialMask && (
             <div
-              className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/30"
+              className="absolute inset-x-0 bottom-0 top-[72px] z-30 flex items-center justify-center bg-slate-950/30"
               role="dialog"
               aria-labelledby="trial-expired-title"
               data-testid="trial-expired-overlay"
             >
-              {/* Frosted "frozen vault" glass, inset ~0.5in (48px) so the dimmed
-                  account is visible around it — it reads as an overlay floating
-                  over the workspace rather than a full-bleed replacement. */}
-              <div className="absolute inset-12 rounded-2xl bg-slate-900/55 backdrop-blur-md shadow-2xl ring-1 ring-white/10" />
+              {/* Frosted "frozen vault" glass. The overlay starts ~72px down so the
+                  full-width Inbox hero banner stays fully visible above it (still
+                  non-interactive — the content behind is `inert`); the glass is then
+                  inset (48px sides/bottom, small top gap) so the dimmed account
+                  still peeks around it and it reads as an overlay floating over the
+                  workspace rather than a full-bleed replacement. */}
+              <div className="absolute inset-x-12 bottom-12 top-4 rounded-2xl bg-slate-900/55 backdrop-blur-md shadow-2xl ring-1 ring-white/10" />
 
               {/* Upgrade card stays fully opaque so the CTA keeps full contrast. */}
               <div className="relative max-w-md w-full bg-white border border-slate-200 rounded-2xl shadow-2xl p-8 text-center">
