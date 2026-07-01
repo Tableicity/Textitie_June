@@ -1292,13 +1292,16 @@ export interface CreditBalance {
   overageEnabled: boolean;
 }
 
-export interface TopUpInput {
-  /** @minimum 1 */
+export interface CreditCheckoutInput {
+  /**
+   * Number of add-on message credits to buy (each costs the per-message overage rate).
+   * @minimum 100
+   */
   credits: number;
-}
-
-export interface TopUpResult {
-  prepaidCredits: number;
+  /** URL to redirect to after successful payment */
+  successUrl?: string;
+  /** URL to redirect to if the user cancels checkout */
+  cancelUrl?: string;
 }
 
 export type AudiencePreviewInputSegmentFilter = {

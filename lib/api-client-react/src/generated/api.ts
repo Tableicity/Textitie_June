@@ -78,6 +78,7 @@ import type {
   CreateTenantDepartmentInput,
   CreateTenantInput,
   CreditBalance,
+  CreditCheckoutInput,
   CreditShortfallError,
   CsvImportJob,
   DepartmentItem,
@@ -145,8 +146,6 @@ import type {
   TenantSettings,
   TenantUsersResponse,
   Tier,
-  TopUpInput,
-  TopUpResult,
   TransferInput,
   UnassignPhoneNumberResult,
   UnassignTenantPhoneNumberInput,
@@ -5350,6 +5349,92 @@ export const useCreateCheckoutSession = <
 };
 
 /**
+ * @summary Create a one-time Stripe Checkout session to buy add-on message credits
+ */
+export const getCreateCreditCheckoutUrl = () => {
+  return `/api/billing/credits-checkout`;
+};
+
+export const createCreditCheckout = async (
+  creditCheckoutInput: CreditCheckoutInput,
+  options?: RequestInit,
+): Promise<CheckoutSessionResult> => {
+  return customFetch<CheckoutSessionResult>(getCreateCreditCheckoutUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(creditCheckoutInput),
+  });
+};
+
+export const getCreateCreditCheckoutMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCreditCheckout>>,
+    TError,
+    { data: BodyType<CreditCheckoutInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCreditCheckout>>,
+  TError,
+  { data: BodyType<CreditCheckoutInput> },
+  TContext
+> => {
+  const mutationKey = ["createCreditCheckout"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCreditCheckout>>,
+    { data: BodyType<CreditCheckoutInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCreditCheckout(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCreditCheckoutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCreditCheckout>>
+>;
+export type CreateCreditCheckoutMutationBody = BodyType<CreditCheckoutInput>;
+export type CreateCreditCheckoutMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Create a one-time Stripe Checkout session to buy add-on message credits
+ */
+export const useCreateCreditCheckout = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCreditCheckout>>,
+    TError,
+    { data: BodyType<CreditCheckoutInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCreditCheckout>>,
+  TError,
+  { data: BodyType<CreditCheckoutInput> },
+  TContext
+> => {
+  return useMutation(getCreateCreditCheckoutMutationOptions(options));
+};
+
+/**
  * @summary Start a new subscription (with trial if eligible)
  */
 export const getSubscribeUrl = () => {
@@ -7059,92 +7144,6 @@ export function useGetCampaignCredits<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-/**
- * @summary Add prepaid credits (stub)
- */
-export const getTopUpCreditsUrl = () => {
-  return `/api/campaigns/top-up`;
-};
-
-export const topUpCredits = async (
-  topUpInput: TopUpInput,
-  options?: RequestInit,
-): Promise<TopUpResult> => {
-  return customFetch<TopUpResult>(getTopUpCreditsUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(topUpInput),
-  });
-};
-
-export const getTopUpCreditsMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof topUpCredits>>,
-    TError,
-    { data: BodyType<TopUpInput> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof topUpCredits>>,
-  TError,
-  { data: BodyType<TopUpInput> },
-  TContext
-> => {
-  const mutationKey = ["topUpCredits"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof topUpCredits>>,
-    { data: BodyType<TopUpInput> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return topUpCredits(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type TopUpCreditsMutationResult = NonNullable<
-  Awaited<ReturnType<typeof topUpCredits>>
->;
-export type TopUpCreditsMutationBody = BodyType<TopUpInput>;
-export type TopUpCreditsMutationError = ErrorType<unknown>;
-
-/**
- * @summary Add prepaid credits (stub)
- */
-export const useTopUpCredits = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof topUpCredits>>,
-    TError,
-    { data: BodyType<TopUpInput> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof topUpCredits>>,
-  TError,
-  { data: BodyType<TopUpInput> },
-  TContext
-> => {
-  return useMutation(getTopUpCreditsMutationOptions(options));
-};
 
 /**
  * @summary Preview audience for a segment filter

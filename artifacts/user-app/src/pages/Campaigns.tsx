@@ -8,12 +8,12 @@ import {
   usePreviewAudience,
   useGetCampaign,
   useListCampaignMessages,
-  useTopUpCredits,
   getListCampaignsQueryKey,
   getGetCampaignCreditsQueryKey,
   getGetCampaignQueryKey,
   getListCampaignMessagesQueryKey,
 } from "@workspace/api-client-react";
+import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -93,16 +93,7 @@ function CreditBalanceCard() {
   const { data: credits, isLoading } = useGetCampaignCredits({
     query: { queryKey: getGetCampaignCreditsQueryKey() },
   });
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const topUp = useTopUpCredits({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetCampaignCreditsQueryKey() });
-        toast({ title: "Credits added", description: "500 prepaid credits have been added to your account." });
-      },
-    },
-  });
+  const [, navigate] = useLocation();
 
   if (isLoading || !credits) return null;
 
@@ -131,11 +122,10 @@ function CreditBalanceCard() {
           <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">Overage ON</span>
         )}
         <button
-          onClick={() => topUp.mutate({ data: { credits: 500 } })}
-          disabled={topUp.isPending}
+          onClick={() => navigate("/onboarding/credits")}
           className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
         >
-          {topUp.isPending ? "Adding..." : "+ Top Up"}
+          + Top Up
         </button>
       </div>
     </div>

@@ -5,7 +5,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireTenantAuth } from "../middleware/tenantAuth";
 import { calculateSegments } from "../lib/smsUtils";
-import { preFlightCheck, getCreditBalance, addPrepaidCredits } from "../lib/creditEngine";
+import { preFlightCheck, getCreditBalance } from "../lib/creditEngine";
 import { executeCampaign, buildAudience, createCampaignMessages } from "../lib/campaignEngine";
 
 const router = Router();
@@ -145,23 +145,9 @@ router.get("/campaigns/credits", requireTenantAuth, async (req, res) => {
   }
 });
 
-router.post("/campaigns/top-up", requireTenantAuth, async (req, res) => {
-  const tenantId = req.tenantUser!.tenantId;
-  const { credits } = req.body ?? {};
-
-  if (!credits || typeof credits !== "number" || credits <= 0) {
-    res.status(400).json({ error: "credits must be a positive number" });
-    return;
-  }
-
-  try {
-    const newBalance = await addPrepaidCredits(tenantId, credits);
-    res.json({ prepaidCredits: newBalance });
-  } catch (err) {
-    logger.error({ err }, "Top-up credits error");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+// NOTE: the old `POST /campaigns/top-up` route was REMOVED — it granted add-on
+// credits for FREE (no charge, non-idempotent). Buying credits is now a real
+// Stripe purchase via `POST /billing/credits-checkout` (webhook-fulfilled).
 
 router.post("/campaigns/audience-preview", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;

@@ -2059,6 +2059,33 @@ export const CreateCheckoutSessionResponse = zod.object({
 });
 
 /**
+ * @summary Create a one-time Stripe Checkout session to buy add-on message credits
+ */
+export const createCreditCheckoutBodyCreditsMin = 100;
+
+export const CreateCreditCheckoutBody = zod.object({
+  credits: zod
+    .number()
+    .min(createCreditCheckoutBodyCreditsMin)
+    .describe(
+      "Number of add-on message credits to buy (each costs the per-message overage rate).",
+    ),
+  successUrl: zod
+    .string()
+    .optional()
+    .describe("URL to redirect to after successful payment"),
+  cancelUrl: zod
+    .string()
+    .optional()
+    .describe("URL to redirect to if the user cancels checkout"),
+});
+
+export const CreateCreditCheckoutResponse = zod.object({
+  checkoutUrl: zod.string(),
+  sessionId: zod.string(),
+});
+
+/**
  * @summary Start a new subscription (with trial if eligible)
  */
 export const SubscribeBody = zod.object({
@@ -2395,18 +2422,6 @@ export const GetCampaignCreditsResponse = zod.object({
   includedRemaining: zod.number(),
   totalAvailable: zod.number(),
   overageEnabled: zod.boolean(),
-});
-
-/**
- * @summary Add prepaid credits (stub)
- */
-
-export const TopUpCreditsBody = zod.object({
-  credits: zod.number().min(1),
-});
-
-export const TopUpCreditsResponse = zod.object({
-  prepaidCredits: zod.number(),
 });
 
 /**

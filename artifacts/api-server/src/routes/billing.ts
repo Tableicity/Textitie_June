@@ -12,7 +12,12 @@ import {
   OVERAGE_RATE_CENTS,
   PHONE_ADDON_CENTS,
 } from "../lib/stripe-stub";
-import { createCheckoutSession } from "../lib/stripeCheckout";
+import {
+  createCheckoutSession,
+  createCreditCheckoutSession,
+  MIN_CREDIT_PURCHASE,
+  MAX_CREDIT_PURCHASE,
+} from "../lib/stripeCheckout";
 import { reconcileTenantBillingFromStripe } from "../lib/billingReconcile";
 import { computeCarrierBillingSnapshot } from "../lib/carrierBilling";
 
@@ -44,6 +49,46 @@ router.post("/billing/checkout", requireTenantAuth, requireTenantOwner, async (r
   } catch (err: any) {
     logger.error({ err }, "Create checkout session error");
     res.status(400).json({ error: err.message ?? "Failed to create checkout session" });
+  }
+});
+
+// Buy add-on message credits ("gas") — a REAL one-time Stripe charge, available
+// in any subscription status (incl. trialing). Owner-only; credits are granted
+// ONLY by the webhook once payment is confirmed (never on the success redirect).
+router.post("/billing/credits-checkout", requireTenantAuth, requireTenantOwner, async (req, res) => {
+  const tenantId = req.tenantUser!.tenantId;
+  const tenantSlug = req.tenantUser!.tenantSlug;
+  const { credits, successUrl, cancelUrl } = req.body ?? {};
+
+  if (typeof credits !== "number" || !Number.isInteger(credits) || credits <= 0) {
+    res.status(400).json({ error: "credits must be a positive integer" });
+    return;
+  }
+  if (credits < MIN_CREDIT_PURCHASE) {
+    res.status(400).json({ error: `Minimum purchase is ${MIN_CREDIT_PURCHASE} credits` });
+    return;
+  }
+  if (credits > MAX_CREDIT_PURCHASE) {
+    res.status(400).json({ error: `Maximum purchase is ${MAX_CREDIT_PURCHASE.toLocaleString()} credits` });
+    return;
+  }
+
+  const baseUrl = `https://${(process.env["REPLIT_DOMAINS"] ?? "").split(",")[0]}`;
+  const resolvedSuccess = (typeof successUrl === "string" && successUrl) ? successUrl : `${baseUrl}/onboarding/credits?topup=success`;
+  const resolvedCancel = (typeof cancelUrl === "string" && cancelUrl) ? cancelUrl : `${baseUrl}/onboarding/credits?topup=canceled`;
+
+  try {
+    const result = await createCreditCheckoutSession(
+      tenantId,
+      tenantSlug,
+      credits,
+      resolvedSuccess,
+      resolvedCancel,
+    );
+    res.json(result);
+  } catch (err: any) {
+    logger.error({ err }, "Create credit checkout session error");
+    res.status(400).json({ error: err.message ?? "Failed to create credit checkout session" });
   }
 });
 

@@ -2,6 +2,7 @@ import { getStripeSync, getUncachableStripeClient } from "./stripeClient";
 import { logger } from "./logger";
 import {
   handleCheckoutSessionCompleted,
+  handleCreditCheckoutCompleted,
   handleSubscriptionUpdated,
   handleSubscriptionDeleted,
   handlePaymentSucceeded,
@@ -77,11 +78,37 @@ export class WebhookHandlers {
 
     logger.info({ type: event.type }, "Processing Stripe business logic for webhook");
 
+    // Credit fulfillment is idempotent (keyed on `stripe:cs:<sessionId>`), so if
+    // it throws we RE-THROW below to force a non-2xx and let Stripe retry — a
+    // transient DB failure after a real payment must never silently drop paid
+    // credits. Other (non-idempotent) handlers keep their swallow-and-log
+    // behavior so a retry can't double-apply a partial subscription change.
+    const isCreditFulfillment =
+      (event.type === "checkout.session.completed" ||
+        event.type === "checkout.session.async_payment_succeeded") &&
+      (event.data.object as { metadata?: Record<string, string> })?.metadata?.kind ===
+        "addon_credits";
+
     try {
       switch (event.type) {
         case "checkout.session.completed": {
           const session = event.data.object as { id: string; metadata?: Record<string, string> };
-          await handleCheckoutSessionCompleted(session.id);
+          if (session.metadata?.kind === "addon_credits") {
+            await handleCreditCheckoutCompleted(session.id);
+          } else {
+            await handleCheckoutSessionCompleted(session.id);
+          }
+          break;
+        }
+
+        // Delayed payment methods confirm after the session completes. We only
+        // enable "card" for credit purchases today, but handle this for safety —
+        // fulfillment is idempotent so a double webhook grants once.
+        case "checkout.session.async_payment_succeeded": {
+          const session = event.data.object as { id: string; metadata?: Record<string, string> };
+          if (session.metadata?.kind === "addon_credits") {
+            await handleCreditCheckoutCompleted(session.id);
+          }
           break;
         }
 
@@ -166,6 +193,8 @@ export class WebhookHandlers {
       }
     } catch (err) {
       logger.error({ err, type: event.type }, "Error handling Stripe webhook business logic");
+      // Force a non-2xx so Stripe retries the (idempotent) credit fulfillment.
+      if (isCreditFulfillment) throw err;
     }
   }
 }

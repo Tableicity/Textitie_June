@@ -191,16 +191,39 @@ export async function getCreditBalance(
   };
 }
 
+export interface GrantAddonResult {
+  /** True only when THIS call actually applied the grant (ledger row inserted). */
+  granted: boolean;
+  /** The Add-On balance after this movement (or the current balance on a no-op). */
+  newBalance: number;
+}
+
 /**
- * Manually grant Add-On (rollover) credits — used by the campaign top-up route.
- * Records a signed `grant_addon` ledger row and returns the new Add-On balance.
+ * Grant Add-On (rollover) credits IDEMPOTENTLY, keyed on `idempotencyKey`.
+ *
+ * This is the ONE money-safe primitive for adding Add-On credits (Stripe
+ * purchase fulfillment, Conductor comp grants, …). The ledger's unique
+ * (tenant_id, idempotency_key, reason) index is the guard: a duplicate Stripe
+ * webhook / carrier retry with the same key inserts nothing and leaves the
+ * balance untouched, so credits are granted EXACTLY once. Never mint a random
+ * key here — the caller owns the key (e.g. `stripe:cs:<sessionId>`) so retries
+ * collapse to a no-op.
+ *
+ * Records a signed `grant_addon` ledger row and returns whether it applied plus
+ * the resulting Add-On balance. Runs the addon/prepaid bucket migration inline
+ * (mirrors the charge path) the first time a tenant's buckets are touched.
  */
-export async function addPrepaidCredits(
+export async function grantAddonCredits(
   tenantId: number,
   credits: number,
-): Promise<number> {
-  if (!Number.isFinite(credits) || credits <= 0) {
-    throw new Error("addPrepaidCredits: credits must be a positive number");
+  idempotencyKey: string,
+  source = "manual",
+): Promise<GrantAddonResult> {
+  if (!Number.isFinite(credits) || credits <= 0 || !Number.isInteger(credits)) {
+    throw new Error("grantAddonCredits: credits must be a positive integer");
+  }
+  if (!idempotencyKey) {
+    throw new Error("grantAddonCredits: idempotencyKey is required");
   }
 
   const client = await pool.connect();
@@ -220,14 +243,24 @@ export async function addPrepaidCredits(
     const base = row.addon_credits + (migrate ? row.prepaid_credits : 0);
     const newBalance = base + credits;
 
-    const key = `grant:manual:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-    await client.query(
+    // The ledger insert is the idempotency guard: a second attempt with the same
+    // (tenant_id, idempotencyKey, reason) inserts nothing → we DON'T touch the
+    // balance and report granted=false with the CURRENT balance.
+    const ins = await client.query<{ id: number }>(
       `INSERT INTO credit_ledger
          (tenant_id, idempotency_key, reason, credits, addon_delta, addon_after,
           status, metadata)
-       VALUES ($1,$2,'grant_addon',$3,$3,$4,'applied',$5)`,
-      [tenantId, key, credits, newBalance, JSON.stringify({ source: "manual_topup" })],
+       VALUES ($1,$2,'grant_addon',$3,$3,$4,'applied',$5)
+       ON CONFLICT (tenant_id, idempotency_key, reason) DO NOTHING
+       RETURNING id`,
+      [tenantId, idempotencyKey, credits, newBalance, JSON.stringify({ source })],
     );
+
+    if (ins.rows.length === 0) {
+      await client.query("COMMIT");
+      logger.info({ tenantId, idempotencyKey }, "Add-On grant already applied — no-op");
+      return { granted: false, newBalance: base };
+    }
 
     await client.query(
       `UPDATE tenants
@@ -239,8 +272,8 @@ export async function addPrepaidCredits(
     );
 
     await client.query("COMMIT");
-    logger.info({ tenantId, added: credits, newBalance }, "Add-On credits granted");
-    return newBalance;
+    logger.info({ tenantId, added: credits, newBalance, source }, "Add-On credits granted");
+    return { granted: true, newBalance };
   } catch (err) {
     try {
       await client.query("ROLLBACK");

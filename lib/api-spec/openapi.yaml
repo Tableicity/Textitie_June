@@ -1588,6 +1588,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /billing/credits-checkout:
+    post:
+      operationId: createCreditCheckout
+      tags: [billing]
+      summary: Create a one-time Stripe Checkout session to buy add-on message credits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreditCheckoutInput"
+      responses:
+        "200":
+          description: Checkout session URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutSessionResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Only the workspace owner can buy credits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /billing/subscribe:
     post:
       operationId: subscribe
@@ -2026,25 +2057,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreditBalance"
-
-  /campaigns/top-up:
-    post:
-      operationId: topUpCredits
-      tags: [campaigns]
-      summary: Add prepaid credits (stub)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TopUpInput"
-      responses:
-        "200":
-          description: Credits added
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TopUpResult"
 
   /campaigns/audience-preview:
     post:
@@ -5774,20 +5786,20 @@ components:
           type: boolean
       required: [prepaidCredits, includedRemaining, totalAvailable, overageEnabled]
 
-    TopUpInput:
+    CreditCheckoutInput:
       type: object
       properties:
         credits:
           type: integer
-          minimum: 1
+          minimum: 100
+          description: Number of add-on message credits to buy (each costs the per-message overage rate).
+        successUrl:
+          type: string
+          description: URL to redirect to after successful payment
+        cancelUrl:
+          type: string
+          description: URL to redirect to if the user cancels checkout
       required: [credits]
-
-    TopUpResult:
-      type: object
-      properties:
-        prepaidCredits:
-          type: integer
-      required: [prepaidCredits]
 
     AudiencePreviewInput:
       type: object

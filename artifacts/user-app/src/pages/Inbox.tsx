@@ -211,7 +211,6 @@ export default function Inbox() {
   const [resolveNote, setResolveNote] = useState("");
   const [showNewDisposition, setShowNewDisposition] = useState(false);
   const [showNewMessage, setShowNewMessage] = useState(false);
-  const [showBuyGas, setShowBuyGas] = useState(false);
   const [newPhone, setNewPhone] = useState("");
   const [newName, setNewName] = useState("");
   // "0" = Unassigned; otherwise a department id as a string.
@@ -1291,7 +1290,7 @@ export default function Inbox() {
                   variant="outline"
                   size="sm"
                   className="h-8 text-xs font-medium gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50"
-                  onClick={() => setShowBuyGas(true)}
+                  onClick={() => setLocation("/onboarding/credits")}
                   data-testid="button-buy-gas"
                 >
                   <Fuel className="w-3 h-3" />
@@ -2007,25 +2006,6 @@ export default function Inbox() {
           </DialogHeader>
           <DialogFooter>
             <Button onClick={() => setShowAttach(false)}>Got it</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Buy Gas (placeholder) */}
-      <Dialog open={showBuyGas} onOpenChange={setShowBuyGas}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Fuel className="w-4 h-4 text-amber-600" />
-              Buy Gas
-            </DialogTitle>
-            <DialogDescription>
-              Top up your messaging credit ("gas"). This will let you keep sending
-              messages once your monthly allowance is used. Coming soon.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setShowBuyGas(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
