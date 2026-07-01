@@ -145,6 +145,9 @@ afterAll(async () => {
     await db.delete(optOutsTable).where(eq(optOutsTable.tenantId, tenantId));
     await db.delete(contactsTable).where(eq(contactsTable.tenantId, tenantId));
     await db.delete(auditLogsTable).where(eq(auditLogsTable.tenantId, tenantId));
+    // phone_numbers -> tenants FK is onDelete: "restrict", so clear the tenant's
+    // numbers before deleting the tenant or teardown 23503s on the constraint.
+    await db.delete(phoneNumbersTable).where(eq(phoneNumbersTable.tenantId, tenantId));
     await db.delete(tenantsTable).where(eq(tenantsTable.id, tenantId));
   }
 });
