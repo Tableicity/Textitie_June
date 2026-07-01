@@ -44,6 +44,11 @@ export const tenantsTable = pgTable("tenants", {
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
   currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  // Self-healing billing reconcile throttle. Stamped each time we verify a
+  // locked-looking tenant against Stripe (see lib/billingReconcile.ts) so a
+  // tenant refreshing the app or retrying a send can't hammer the Stripe API —
+  // we re-check at most once per throttle window. Null = never reconciled.
+  lastBillingSyncAt: timestamp("last_billing_sync_at", { withTimezone: true }),
   prepaidCredits: integer("prepaid_credits").notNull().default(0),
   overageEnabled: boolean("overage_enabled").notNull().default(false),
   // ---- Credit buckets (3-bucket waterfall: Included → Add-On → Backup) ----

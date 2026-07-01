@@ -3,6 +3,7 @@ import { and, asc, eq, gte, sql } from "drizzle-orm";
 import { SEND_NOTICES } from "@workspace/send-notices";
 import { normalizePhoneE164 } from "./phoneNumberRegistry";
 import { calculateMessageCredits } from "./messageCost";
+import { reconcileTenantBillingFromStripe } from "./billingReconcile";
 
 /**
  * Demo paywall policy.
@@ -252,13 +253,41 @@ export async function evaluateDemoTextingGate(args: {
     .select({
       subscriptionStatus: tenantsTable.subscriptionStatus,
       billingBypass: tenantsTable.billingBypass,
+      stripeCustomerId: tenantsTable.stripeCustomerId,
     })
     .from(tenantsTable)
     .where(eq(tenantsTable.id, args.tenantId))
     .limit(1);
 
-  const subscriptionStatus = tenant?.subscriptionStatus ?? null;
-  const billingBypass = tenant?.billingBypass ?? false;
+  let subscriptionStatus = tenant?.subscriptionStatus ?? null;
+  let billingBypass = tenant?.billingBypass ?? false;
+
+  // Self-healing billing: a tenant that actually PAID but whose activation never
+  // landed (e.g. a dropped/failed Stripe webhook) would otherwise be wrongly
+  // hard-stopped here. When the tenant looks locked but has a real Stripe
+  // customer, verify against Stripe (throttled; no-ops otherwise) and re-read the
+  // possibly-upgraded status before deciding. A reconcile error never blocks the
+  // send — we fall through to the stored status.
+  if (
+    !isTextingUnlocked(subscriptionStatus, billingBypass) &&
+    tenant?.stripeCustomerId
+  ) {
+    const result = await reconcileTenantBillingFromStripe(args.tenantId).catch(
+      () => ({ reconciled: false }) as const,
+    );
+    if (result.reconciled) {
+      const [fresh] = await db
+        .select({
+          subscriptionStatus: tenantsTable.subscriptionStatus,
+          billingBypass: tenantsTable.billingBypass,
+        })
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, args.tenantId))
+        .limit(1);
+      subscriptionStatus = fresh?.subscriptionStatus ?? subscriptionStatus;
+      billingBypass = fresh?.billingBypass ?? billingBypass;
+    }
+  }
 
   // Active / operator-bypassed tenants have no demo restrictions at all.
   if (isTextingUnlocked(subscriptionStatus, billingBypass)) return { blocked: false };

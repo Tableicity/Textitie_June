@@ -13,6 +13,7 @@ import {
   PHONE_ADDON_CENTS,
 } from "../lib/stripe-stub";
 import { createCheckoutSession } from "../lib/stripeCheckout";
+import { reconcileTenantBillingFromStripe } from "../lib/billingReconcile";
 import { computeCarrierBillingSnapshot } from "../lib/carrierBilling";
 
 const router = Router();
@@ -88,6 +89,17 @@ router.get("/billing/subscription", requireTenantAuth, async (req, res) => {
   const tenantId = req.tenantUser!.tenantId;
 
   try {
+    // Self-healing billing: if this tenant looks locked but actually paid, verify
+    // against Stripe and activate before reporting status (throttled; no-ops for
+    // active / no-customer tenants) so the paywall overlay clears itself. A
+    // reconcile failure must never block the read — fall through to stored status.
+    await reconcileTenantBillingFromStripe(tenantId).catch((err) => {
+      logger.warn(
+        { err, tenantId },
+        "Billing reconcile (subscription read) failed — serving stored status",
+      );
+      return undefined;
+    });
     const details = await getSubscriptionDetails(tenantId);
     res.json(details);
   } catch (err) {
