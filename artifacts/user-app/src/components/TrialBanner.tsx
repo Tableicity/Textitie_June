@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetSubscriptionQueryKey } from "@workspace/api-client-react";
 import { Clock, AlertTriangle, ArrowRight } from "lucide-react";
+import { getTrialBannerPhase } from "./trialBanner.logic";
 
 type TrialBannerProps = {
   status: string | undefined;
@@ -25,11 +26,14 @@ function formatRemaining(ms: number): string {
 }
 
 /**
- * Persistent top-of-workspace banner for free-trial tenants.
- * Orange with a live countdown while the trial is running; flips to red the
- * moment it expires (either the server status is "expired" or the client-side
- * countdown reaches zero before the lifecycle job flips it). Hidden for paid,
- * never-trialed, and billingBypass ("treated as paid") tenants.
+ * Persistent top-of-workspace banner for free-trial tenants. Three phases
+ * (getTrialBannerPhase):
+ *   - "normal"  → orange, live countdown while there is comfortable runway.
+ *   - "urgent"  → red, live countdown once the trial is within
+ *                 TRIAL_URGENT_THRESHOLD_MS of expiry (escalates BEFORE expiry).
+ *   - "expired" → red, static "expired" message (server status "expired" OR the
+ *                 client-side countdown reached zero before the lifecycle job).
+ * Hidden for paid, never-trialed, and billingBypass ("treated as paid") tenants.
  */
 export default function TrialBanner({
   status,
@@ -48,10 +52,13 @@ export default function TrialBanner({
   const endMs = trialEndsAt ? new Date(trialEndsAt).getTime() : null;
   const hasDeadline = endMs !== null && Number.isFinite(endMs);
   const remainingMs = hasDeadline ? (endMs as number) - now : null;
-  const expired =
-    status === "expired" || (remainingMs !== null && remainingMs <= 0);
 
-  // Tick once a second — only while the banner is shown AND still counting down.
+  const phase = getTrialBannerPhase(status, remainingMs);
+  const expired = phase === "expired";
+  const urgent = phase === "urgent";
+
+  // Tick once a second — only while the banner is shown AND still counting down
+  // (both "normal" and "urgent" count down; "expired" is static).
   useEffect(() => {
     if (!active || expired) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -77,22 +84,24 @@ export default function TrialBanner({
   return (
     <div
       className={`flex items-center justify-center gap-3 px-4 py-2 text-sm font-medium text-white transition-colors ${
-        expired ? "bg-red-600" : "bg-orange-500"
+        phase === "normal" ? "bg-orange-500" : "bg-red-600"
       }`}
       data-testid="trial-countdown-banner"
+      data-phase={phase}
       data-expired={expired ? "true" : "false"}
+      data-urgent={urgent ? "true" : "false"}
     >
-      {expired ? (
-        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-      ) : (
+      {phase === "normal" ? (
         <Clock className="w-4 h-4 flex-shrink-0" />
+      ) : (
+        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
       )}
       <span className="text-center">
         {expired ? (
           "Your free trial has expired."
         ) : remainingMs !== null ? (
           <>
-            Free trial —{" "}
+            {urgent ? "Free trial ending soon — " : "Free trial — "}
             <span
               className="font-bold tabular-nums"
               data-testid="trial-countdown-remaining"
@@ -111,15 +120,19 @@ export default function TrialBanner({
           className="inline-flex items-center gap-1 rounded-md bg-white/20 px-2.5 py-1 text-xs font-semibold transition-colors hover:bg-white/30"
           data-testid="button-trial-upgrade"
         >
-          {expired ? "Upgrade now" : "Upgrade"}
+          {phase === "normal" ? "Upgrade" : "Upgrade now"}
           <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       ) : (
         <span className="text-xs opacity-90">Ask your owner to upgrade</span>
       )}
-      {/* Announce only the transition to expired — not every one-second tick. */}
+      {/* Announce the transition to urgent + expired — not every one-second tick. */}
       <span className="sr-only" role="status" aria-live="polite">
-        {expired ? "Your free trial has expired." : ""}
+        {expired
+          ? "Your free trial has expired."
+          : urgent
+            ? "Your free trial is ending soon."
+            : ""}
       </span>
     </div>
   );
