@@ -33,6 +33,12 @@ import {
 } from "@workspace/api-client-react";
 import type { UpdateConversationInputEngagementModeOverride } from "@workspace/api-client-react";
 import { useSearch, useLocation } from "wouter";
+import {
+  SEND_NOTICES,
+  getSendNotice,
+  type SendNoticeReason,
+} from "@workspace/send-notices";
+import { useToast } from "@/hooks/use-toast";
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { useRealtimeInbox } from "@/hooks/useRealtimeInbox";
 import InboxSetupBanner from "@/components/InboxSetupBanner";
@@ -185,6 +191,7 @@ export default function Inbox() {
   useRealtimeInbox();
   const searchString = useSearch();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [composeText, setComposeText] = useState("");
   const [isWhisperMode, setIsWhisperMode] = useState(false);
@@ -379,11 +386,43 @@ export default function Inbox() {
   const signupLast10 = last10Digits(tenantSettings?.signupPhone);
   const isSignupContact =
     signupLast10.length > 0 && last10Digits(contactPhone) === signupLast10;
-  const [paywallBlockedId, setPaywallBlockedId] = useState<number | null>(null);
-  const showPaywallBanner =
-    !!selectedConv &&
-    !textingUnlocked &&
-    (!isSignupContact || paywallBlockedId === selectedId);
+  // A server-returned send block (HTTP 402) scoped to a specific conversation.
+  // `reason` is the shared @workspace/send-notices machine key (null when the
+  // server returns an unrecognized reason, in which case `fallbackMessage`
+  // carries the raw server text).
+  const [sendBlock, setSendBlock] = useState<{
+    convId: number;
+    reason: SendNoticeReason | null;
+    fallbackMessage?: string;
+  } | null>(null);
+
+  // Drop a stale send block when switching conversations; the server re-blocks
+  // on the next attempt if the gate still applies.
+  useEffect(() => {
+    setSendBlock(null);
+  }, [selectedId]);
+
+  const activeSendBlock =
+    sendBlock && sendBlock.convId === selectedId ? sendBlock : null;
+  // Copy for an actual server block (known reason -> shared catalog notice).
+  const serverBlockNotice = activeSendBlock?.reason
+    ? getSendNotice(activeSendBlock.reason)
+    : undefined;
+  // Proactive contact gate: an unpaid tenant composing to a non-signup number,
+  // shown before they even try to send. Stays CONTACT-only — daily-limit and
+  // trial-expiry can't be pre-modeled without a remaining-budget endpoint, so
+  // those only surface after a real 402 (via activeSendBlock).
+  const showContactGate =
+    !!selectedConv && !textingUnlocked && !isSignupContact && !activeSendBlock;
+  const bannerNotice =
+    serverBlockNotice ??
+    (showContactGate ? SEND_NOTICES.paywall_new_contact : undefined);
+  // Unrecognized 402 reason (no catalog entry): fall back to the server text.
+  const bannerFallbackMessage =
+    activeSendBlock && !serverBlockNotice
+      ? activeSendBlock.fallbackMessage
+      : undefined;
+  const showPaywallBanner = !!bannerNotice || !!bannerFallbackMessage;
 
   const { data: contactMatches } = useListContacts(
     { q: contactPhone },
@@ -524,6 +563,7 @@ export default function Inbox() {
     mutation: {
       onSuccess: () => {
         setComposeText("");
+        setSendBlock(null);
         appliedDraftBodyRef.current = null;
         if (selectedId) {
           // Mark the inbound turn we just answered as consumed. A slow Co-Pilot
@@ -549,12 +589,34 @@ export default function Inbox() {
         }
       },
       onError: (err: unknown) => {
-        // The server is authoritative on the demo paywall; a 402 means this send
-        // to a new contact was blocked. Surface the banner for this conversation.
-        const status =
-          (err as { response?: { status?: number } } | null)?.response
-            ?.status ?? (err as { status?: number } | null)?.status;
-        if (status === 402 && selectedId) setPaywallBlockedId(selectedId);
+        // The server is authoritative on send gates. A 402 carries a machine
+        // `reason` in its body; look up the shared notice so the banner + toast
+        // show the RIGHT copy (new-contact vs daily-limit vs trial-expired vs
+        // out-of-credits) instead of a single hardcoded message. The generated
+        // ApiError exposes the parsed body on `err.data` and status on
+        // `err.status`.
+        const apiErr = err as
+          | { status?: number; data?: { reason?: string; error?: string } }
+          | null;
+        if (apiErr?.status === 402 && selectedId) {
+          const notice = getSendNotice(apiErr.data?.reason);
+          setSendBlock({
+            convId: selectedId,
+            reason: notice?.reason ?? null,
+            fallbackMessage: notice ? undefined : apiErr.data?.error,
+          });
+          toast({
+            title: notice?.title ?? "Message not sent",
+            description:
+              notice?.message ??
+              apiErr.data?.error ??
+              "This message couldn't be sent.",
+            variant:
+              (notice?.severity ?? "error") === "error"
+                ? "destructive"
+                : "default",
+          });
+        }
       },
     },
   });
@@ -1554,15 +1616,40 @@ export default function Inbox() {
               )}
             </ScrollArea>
 
-            {/* Demo paywall: full-width banner directly on top of the composer. */}
+            {/* Send-block banner directly on top of the composer. Copy comes
+                from the shared @workspace/send-notices catalog — the API server
+                and this UI read the SAME source, so the wording can't drift. */}
             {showPaywallBanner && (
               <div
-                className="w-full px-4 py-3 bg-amber-50 border-t border-amber-200 flex items-center gap-2 text-sm font-medium text-amber-900"
+                className={
+                  "w-full px-4 py-3 border-t flex items-center gap-2 text-sm font-medium " +
+                  ((bannerNotice?.severity ?? "warning") === "error"
+                    ? "bg-red-50 border-red-200 text-red-900"
+                    : (bannerNotice?.severity ?? "warning") === "info"
+                      ? "bg-blue-50 border-blue-200 text-blue-900"
+                      : "bg-amber-50 border-amber-200 text-amber-900")
+                }
                 data-testid="paywall-new-contact-banner"
                 role="alert"
               >
                 <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>You will need a Paid Subscription to text New Contacts</span>
+                <span className="flex-1">
+                  {bannerNotice?.title && (
+                    <span className="font-semibold">{bannerNotice.title}: </span>
+                  )}
+                  {bannerNotice?.message ?? bannerFallbackMessage}
+                </span>
+                {bannerNotice?.cta && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      bannerNotice.cta && setLocation(bannerNotice.cta.href)
+                    }
+                    className="shrink-0 rounded-md bg-white/70 px-3 py-1 text-xs font-semibold underline underline-offset-2 hover:bg-white"
+                  >
+                    {bannerNotice.cta.label}
+                  </button>
+                )}
               </div>
             )}
             {/* Compose Area */}

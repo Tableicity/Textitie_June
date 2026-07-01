@@ -7,12 +7,16 @@ import type { SendStatus } from "./senders/types";
 import { rebrandAndLog } from "./brandSafety";
 import { getTenantExtraCompetitors } from "./brandSafetyStore";
 import { evaluateDemoTextingGate } from "./demoTextingGate";
+import { SEND_NOTICES } from "@workspace/send-notices";
 import { assessOutboundCredit, chargeMessageCredits } from "./creditService";
 import { logger } from "./logger";
 
-/** Customer-safe copy shown when an outbound send is blocked for no credits. */
-export const CREDIT_FROZEN_MESSAGE =
-  "This message can't be sent — your messaging credits are exhausted. Add credits or enable Backup auto-replenish to resume sending.";
+/**
+ * Customer-safe copy shown when an outbound send is blocked for no credits.
+ * Re-sourced from the shared @workspace/send-notices catalog (single source of
+ * truth shared with the user-app) so the wording cannot drift.
+ */
+export const CREDIT_FROZEN_MESSAGE = SEND_NOTICES.credit_frozen.message;
 
 type MessageRow = typeof messagesTable.$inferSelect;
 

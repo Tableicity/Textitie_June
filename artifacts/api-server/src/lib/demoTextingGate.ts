@@ -1,5 +1,6 @@
 import { db, tenantsTable, tenantUsersTable, creditLedgerTable } from "@workspace/db";
 import { and, asc, eq, gte, sql } from "drizzle-orm";
+import { SEND_NOTICES } from "@workspace/send-notices";
 import { normalizePhoneE164 } from "./phoneNumberRegistry";
 import { calculateMessageCredits } from "./messageCost";
 
@@ -24,8 +25,11 @@ import { calculateMessageCredits } from "./messageCost";
  * number, so the From-ownership guard alone is not sufficient to gate this.
  */
 
+// Copy is owned by the shared @workspace/send-notices catalog so the API server
+// and the user-app can never drift. This constant re-sources it for the many
+// server call sites (and tests) that already import the name.
 export const PAYWALL_NEW_CONTACT_MESSAGE =
-  "You will need a Paid Subscription to text New Contacts";
+  SEND_NOTICES.paywall_new_contact.message;
 
 /**
  * A tenant can text any compliant contact once its subscription is active OR an
@@ -168,7 +172,7 @@ export async function isTenantSendingExpired(tenantId: number): Promise<boolean>
 export const TRIAL_DAILY_SEGMENT_CAP = 15;
 
 export const DAILY_TRIAL_LIMIT_MESSAGE =
-  "Daily trial message limit reached. Upgrade to a paid plan or wait 24 hours to resume testing.";
+  SEND_NOTICES.daily_trial_limit.message;
 
 /**
  * Hard-stop shown when a tenant whose free trial has fully expired tries to
@@ -176,7 +180,7 @@ export const DAILY_TRIAL_LIMIT_MESSAGE =
  * tenant's own signup phone — until the owner upgrades.
  */
 export const TRIAL_EXPIRED_MESSAGE =
-  "Your free trial has ended. Upgrade to a paid plan to resume texting.";
+  SEND_NOTICES.trial_expired.message;
 
 export type DemoGateReason =
   | "paywall_new_contact"

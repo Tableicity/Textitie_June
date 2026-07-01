@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, conversationsTable, messagesTable, departmentsTable, conversationEventsTable, tenantUsersTable, dispositionsTable, contactsTable, tenantsTable, type ConversationAiStateRow } from "@workspace/db";
 import { sendConversationReply } from "../lib/outboundReply";
+import { getSendNotice } from "@workspace/send-notices";
 import { eventBus } from "../lib/eventBus";
 import { eq, and, desc, isNull, ilike, or, gte, lte, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -665,24 +666,15 @@ router.post(
           res.status(422).json({ error: result.errorMessage, reason: result.complianceReason });
           return;
         }
-        if (result.reason === "paywall_new_contact") {
-          // Demo paywall: unpaid tenant tried to text a non-signup contact.
-          res.status(402).json({ error: result.errorMessage, reason: result.reason });
-          return;
-        }
-        if (result.reason === "daily_trial_limit") {
-          // Trial daily outbound-segment budget exhausted (rolling 24h).
-          res.status(402).json({ error: result.errorMessage, reason: result.reason });
-          return;
-        }
-        if (result.reason === "trial_expired") {
-          // Free trial fully expired — full takeover, no sends until upgrade.
-          res.status(402).json({ error: result.errorMessage, reason: result.reason });
-          return;
-        }
-        if (result.reason === "credit_frozen") {
-          // Out of messaging credits (no coverage across all buckets).
-          res.status(402).json({ error: result.errorMessage, reason: result.reason });
+        // Billing/paywall family (paywall_new_contact | daily_trial_limit |
+        // trial_expired | credit_frozen). HTTP status + copy are owned by the
+        // shared @workspace/send-notices catalog; the user-app reads `reason`
+        // and renders the matching notice. `error` stays the server message
+        // (identical to the catalog) for non-UI / legacy consumers. A new gate
+        // reason is added in the catalog only — this branch picks it up for free.
+        const sendNotice = getSendNotice(result.reason);
+        if (sendNotice) {
+          res.status(sendNotice.httpStatus).json({ error: result.errorMessage, reason: result.reason });
           return;
         }
         // no_sending_number | number_not_owned
