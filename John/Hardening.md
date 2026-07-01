@@ -58,6 +58,12 @@ Items intentionally deferred from feature work to a dedicated end-of-Build harde
 
 ---
 
+## 4. Engagement webhook test-harness gap — LOW (test-only)
+
+`webhooks.engagement.test.ts` "AUTO-PILOT: fail-open fallback-ack" is `it.skip`'d because the durable per-conversation AI worker interval never starts under this file's `../app` import + positive coalesce window (the ack is never flushed, so `outboundCountFor()` stays 0); the behavior itself is covered by `inboundAiPipeline.autopilot` + `autoPilotTurn` unit tests — fix by driving/ticking the worker or pinning the coalesce window to 0 in-test, then un-skip.
+
+---
+
 ## Decision Log
 
 | Date | Decision | Rationale |
