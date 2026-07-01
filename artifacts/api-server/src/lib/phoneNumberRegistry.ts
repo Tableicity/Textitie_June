@@ -328,6 +328,54 @@ export async function setDepartmentNumber(
 }
 
 /**
+ * Return EVERY number a tenant owns to the pool. Deletes all of the tenant's
+ * canonical `phone_numbers` rows and clears the denormalized
+ * `tenants.phone_number` and `departments.phone_number` / `twilio_sid` columns
+ * in one transaction so ownership stays in lockstep. The numbers stay on the
+ * Twilio account — that IS the pool — so they immediately reappear in the
+ * Admin → Phone "Available Numbers" list, ready to reassign.
+ *
+ * Best-effort caller contract: safe to call when the tenant owns none (returns
+ * []). Returns the freed E.164 numbers. Used to auto-release on archive (which
+ * also unblocks the scheduled hard-purge, since `phone_numbers` FK is RESTRICT).
+ */
+export async function releaseAllTenantNumbers(
+  tenantId: number,
+): Promise<string[]> {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        phoneNumber: phoneNumbersTable.phoneNumber,
+        departmentId: phoneNumbersTable.departmentId,
+      })
+      .from(phoneNumbersTable)
+      .where(eq(phoneNumbersTable.tenantId, tenantId));
+
+    if (rows.length === 0) return [];
+
+    await tx
+      .delete(phoneNumbersTable)
+      .where(eq(phoneNumbersTable.tenantId, tenantId));
+
+    await tx
+      .update(tenantsTable)
+      .set({ phoneNumber: null })
+      .where(eq(tenantsTable.id, tenantId));
+
+    for (const r of rows) {
+      if (r.departmentId != null) {
+        await tx
+          .update(departmentsTable)
+          .set({ phoneNumber: null, twilioSid: null })
+          .where(eq(departmentsTable.id, r.departmentId));
+      }
+    }
+
+    return rows.map((r) => r.phoneNumber);
+  });
+}
+
+/**
  * Idempotent DDL guaranteeing the canonical `phone_numbers` table (and its two
  * partial unique indexes) exist. Runs at boot BEFORE the backfill.
  *

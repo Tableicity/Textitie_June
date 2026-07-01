@@ -17,6 +17,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { signToken, verifyToken } from "./auth";
 import { normalizePhoneE164 } from "../lib/phoneNumberRegistry";
+import { claimPoolNumberForDepartment } from "../lib/phonePool";
 
 const router = Router();
 
@@ -259,7 +260,7 @@ router.post("/tenant-auth/register", async (req, res) => {
           tenantId: tenant.id,
           name: "Demo Department",
           description:
-            "Your starter department. Create your own departments and add phone numbers once you're live.",
+            "Your starter department — your trial phone number is assigned here automatically. Create your own departments as you grow.",
         })
         .returning({ id: departmentsTable.id });
 
@@ -320,7 +321,7 @@ router.post("/tenant-auth/register", async (req, res) => {
         });
       }
 
-      return { tenant, user };
+      return { tenant, user, demoDeptId: demoDept.id };
     });
 
     logger.info(
@@ -336,6 +337,30 @@ router.post("/tenant-auth/register", async (req, res) => {
       logger.error(
         { err: provErr, tenantSlug: result.tenant.slug },
         "Failed to provision tenant schema (tenant created, will retry on first use)",
+      );
+    }
+
+    // Auto-assign a phone number from the Admin → Phone pool (owned but
+    // unassigned Twilio numbers) to the new tenant's Demo Department. Fully
+    // best-effort: it never throws and is skipped in dev/preview (no public
+    // webhook), when Twilio is unconfigured, or when the pool is empty — signup
+    // must succeed regardless. The operator can always assign one manually via
+    // Admin → Tenants later.
+    try {
+      const claim = await claimPoolNumberForDepartment(
+        result.tenant.id,
+        result.demoDeptId,
+      );
+      if (!claim.assigned) {
+        logger.info(
+          { tenantId: result.tenant.id, reason: claim.reason },
+          "No pool number auto-assigned at signup (continuing)",
+        );
+      }
+    } catch (poolErr) {
+      logger.error(
+        { err: poolErr, tenantId: result.tenant.id },
+        "Pool auto-assign threw at signup (continuing)",
       );
     }
 

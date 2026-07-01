@@ -48,6 +48,7 @@ import {
   setDepartmentNumber,
   normalizePhoneE164,
   PhoneNumberConflictError,
+  releaseAllTenantNumbers,
 } from "../lib/phoneNumberRegistry";
 import { applyInboundWebhookByNumber } from "../lib/twilioNumberWebhook";
 import { syncCarrierBillingToStripe } from "../lib/carrierBilling";
@@ -841,6 +842,26 @@ router.post("/tenants/:id/archive", async (req, res): Promise<void> => {
     { tenantId: id, slug: tenant.slug },
     "Tenant soft-archived via Conductor",
   );
+
+  // Auto-return every number this tenant owns to the Admin → Phone pool.
+  // Archive is the definitive "this tenant is done" signal, so its number(s)
+  // should be recycled (they reappear as "Available") — this also unblocks the
+  // scheduled hard-purge (phone_numbers FK is RESTRICT). Best-effort: a failure
+  // here must never fail the archive; the operator can still unassign manually.
+  try {
+    const freed = await releaseAllTenantNumbers(id);
+    if (freed.length > 0) {
+      req.log.info(
+        { tenantId: id, slug: tenant.slug, freed },
+        "Archive: released tenant phone number(s) back to the pool",
+      );
+    }
+  } catch (err) {
+    req.log.error(
+      { err, tenantId: id, slug: tenant.slug },
+      "Archive: failed to release tenant phone number(s) (continuing)",
+    );
+  }
 
   const [row] = await db
     .select()

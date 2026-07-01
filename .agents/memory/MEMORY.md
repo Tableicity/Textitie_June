@@ -8,6 +8,7 @@
 - [Phone purchase test safety](phone-purchase-test-safety.md) — purchase route makes REAL Twilio buys; dev flags live in the workflow env not bash; verify the gate offline via esbuild bundle.
 - [Prod schema provisioning & ownership](prod-schema-provisioning.md) — managed Postgres: prod schema is auto-migrated by Replit's Publish-time diff; never write prod migration scripts/deploy hooks/boot DDL; prod is read-only to the agent (writes via Conductor API).
 - [Canonical phone routing](phone-number-canonical-routing.md) — one global `phone_numbers` table (PK = number) is the single routing truth; resolver fails closed; all writes go through phoneNumberRegistry.
+- [Phone pool auto-assign & release](phone-pool-auto-assign.md) — pool = owned−registry (like telephony.ts); signup claims to Demo Dept (never throws, gated on public webhook); release on ARCHIVE not expiry; normalizePhoneE164 throws on garbage.
 - [Status tracking + scaffolding](regeneration-protocol.md) — `replit.md` is the single status source; don't recreate a gate ledger.
 - [Stale session_plan replay](stale-session-plan-replay.md) — a completed plan that keeps reappearing as a "Session Plan" is a stale .local/session_plan.md re-injected on restore; DELETE it when its work merges, don't re-execute.
 - [Stale retroactive project task](stale-retroactive-project-task.md) — never mint a project task for already-merged Build-mode work; close-out binds to the last assigned task, so a terminal MERGED assignment fails every finalize.
