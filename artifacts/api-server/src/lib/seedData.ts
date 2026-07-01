@@ -26,7 +26,7 @@ const TIER_PRICING = [
     trialDays: 14,
     maxAgents: 3,
     maxPhoneNumbers: 1,
-    stripePriceId: "price_1TjWT10tnuZQWyqKTmJxYYou",
+    stripePriceId: "price_1ToGC20tnuZQWyqKIRVFjx1m",
   },
   {
     code: "growth",
