@@ -49,6 +49,55 @@ const NEXT_STATUS: Record<AgentStatus, AgentStatus> = {
   offline: "online",
 };
 
+// A single sidebar nav icon. When `locked` (an expired trial), it renders as a
+// greyed, non-clickable icon instead of a navigable Link so an expired tenant
+// can only reach Billing — the only way forward is to upgrade.
+function NavIcon({
+  href,
+  title,
+  active,
+  locked,
+  testId,
+  children,
+}: {
+  href: string;
+  title: string;
+  active: boolean;
+  locked: boolean;
+  testId?: string;
+  children: React.ReactNode;
+}) {
+  const base =
+    "w-full aspect-square rounded-xl flex items-center justify-center transition-all";
+  if (locked) {
+    return (
+      <div
+        className={`${base} text-slate-600 opacity-40 cursor-not-allowed`}
+        title={`${title} — upgrade to access`}
+        aria-disabled="true"
+        data-locked="true"
+        data-testid={testId}
+      >
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      className={`${base} ${
+        active
+          ? "bg-blue-600 text-white shadow-md"
+          : "text-slate-400 hover:text-white hover:bg-slate-800"
+      }`}
+      title={title}
+      data-testid={testId}
+    >
+      {children}
+    </Link>
+  );
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const search = useSearch();
@@ -132,9 +181,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const userEmail = data?.user?.email ?? "";
 
   const openProfile = () => {
+    // Expired tenants are locked to Billing only — don't open the profile dialog,
+    // which otherwise renders as a modal over the paywall overlay.
+    if (isTrialExpired) return;
     setProfileDraft(getLocalProfile(userEmail));
     setProfileOpen(true);
   };
+
+  // If the trial expires while the profile dialog is already open, close it so a
+  // lingering modal can't bypass the paywall.
+  useEffect(() => {
+    if (isTrialExpired) setProfileOpen(false);
+  }, [isTrialExpired]);
 
   const saveProfile = () => {
     if (profileDraft.fullName.trim().length < 2) {
@@ -185,125 +243,108 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Sidebar Navigation */}
       <nav className="w-16 flex flex-col items-center py-4 border-r border-slate-800 bg-slate-900 z-20 flex-shrink-0">
         <div className="flex flex-col gap-4 flex-1 w-full px-2">
-          <Link
+          <NavIcon
             href="/inbox"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/inbox" || location === "/"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
             title="Messages"
+            active={location === "/inbox" || location === "/"}
+            locked={isTrialExpired}
           >
             <MessageSquare className="w-5 h-5" />
-          </Link>
+          </NavIcon>
 
-          <Link
+          <NavIcon
             href="/analytics"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/analytics"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
             title="Analytics"
-            data-testid="link-analytics"
+            active={location === "/analytics"}
+            locked={isTrialExpired}
+            testId="link-analytics"
           >
             <BarChart3 className="w-5 h-5" />
-          </Link>
+          </NavIcon>
 
-          <Link
+          <NavIcon
             href="/automations"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/automations"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
             title="Automations"
+            active={location === "/automations"}
+            locked={isTrialExpired}
           >
             <Zap className="w-5 h-5" />
-          </Link>
+          </NavIcon>
 
-          <Link
+          <NavIcon
             href="/campaigns"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/campaigns"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
             title="Campaigns"
+            active={location === "/campaigns"}
+            locked={isTrialExpired}
           >
             <Megaphone className="w-5 h-5" />
-          </Link>
+          </NavIcon>
 
-          <Link
+          <NavIcon
             href="/billing"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/billing"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
             title="Billing"
+            active={location === "/billing"}
+            locked={false}
+            testId="link-billing"
           >
             <CreditCard className="w-5 h-5" />
-          </Link>
+          </NavIcon>
 
-          <Link
+          <NavIcon
             href="/settings"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              settingsActive
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
             title="Workspace Settings"
+            active={settingsActive}
+            locked={isTrialExpired}
           >
             <Settings className="w-5 h-5" />
-          </Link>
+          </NavIcon>
 
-          <Link
+          <NavIcon
             href="/settings?tab=phone-numbers"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              phoneNumbersActive
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
             title="Phone Numbers"
-            data-testid="link-phone-numbers"
+            active={phoneNumbersActive}
+            locked={isTrialExpired}
+            testId="link-phone-numbers"
           >
             <PhoneCall className="w-5 h-5" />
-          </Link>
+          </NavIcon>
         </div>
 
         <div className="mt-auto w-full px-2 flex flex-col gap-2 items-center">
-          <Link
+          <NavIcon
             href="/onboarding"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location.startsWith("/onboarding")
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
             title="Onboarding"
-            data-testid="link-onboarding"
+            active={location.startsWith("/onboarding")}
+            locked={isTrialExpired}
+            testId="link-onboarding"
           >
             <User className="w-5 h-5" />
-          </Link>
-          <Link
+          </NavIcon>
+          <NavIcon
             href="/contacts"
-            className={`w-full aspect-square rounded-xl flex items-center justify-center transition-all ${
-              location === "/contacts"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
             title="Contacts"
-            data-testid="link-contacts"
+            active={location === "/contacts"}
+            locked={isTrialExpired}
+            testId="link-contacts"
           >
             <Users className="w-5 h-5" />
-          </Link>
+          </NavIcon>
           <div className="relative w-full mb-2">
             <button
               type="button"
               onClick={openProfile}
-              title={`${data.user.name} — open profile`}
+              disabled={isTrialExpired}
+              title={
+                isTrialExpired
+                  ? "Profile — upgrade to access"
+                  : `${data.user.name} — open profile`
+              }
               data-testid="profile-avatar"
-              className="w-full aspect-square rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center hover:border-blue-400 hover:bg-slate-700 transition-colors"
+              className={`w-full aspect-square rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center transition-colors ${
+                isTrialExpired
+                  ? "opacity-40 cursor-not-allowed"
+                  : "hover:border-blue-400 hover:bg-slate-700"
+              }`}
             >
               <span className="text-xs font-bold text-white uppercase">
                 {data.user.name.substring(0, 2)}
@@ -312,9 +353,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={cycleStatus}
-              disabled={setStatusMutation.isPending}
+              disabled={setStatusMutation.isPending || isTrialExpired}
               title={`Status: ${STATUS_LABEL[status]} (click to change)`}
-              className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-slate-900 ${STATUS_COLOR[status]} hover:scale-110 transition-transform disabled:opacity-60`}
+              className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-slate-900 ${STATUS_COLOR[status]} hover:scale-110 transition-transform disabled:opacity-60 disabled:hover:scale-100`}
             />
           </div>
           <button
