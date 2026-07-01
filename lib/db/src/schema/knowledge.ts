@@ -30,7 +30,7 @@ export const knowledgeDocumentsTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     // "file" | "url" | "paste" | "legacy"
     sourceType: text("source_type").notNull(),
     title: text("title").notNull(),
@@ -68,7 +68,7 @@ export const knowledgeChunksTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     documentId: integer("document_id")
       .notNull()
       .references(() => knowledgeDocumentsTable.id, { onDelete: "cascade" }),
@@ -100,7 +100,7 @@ export const professorSessionsTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     // "active" | "archived" | "pushed"
     status: text("status").notNull().default("active"),
@@ -137,7 +137,7 @@ export const professorMessagesTable = pgTable(
       .references(() => professorSessionsTable.id, { onDelete: "cascade" }),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     // "user" | "assistant" | "system"
     role: text("role").notNull(),
     content: text("content").notNull(),
@@ -167,7 +167,7 @@ export const absorbedFactsTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     sessionId: integer("session_id").references(
       () => professorSessionsTable.id,
       { onDelete: "set null" },
@@ -233,7 +233,7 @@ export const classroomVersionsTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
     // "published" | "superseded"
     status: text("status").notNull().default("published"),
@@ -264,7 +264,7 @@ export const classroomFactsTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     versionId: integer("version_id")
       .notNull()
       .references(() => classroomVersionsTable.id, { onDelete: "cascade" }),

@@ -16,7 +16,7 @@ export const aiAutoRepliesTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     // Carrier MessageSid of the INBOUND message that triggered the auto-reply.
     inboundSid: text("inbound_sid").notNull(),
     // The outbound messages.id we created for the auto-sent reply (null if the

@@ -28,10 +28,10 @@ export const conversationAiStatesTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     conversationId: integer("conversation_id")
       .notNull()
-      .references(() => conversationsTable.id),
+      .references(() => conversationsTable.id, { onDelete: "cascade" }),
     // Free-form text + app-level validation (NO DB CHECK — a single bad row
     // must never 500 the conversation list).
     status: text("status").notNull().default("idle"),

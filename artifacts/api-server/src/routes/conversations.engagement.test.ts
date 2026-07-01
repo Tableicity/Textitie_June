@@ -87,6 +87,12 @@ beforeAll(async () => {
         phoneNumber: t.phone,
         engagementMode: t.mode,
         subscriptionStatus: "active",
+        // Fund the Add-On bucket so the credit waterfall never freezes a send in
+        // this suite (it exercises engagement/AI-state behavior, not billing).
+        // Stamp creditBucketsMigratedAt so the first charge doesn't lazily
+        // overwrite addonCredits from the legacy prepaid balance.
+        addonCredits: 1_000_000,
+        creditBucketsMigratedAt: new Date(),
       })
       .returning({ id: tenantsTable.id });
     t.id = row.id;

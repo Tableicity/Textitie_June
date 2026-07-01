@@ -46,10 +46,10 @@ export const autopilotTurnEventsTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     conversationId: integer("conversation_id")
       .notNull()
-      .references(() => conversationsTable.id),
+      .references(() => conversationsTable.id, { onDelete: "cascade" }),
     // The inbound messages.id this Auto-Pilot turn answered (plain integer, no
     // FK — mirrors conversation_ai_states.latest_inbound_message_id).
     inboundMessageId: integer("inbound_message_id").notNull(),

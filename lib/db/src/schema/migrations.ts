@@ -43,7 +43,7 @@ export const migrationJobsTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     // "textline" today; column kept generic for future source systems.
     source: text("source").notNull().default("textline"),
     status: text("status").notNull().default("pending"),
@@ -129,7 +129,7 @@ export const migrationRawDataTable = pgTable(
       .references(() => migrationJobsTable.id, { onDelete: "cascade" }),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     // conversations | conversation_posts | customers | agents | departments
     entity: text("entity").notNull(),
     page: integer("page").notNull().default(0),

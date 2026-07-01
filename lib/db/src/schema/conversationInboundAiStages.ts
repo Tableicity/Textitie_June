@@ -47,15 +47,15 @@ export const conversationInboundAiStagesTable = pgTable(
     id: serial("id").primaryKey(),
     tenantId: integer("tenant_id")
       .notNull()
-      .references(() => tenantsTable.id),
+      .references(() => tenantsTable.id, { onDelete: "cascade" }),
     conversationId: integer("conversation_id")
       .notNull()
-      .references(() => conversationsTable.id),
+      .references(() => conversationsTable.id, { onDelete: "cascade" }),
     // The inbound message this stage answers. UNIQUE → enqueue is idempotent
     // under carrier webhook retries (one stage per inbound message).
     inboundMessageId: integer("inbound_message_id")
       .notNull()
-      .references(() => messagesTable.id),
+      .references(() => messagesTable.id, { onDelete: "cascade" }),
     // Carrier MessageSid of the inbound, threaded into the auto-send idempotency
     // claim (ai_auto_replies). Nullable for injected/non-carrier inbounds.
     inboundSid: text("inbound_sid"),
