@@ -6,8 +6,15 @@ import {
   isTrialDailyBudgetExceeded,
   PAYWALL_NEW_CONTACT_MESSAGE,
   DAILY_TRIAL_LIMIT_MESSAGE,
+  TRIAL_EXPIRED_MESSAGE,
   TRIAL_DAILY_SEGMENT_CAP,
 } from "./demoTextingGate";
+import {
+  SEND_NOTICES,
+  SEND_NOTICE_REASONS,
+  getSendNotice,
+  isSendNoticeReason,
+} from "@workspace/send-notices";
 
 describe("demoTextingGate pure policy", () => {
   it("treats only 'active' as unlocked (trial/none/past_due/canceled stay gated)", () => {
@@ -175,5 +182,63 @@ describe("trial daily outbound budget (pure policy)", () => {
         pendingSegments: 16,
       }),
     ).toBe(true);
+  });
+});
+
+describe("shared send-notice catalog (@workspace/send-notices)", () => {
+  it("locks the exact customer-facing copy for every send-block reason", () => {
+    // These strings are the single source of truth shared with the user-app.
+    // If you change them here, the banner + toast + server body all move together.
+    expect(SEND_NOTICES.paywall_new_contact.message).toBe(
+      "You will need a Paid Subscription to text New Contacts",
+    );
+    expect(SEND_NOTICES.daily_trial_limit.message).toBe(
+      "Daily trial message limit reached. Upgrade to a paid plan or wait 24 hours to resume testing.",
+    );
+    expect(SEND_NOTICES.trial_expired.message).toBe(
+      "Your free trial has ended. Upgrade to a paid plan to resume texting.",
+    );
+    expect(SEND_NOTICES.credit_frozen.message).toBe(
+      "This message can't be sent — your messaging credits are exhausted. Add credits or enable Backup auto-replenish to resume sending.",
+    );
+  });
+
+  it("is complete and self-consistent (key === reason, valid httpStatus)", () => {
+    expect(SEND_NOTICE_REASONS.sort()).toEqual(
+      [
+        "credit_frozen",
+        "daily_trial_limit",
+        "paywall_new_contact",
+        "trial_expired",
+      ].sort(),
+    );
+    for (const reason of SEND_NOTICE_REASONS) {
+      const notice = SEND_NOTICES[reason];
+      expect(notice.reason).toBe(reason);
+      expect(notice.message.trim().length).toBeGreaterThan(0);
+      expect(notice.title.trim().length).toBeGreaterThan(0);
+      expect(notice.httpStatus).toBe(402);
+    }
+  });
+
+  it("server constants re-source the catalog verbatim (no drift possible)", () => {
+    expect(PAYWALL_NEW_CONTACT_MESSAGE).toBe(
+      SEND_NOTICES.paywall_new_contact.message,
+    );
+    expect(DAILY_TRIAL_LIMIT_MESSAGE).toBe(
+      SEND_NOTICES.daily_trial_limit.message,
+    );
+    expect(TRIAL_EXPIRED_MESSAGE).toBe(SEND_NOTICES.trial_expired.message);
+  });
+
+  it("getSendNotice / isSendNoticeReason tolerate unknown wire values", () => {
+    expect(getSendNotice("paywall_new_contact")).toBe(
+      SEND_NOTICES.paywall_new_contact,
+    );
+    expect(getSendNotice("compliance")).toBeUndefined();
+    expect(getSendNotice(undefined)).toBeUndefined();
+    expect(getSendNotice(42)).toBeUndefined();
+    expect(isSendNoticeReason("credit_frozen")).toBe(true);
+    expect(isSendNoticeReason("nope")).toBe(false);
   });
 });

@@ -417,10 +417,12 @@ export default function Inbox() {
   const bannerNotice =
     serverBlockNotice ??
     (showContactGate ? SEND_NOTICES.paywall_new_contact : undefined);
-  // Unrecognized 402 reason (no catalog entry): fall back to the server text.
+  // Unrecognized 402 reason (no catalog entry): fall back to the server text,
+  // or a generic line if the body carried no `error` — so any 402 still shows a
+  // banner AND keeps the composer disabled (never a silent block).
   const bannerFallbackMessage =
     activeSendBlock && !serverBlockNotice
-      ? activeSendBlock.fallbackMessage
+      ? (activeSendBlock.fallbackMessage ?? "This message couldn't be sent.")
       : undefined;
   const showPaywallBanner = !!bannerNotice || !!bannerFallbackMessage;
 
