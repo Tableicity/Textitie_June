@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useSearch, Redirect } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall, User, Lock, ArrowRight } from "lucide-react";
@@ -139,6 +139,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   });
   const isTrialExpired =
     subscription?.status === "expired" && !subscription?.billingBypass;
+
+  // When the paywall is up, the real workspace stays mounted behind a frosted
+  // "frozen" glass overlay so the tenant can see everything they'd regain by
+  // upgrading. `inert` (set imperatively for cross-version support) pulls that
+  // content out of tab order and blocks every click/focus — including the inset
+  // gutter that peeks around the glass — so the lockdown stays airtight.
+  const behindContentRef = useRef<HTMLDivElement>(null);
+  const showTrialMask = isTrialExpired && location !== "/billing";
+
+  useEffect(() => {
+    const el = behindContentRef.current;
+    if (!el) return;
+    if (showTrialMask) el.setAttribute("inert", "");
+    else el.removeAttribute("inert");
+  }, [showTrialMask]);
 
   const myAgent = agents?.find((a) => a.id === data?.user?.id);
   const [status, setStatus] = useState<AgentStatus>("online");
@@ -377,14 +392,42 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           isOwner={data.user.role === "owner"}
         />
         <HipaaBanner />
-        <div className="flex-1 overflow-hidden">
-          {isTrialExpired && location !== "/billing" ? (
-            <div className="h-full w-full flex items-center justify-center bg-slate-50 p-6">
-              <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl shadow-xl p-8 text-center">
+        <div className="flex-1 overflow-hidden relative">
+          {/* The real workspace stays mounted so it shows through the glass.
+              While the paywall is up it's made `inert` (see effect) so nothing
+              behind the overlay — including the inset gutter around the glass —
+              is clickable or focusable. */}
+          <div
+            ref={behindContentRef}
+            className="h-full w-full"
+            aria-hidden={showTrialMask || undefined}
+          >
+            {children}
+          </div>
+
+          {showTrialMask && (
+            <div
+              className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/30"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="trial-expired-title"
+              data-testid="trial-expired-overlay"
+            >
+              {/* Frosted "frozen vault" glass, inset ~0.5in (48px) so the dimmed
+                  account is visible around it — it reads as an overlay floating
+                  over the workspace rather than a full-bleed replacement. */}
+              <div className="absolute inset-12 rounded-2xl bg-slate-900/55 backdrop-blur-md shadow-2xl ring-1 ring-white/10" />
+
+              {/* Upgrade card stays fully opaque so the CTA keeps full contrast. */}
+              <div className="relative max-w-md w-full bg-white border border-slate-200 rounded-2xl shadow-2xl p-8 text-center">
                 <div className="mx-auto w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center mb-5">
                   <Lock className="w-7 h-7 text-blue-600" />
                 </div>
-                <h1 className="text-xl font-bold text-slate-900 mb-2" data-testid="trial-expired-title">
+                <h1
+                  id="trial-expired-title"
+                  className="text-xl font-bold text-slate-900 mb-2"
+                  data-testid="trial-expired-title"
+                >
                   Your free trial has ended
                 </h1>
                 {data.user.role === "owner" ? (
@@ -411,8 +454,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 )}
               </div>
             </div>
-          ) : (
-            children
           )}
         </div>
       </main>
