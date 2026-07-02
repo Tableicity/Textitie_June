@@ -109,6 +109,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -985,6 +986,10 @@ export default function Inbox() {
             <Select
               value={deptFilter}
               onValueChange={(v) => {
+                if (v === "__add_department__") {
+                  setLocation("/onboarding/provision-department");
+                  return;
+                }
                 setDeptFilter(v);
                 setSelectedId(null);
               }}
@@ -1001,6 +1006,17 @@ export default function Inbox() {
                     {d.name}
                   </SelectItem>
                 ))}
+                <SelectSeparator />
+                <SelectItem
+                  value="__add_department__"
+                  className="text-primary font-medium"
+                  data-testid="option-add-department"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    Add Department
+                  </span>
+                </SelectItem>
               </SelectContent>
             </Select>
           )}
