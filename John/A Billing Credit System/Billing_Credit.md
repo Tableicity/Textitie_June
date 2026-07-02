@@ -11,9 +11,12 @@
 > suite is green); the free-trial budget + lifecycle are built and unit-tested, and
 > the trial paywall is live in the app — at expiry it **hard-stops all outbound
 > (including self-texting)** across every send path, with **owner-only** release
-> ([§10](#10-the-free-trial-lifecycle-soft-expiry--reminders)). The full
-> customer-facing billing UI, real email delivery of trial notices, and the real
-> Backup card-charge are later phases — see [§12 Known Boundaries](#12-known-boundaries--deferred-work).
+> ([§10](#10-the-free-trial-lifecycle-soft-expiry--reminders)). **Real money now
+> moves in two places (since 2026-07-01):** Add-On packs are a **real Stripe
+> Checkout charge**, and Backup credits are bought by a **real off-session
+> auto-recharge charge** against the tenant's saved card ([§1.1](#11-backup-auto-recharge-the-off-session-card-charge)).
+> Real email delivery of trial notices and the remaining billing UI are later
+> phases — see [§12 Known Boundaries](#12-known-boundaries--deferred-work).
 
 ---
 
@@ -47,7 +50,10 @@ Two hard rules sit on top of everything:
 | Pure cost calculator (counting) | `artifacts/api-server/src/lib/messageCost.ts` |
 | Segment/encoding math | `artifacts/api-server/src/lib/smsUtils.ts` |
 | Charge / refund / preflight engine | `artifacts/api-server/src/lib/creditService.ts` |
-| Backup auto-replenish seam | `artifacts/api-server/src/lib/backupTopupProvider.ts` |
+| Backup purchase seam (inline path — **permanently disabled**, §1.1) | `artifacts/api-server/src/lib/backupTopupProvider.ts` |
+| Auto-recharge worker (claim / off-session charge / grant / breaker) | `artifacts/api-server/src/lib/autoRecharge.ts` |
+| Grant primitives (`grantAddonCredits`, `grantBackupCredits`) + coverage | `artifacts/api-server/src/lib/creditEngine.ts` |
+| Add-On checkout + webhook fulfillment | `artifacts/api-server/src/lib/stripeCheckout.ts`, `stripeWebhookHandlers.ts` |
 | Refund mapping (webhook) | `artifacts/api-server/src/lib/deliveryStatus.ts` |
 | Outbound send + gate + charge | `artifacts/api-server/src/lib/outboundReply.ts` |
 | Inbound charge | `artifacts/api-server/src/routes/webhooks.ts` |
@@ -60,28 +66,36 @@ Two hard rules sit on top of everything:
 | --- | --- | --- |
 | **Included Pool** | bundled in the plan | Resets every cycle, **no rollover** |
 | **Add-On Packs** | **$0.03 / credit** | Purchased credits, **roll over** indefinitely |
-| **Backup Credits** | **$0.04 / credit** | Auto-bought in **250-credit blocks ($10.00/block)** when the balance hits zero |
+| **Backup Credits** | **$0.04 / credit** | Auto-bought in **250-credit blocks ($10.00/block)** by the **off-session auto-recharge worker** when the spendable balance drops to the tenant's threshold — never on the send path |
 | Local number fee | **$15 / mo** | **Stripe line item — never a credit deduction** |
 | Unregistered (no 10DLC) surcharge | **$10 / mo** | **Stripe line item — never a credit deduction** |
 
 Plan tiers (seeded): **Essentials $149 / 600 credits**, **Pro $349 / 2,000 credits**,
 **Enterprise — unlimited**. A **trial** tenant is granted **100 credits**.
 
-> **Engineer note on prices:** the deduction engine only *enforces* the **Backup**
-> price, because Backup is the only bucket the engine itself *purchases* at charge
-> time. It is a single source of truth in `backupTopupProvider.ts`:
+> **Engineer note on prices:** both purchase prices now drive **real Stripe
+> charges**, each with a single source of truth:
 >
-> ```ts
-> /** Credits granted per Backup auto-replenish block. */
-> export const BACKUP_BLOCK_SIZE = 250;
-> /** $0.04/credit × 250 = $10.00 per block. */
-> export const BACKUP_BLOCK_PRICE_CENTS = BACKUP_BLOCK_SIZE * 4;
-> ```
+> - **Backup ($0.04/cr)** — block size/price live only in `backupTopupProvider.ts`:
 >
-> The **$0.03 / credit Add-On** price is a *purchase* price (the tenant buys a
-> pack via checkout, which tops up `addonCredits`); the deduction engine never
-> mints Add-On credits, it only spends them, so $0.03 lives in the purchase/
-> checkout flow, not here.
+>   ```ts
+>   /** Credits granted per Backup auto-replenish block. */
+>   export const BACKUP_BLOCK_SIZE = 250;
+>   /** $0.04/credit × 250 = $10.00 per block. */
+>   export const BACKUP_BLOCK_PRICE_CENTS = BACKUP_BLOCK_SIZE * 4;
+>   ```
+>
+>   The deduction engine no longer purchases blocks at charge time — the
+>   **auto-recharge worker** buys them off-session (§1.1); the engine only
+>   *spends* `backup_credits`.
+> - **Add-On ($0.03/cr)** — `OVERAGE_RATE_CENTS = 3` (exported via
+>   `stripeCheckout.ts`), and the Stripe price is a **lookup_key get-or-create**
+>   (`addon_message_credit_v1`), never inline `price_data`. The tenant buys a
+>   pack through a **real Stripe Checkout** (`POST /billing/credits-checkout`,
+>   owner-only, 100–1,000,000 credits); credits are granted **only on the
+>   confirmed webhook** — never on the success redirect — idempotently keyed
+>   `stripe:cs:<sessionId>` (§6). The deduction engine never mints Add-On
+>   credits, it only spends them.
 
 ---
 
@@ -95,7 +109,7 @@ row):
 | --- | --- | --- | --- |
 | **Included Pool** | `usage_records.credits_included` − `included_credits_used` | Resets each cycle, **no rollover** | **1st** |
 | **Add-On Packs** | `tenants.addon_credits` | Bought at $0.03/cr, **rolls over** | **2nd** |
-| **Backup Credits** | `tenants.backup_credits` | Auto-bought in 250-cr blocks at $0.04/cr | **3rd** |
+| **Backup Credits** | `tenants.backup_credits` | Auto-recharge worker buys 250-cr blocks at $0.04/cr **off the send path** | **3rd** |
 | Debt | `tenants.credit_debt` | Negative balance (inbound overrun / post-send shortfall) | overflow |
 
 The engine **always drains in this exact sequence**, taking as much as each
@@ -112,53 +126,58 @@ const drawBackup = Math.min(remaining, backup0);
 remaining -= drawBackup;
 ```
 
-### 1.1 Backup auto-replenish (the 250-credit block trigger)
+### 1.1 Backup auto-recharge (the off-session card charge)
 
-If, after draining Included + Add-On + existing Backup, there is **still a
-remainder** on an **outbound** charge, and the tenant has Backup **enabled** and
-is **under their per-cycle cap**, the engine buys whole **250-credit blocks** —
-just enough to cover the remainder — and spends from them:
+> **Changed 2026-07-01:** the old **inline** replenish — buying blocks *inside*
+> `chargeMessageCredits` at send time — is **permanently neutralized**, not
+> deleted. `authorizeBackupTopup` now always returns `authorized: false`
+> (`declineReason: "inline_replenish_disabled"`), so the block-purchase branch
+> that still exists inside the charge engine **never fires**. Buying on a card
+> in the middle of the hot inbound/send path meant carrier-facing latency and a
+> charge we could not cleanly reconcile mid-transaction.
 
-```ts
-// 8. OUTBOUND backup auto-replenish (only when a usage record exists so the
-//    per-cycle cap is enforceable). Buys 250-credit blocks up to the cap.
-let topupBlocks = 0;
-let topupCredits = 0;
-let extraBackupDraw = 0;
-if (remaining > 0 && direction === "outbound" && t.backup_enabled && usage) {
-  const cap = t.backup_topup_cap_per_cycle ?? 0;
-  const blocksAvailable = Math.max(0, cap - usage.backup_topups_count);
-  const blocksNeeded = Math.ceil(remaining / BACKUP_BLOCK_SIZE);
-  const blocksToBuy = Math.min(blocksNeeded, blocksAvailable);
-  if (blocksToBuy > 0) {
-    const auth = await authorizeBackupTopup({ tenantId, blocks: blocksToBuy, idempotencyKey });
-    if (auth.authorized) {
-      topupBlocks = blocksToBuy;
-      topupCredits = auth.credits;            // blocks × 250
-      extraBackupDraw = Math.min(remaining, topupCredits);
-      remaining -= extraBackupDraw;
-    }
-  }
-}
-```
+All Backup purchasing now happens **off the hot path** in the auto-recharge
+worker (`autoRecharge.ts`). When a tenant's spendable balance (Included
+remaining + Add-On + Backup) drops to their `autoRechargeThresholdCredits`, the
+worker charges the tenant's **saved card off-session via Stripe** and grants
+whole **250-credit blocks** into `tenants.backup_credits`
+(`grantBackupCredits` in `creditEngine.ts`).
 
 Key points for support staff:
 
-- A Backup purchase is **bursty, not per-credit**. A tenant who runs out and
-  sends one 1-credit SMS buys a **whole 250-credit block** ($10.00). The leftover
-  247 credits stay in `backup_credits` for future messages.
-- The **per-cycle cap** (`backupTopupCapPerCycle`) limits how many blocks a tenant
-  can auto-buy per billing cycle. Once `backup_topups_count` reaches the cap, no
-  more blocks are bought — the tenant is **frozen** for the rest of the cycle.
-- Each block purchase writes its **own** `backup_topup` ledger row (the money-in
-  audit) separate from the message charge row.
+- A Backup purchase is still **bursty, not per-credit** — whole 250-credit
+  blocks ($10.00/block). Leftover credits stay in `backup_credits` for future
+  messages.
+- **The purchase is never on the send path.** A message that outruns the buckets
+  before the worker lands simply falls to `creditDebt` (§1.3); the recharge then
+  refills Backup for subsequent messages.
+- The **per-cycle cap** (`backupTopupCapPerCycle`) still limits blocks per
+  billing cycle — the grant bumps `usage_records.backup_topups_count`, so once
+  the cap is reached no more blocks are bought this cycle.
+- **Money safety is a 3-part idempotency chain**, all keyed before Stripe is
+  touched: the claim mints a per-attempt key inside its own transaction (tenant
+  `FOR UPDATE` + in-flight guard + cooldown); the Stripe charge runs **outside**
+  all credit transactions; and the grant is keyed `stripe:pi:<paymentIntentId>`
+  on the ledger's unique index — a webhook replay or reconciler retry collapses
+  to a no-op. A soft/thrown charge error leaves the attempt claimed for the
+  **reconciler** to re-issue with the *same* key (Stripe dedupes → same
+  PaymentIntent).
+- **Decline breaker:** a hard card decline **suspends auto-recharge
+  immediately**; soft failures/timeouts accrue through the reconciler's backoff
+  (1h after the 1st, 4h after the 2nd, then **suspend at 3** — `MAX_DECLINES`).
+  Re-enabling from the Credits page clears the breaker. A stub Stripe customer
+  is never charged.
+- Each block purchase still writes its **own** `backup_topup` ledger row (the
+  money-in audit) separate from the message charge row.
 
-### 1.2 The Backup toggle → outbound HARD-STOP
+### 1.2 Auto-recharge unavailable → outbound HARD-STOP
 
-Backup is a tenant toggle (`tenants.backup_enabled`). When it is **OFF**, the
-tenant gets **no** auto-replenish, so once Included + Add-On + existing Backup are
-exhausted, **outbound sends are refused at 0 balance**. This is enforced
-**before the carrier is ever called**, by the read-only preflight in
+The gate now keys on **auto-recharge readiness**, not the legacy
+`backup_enabled` toggle. When the recharge **cannot fire right now** — disabled,
+no saved card, suspended by the decline breaker, or inside a decline-backoff
+window — the tenant gets **no** replenish, so once Included + Add-On + existing
+Backup are exhausted, **outbound sends are refused at 0 balance**. This is
+enforced **before the carrier is ever called**, by the read-only preflight in
 `outboundReply.ts`:
 
 ```ts
@@ -176,17 +195,38 @@ this instant — including Backup it *could still auto-replenish* — and blocks
 if the message cost exceeds it (`creditService.ts`):
 
 ```ts
+// Backup still buyable this cycle via AUTO-RECHARGE (inline replenish is
+// neutralized). Eligible only when auto-recharge is on, a card is saved, and
+// it is not suspended. Bounded by the per-cycle cap AND one recharge's worth.
 let replenishableBackup = 0;
-if (t.backup_enabled && usage) {
+const autoRechargeReady =
+  !!t.auto_recharge_enabled &&
+  !!t.auto_recharge_payment_method_id &&
+  t.auto_recharge_suspended_at == null &&
+  // In a decline-backoff window the recharge cannot fire yet, so it must NOT
+  // count toward coverage — otherwise a send passes preflight and lands in debt.
+  (t.auto_recharge_next_retry_at == null ||
+    t.auto_recharge_next_retry_at.getTime() <= Date.now());
+if (autoRechargeReady && usage) {
   const cap = t.backup_topup_cap_per_cycle ?? 0;
   const blocksAvailable = Math.max(0, cap - usage.backup_topups_count);
-  replenishableBackup = blocksAvailable * BACKUP_BLOCK_SIZE;
+  const blocksPerRecharge = Math.ceil(
+    Math.max(0, t.auto_recharge_amount_credits ?? 0) / BACKUP_BLOCK_SIZE,
+  );
+  const blocks = Math.min(blocksAvailable, blocksPerRecharge);
+  replenishableBackup = blocks * BACKUP_BLOCK_SIZE;
 }
 
 const coverage = includedRemaining + addon + backup + replenishableBackup;
 const shortfall = Math.max(0, cost.credits - coverage);
 const allowed = !metered || shortfall === 0;
 ```
+
+> **Lockstep warning:** this eligibility check exists in **two** places —
+> `creditService.assessOutboundCredit` (above) and `creditEngine.readCoverage`
+> — and they must stay identical. Forgetting the backoff/cooldown clause in
+> either lets a send pass preflight during a window when the recharge cannot
+> fire, stranding the shortfall in `creditDebt` with no refill coming.
 
 When `allowed` is false, the conversation route returns **HTTP 402 Payment
 Required** (`routes/conversations.ts`), which the inbox surfaces as a "credit
@@ -210,8 +250,16 @@ if (debtDelta > 0 && direction === "outbound") {
 const newDebt = debt0 + debtDelta;
 ```
 
-So `creditDebt` climbs on inbound overruns (and, only as a rare post-send race,
-on outbound). A tenant who tops up later pays this down first.
+So `creditDebt` climbs on inbound overruns — and, **by design since the
+auto-recharge change**, on an outbound send that passed preflight on the
+strength of a *replenishable* recharge: the send drains what the buckets have,
+the shortfall lands in debt (the engine logs the warn above), and the off-path
+worker's grant then refills Backup for subsequent messages. Outbound debt is
+now the deliberate bridge between a confirmed send and the asynchronous card
+charge, not just a race artifact. **Note: no grant path pays debt down today** —
+neither `grantBackupCredits` nor `grantAddonCredits` touches `credit_debt`; the
+only code path that reduces debt is the carrier-rejection refund. Debt persists
+until refunded or manually reconciled.
 
 ---
 
@@ -434,7 +482,8 @@ idempotency key**, so each path charges **exactly once**:
 | Agent / AI outbound reply | `outboundReply.ts` | `outbound:<messageId>` | `outbound_charge` |
 | Inbound message received | `routes/webhooks.ts` | `inbound:<sid>` | `inbound_charge` |
 | Campaign blast (per message) | `campaignEngine.ts` | `campaign_message:<id>` | `campaign_charge` |
-| Backup block purchase | `creditService.ts` | `topup:<chargeKey>` | `backup_topup` |
+| Backup auto-recharge grant | `autoRecharge.ts` → `creditEngine.ts` | `stripe:pi:<paymentIntentId>` | `backup_topup` |
+| Add-On pack purchase (Stripe webhook) | `stripeCheckout.ts` | `stripe:cs:<sessionId>` | `grant_addon` |
 | Carrier rejection refund | `deliveryStatus.ts` | (reverses the original) | `refund_rejected` |
 
 **Outbound** (gate → carrier → charge only on confirmed send):
@@ -652,7 +701,8 @@ Expiry is **"soft" only in that nothing is deleted** — operationally it is a
 
 - `subscriptionStatus` flips **`trialing` → `expired`**.
 - The **demo number stays assigned** — the tenant keeps its sandbox, contacts, and
-  setup. Nothing is deleted.
+  setup. Nothing is deleted. (The number returns to the operator pool only if the
+  tenant is later **archived** — archive, not expiry, is the release trigger.)
 - **All outbound is hard-stopped — including self-texting.** Unlike the per-contact
   demo gate (which still lets an unpaid tenant text its *own* signup phone), an
   `expired` tenant may send **nothing**. The stop is enforced **server-side at every
@@ -782,17 +832,21 @@ will attach. These side effects are best-effort: a failure here is logged and
    = 3 segments → **3 credits**. If Included has 2 left and Add-On has 10: draws 2
    Included + 1 Add-On.
 
-3. **Out of credits, Backup ON, sends 1 SMS.** Included 0, Add-On 0, Backup 0,
-   cap not reached → engine buys **one 250-block ($10.00)**, spends 1, leaves
-   **249** in `backup_credits`. Two ledger rows: `backup_topup` (+250) and
-   `outbound_charge` (−1 from backup).
+3. **Out of credits, auto-recharge ON (card saved, no backoff), sends 1 SMS.**
+   Included 0, Add-On 0, Backup 0, cap not reached → preflight counts the
+   *replenishable* recharge as coverage and **allows the send**. The charge finds
+   the buckets empty, so **1 credit lands in `creditDebt`** (§1.3); the off-path
+   worker then charges the saved card **off-session** and grants **+250** into
+   `backup_credits` for subsequent messages. Ledger rows: `outbound_charge` (−1,
+   into debt) and later `backup_topup` (+250, keyed `stripe:pi:<id>`).
 
-4. **Out of credits, Backup OFF, tries to send.** Preflight `allowed = false` →
-   **no carrier call, no message row** → route returns **402** → inbox shows
-   "credit frozen."
+4. **Out of credits, auto-recharge unavailable (off / no card / suspended / in
+   backoff), tries to send.** Preflight `allowed = false` → **no carrier call,
+   no message row** → route returns **402** → inbox shows "credit frozen."
 
-5. **Customer texts in at zero balance, Backup OFF.** Inbound is accepted; 1
-   credit has nowhere to drain → `creditDebt` += 1. Balance is now **−1**.
+5. **Customer texts in at zero balance, no recharge available.** Inbound is
+   accepted; 1 credit has nowhere to drain → `creditDebt` += 1. Balance is now
+   **−1**.
 
 6. **Outbound to an opted-out number.** We send, charge 1. Twilio returns
    **21610** → `refundMessageCredits` reverses it → net 0.
@@ -807,22 +861,37 @@ will attach. These side effects are best-effort: a failure here is logged and
 
 These are deliberate scope lines, not bugs — flag them before go-live:
 
-- **Backup card-charge is a stub.** `authorizeBackupTopup` currently authorizes
-  any positive block request. The real **Stripe off-session charge** against the
-  tenant's saved card is a later phase. Today a hypothetical decline at charge
-  time (impossible with the stub) would fall through to `creditDebt`.
-- **Hard-stop on a Backup *decline*** (as opposed to Backup *off*) requires a
-  **reserve-then-send** flow (authorize the card *before* the carrier call). The
-  **off** case is already a true preflight hard-stop; the **decline** case lands
-  with the real provider.
+- **The Backup card-charge is REAL now (2026-07-01)** — the auto-recharge worker
+  charges the saved card off-session (§1.1); `authorizeBackupTopup` survives only
+  as the permanently-disabled inline seam. Remaining boundary: in a pathological
+  case the **reconciler gives up on a claim after 60 min of only soft/lost
+  responses** — if Stripe actually charged but every response was lost for the
+  whole window, a later *new* claim mints a new key and could double-charge. Very
+  low probability; the hardening (require ≥1 definitive Stripe response or a PI
+  lookup-by-metadata before giving up) is deferred. The reconcile sweep is also
+  `LIMIT 50` with no `ORDER BY` (fine at current tenant counts).
+- **Hard-stop on a card *decline* is handled by the breaker, not reserve-then-send.**
+  A hard decline suspends auto-recharge immediately (soft failures back off
+  1h then 4h and suspend at the 3rd), and the preflight then **excludes** the
+  recharge from coverage, so sends refuse at 0 balance. The only remaining window is a
+  send that passes preflight *while* the very first decline is in flight — that
+  shortfall lands in `creditDebt` (§1.3).
 - **No durable charge outbox yet.** If a charge throws *after* a confirmed send,
   it is logged, not retried. The idempotent ledger keys make a future
   reconciler/outbox safe to add.
-- **Customer billing UI is partial.** The **trial paywall** (the "Upgrade to keep
-  going" wall on `expired`, with **owner-only** release and a full server-side
-  outbound hard-stop) and **in-app trial notifications** are live (§10). Still later
-  phases: the full balance display, the Backup toggle UI, and the top-up purchase
-  screens.
+- **Customer billing UI is mostly live now.** The **trial paywall** (the "Upgrade
+  to keep going" wall on `expired`, with **owner-only** release and a full
+  server-side outbound hard-stop) and **in-app trial notifications** are live
+  (§10), and the **Credits page** (`/onboarding/credits`) is live too: a real
+  **Buy Add-On Credits** checkout (owner-only, min 100 credits) plus the
+  **auto-recharge settings** (enable, low-balance threshold, card setup,
+  breaker re-enable), with the included-remaining balance shown. Both the Inbox
+  "Buy Gas" button and the Campaigns "+ Top Up" button just navigate there. A
+  richer full balance/ledger-history display is a later phase.
+- **The old free top-up route is DELETED, on purpose.** `POST /campaigns/top-up`
+  used to grant Add-On credits for free — a money hole. **Never reintroduce a
+  free grant path**; every credit grant must trace to a confirmed Stripe payment
+  (§6 grant rows).
 - **Trial notifications are in-app only.** `processTrialLifecycle` records each
   nudge in `tenant_notifications` and logs an email-delivery seam, but **no email
   provider is wired** — real email/SMS delivery of the nudges is a later phase.
@@ -834,7 +903,22 @@ These are deliberate scope lines, not bugs — flag them before go-live:
 ## 13. Maintaining this code
 
 - **Never change pricing in two places.** Backup price/size live only in
-  `backupTopupProvider.ts` (`BACKUP_BLOCK_SIZE`, `BACKUP_BLOCK_PRICE_CENTS`).
+  `backupTopupProvider.ts` (`BACKUP_BLOCK_SIZE`, `BACKUP_BLOCK_PRICE_CENTS`);
+  the Add-On price is `OVERAGE_RATE_CENTS` (3¢, exported via `stripeCheckout.ts`)
+  and its Stripe price is a **lookup_key get-or-create** (`addon_message_credit_v1`)
+  — never inline `price_data`.
+- **Credits are granted ONLY on the confirmed Stripe webhook, never on the
+  success redirect.** Every grant is idempotent on the ledger's unique key
+  (`stripe:cs:<sessionId>` for Add-On, `stripe:pi:<paymentIntentId>` for Backup)
+  and the Add-On fulfillment has a **fail-closed amount check** — a missing or
+  non-numeric `amount_total` REFUSES the grant (never grant blind). The webhook
+  handler swallows-and-logs business errors by default but **rethrows for credit
+  fulfillment** so Stripe retries a transient failure instead of silently
+  dropping paid credits.
+- **The two coverage call sites must stay in lockstep.** `creditEngine.readCoverage`
+  and `creditService.assessOutboundCredit` both compute `replenishableBackup`
+  with the same eligibility (enabled + card saved + not suspended + **not in a
+  decline-backoff window**) — see the lockstep warning in §1.2.
 - **Never hand-roll segment math.** Always go through `calculateMessageCredits`
   → `calculateSegments`. Adding a new charge path means *calling the calculator*,
   not re-deriving 160/153/70/67.
@@ -850,6 +934,10 @@ These are deliberate scope lines, not bugs — flag them before go-live:
   pnpm --filter @workspace/api-server exec vitest run src/lib/creditService.test.ts
   pnpm --filter @workspace/api-server exec vitest run src/lib/creditService.decline.test.ts
   pnpm --filter @workspace/api-server exec vitest run src/lib/messageCost.test.ts
+  # Real-money purchase paths (§1.1, §6):
+  pnpm --filter @workspace/api-server exec vitest run src/lib/autoRecharge.test.ts
+  pnpm --filter @workspace/api-server exec vitest run src/lib/creditEngine.grantAddon.test.ts
+  pnpm --filter @workspace/api-server exec vitest run src/lib/stripeCreditCheckout.test.ts
   # Free-trial spend controls (§9–§10):
   pnpm --filter @workspace/api-server exec vitest run src/lib/demoTextingGate.test.ts
   pnpm --filter @workspace/api-server exec vitest run src/lib/trialLifecycle.test.ts

@@ -30,7 +30,7 @@ $10/block) and grants them into `tenants.backupCredits`. Core: `autoRecharge.ts`
   only when enabled + card saved + not suspended **AND** `auto_recharge_next_retry_at`
   is null/past. If you forget the backoff/cooldown check, a send passes preflight
   during a decline-backoff window and lands in `creditDebt` for a recharge that
-  cannot happen. (Architect-caught; both call sites must stay in lockstep.)
+  cannot happen. Both call sites must stay in lockstep.
 
 - **Idempotency is a 3-part chain, all keyed before Stripe is touched.**
   claim mints `idempotencyKey` (`auto_recharge:<tenantId>:<uuid>`) and persists it

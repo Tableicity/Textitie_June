@@ -43,10 +43,11 @@ Core code: `artifacts/api-server/src/lib/creditService.ts`,
   branch inside `chargeMessageCredits` never fires; an outbound shortfall falls through to
   `creditDebt` (never mints phantom credits, never consumes the per-cycle cap). The real
   card charge happens off the send path via **auto-recharge** — see
-  [auto-recharge off-session](auto-recharge-offsession.md). The **off** case is still
-  enforced at preflight (`assessOutboundCredit` excludes replenishable Backup when
-  `backupEnabled=false`), and preflight now also excludes the recharge during a
-  decline-backoff window (`auto_recharge_next_retry_at`).
+  [auto-recharge off-session](auto-recharge-offsession.md). The gate no longer keys
+  on the legacy `backup_enabled` toggle — preflight (`assessOutboundCredit` and
+  `creditEngine.readCoverage`) excludes replenishable Backup unless auto-recharge is
+  ready (enabled + card saved + not suspended + `auto_recharge_next_retry_at`
+  null/past).
 
 - **Post-send charge failures are best-effort logged — no durable outbox/reconciler.**
   If `chargeMessageCredits` throws after a confirmed carrier send (outbound, campaign) or
