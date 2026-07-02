@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { RequirePaidTier } from "@/components/PaidTierGate";
 import {
   Dialog,
   DialogContent,
@@ -491,6 +492,7 @@ export default function Departments() {
         subtitle="Choose how customers reach you. Start by getting a phone number — more channels are on the way."
       />
 
+      <RequirePaidTier>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {CHANNELS.map((c) => {
           const Icon = c.icon;
@@ -588,6 +590,7 @@ export default function Departments() {
           }}
         />
       )}
+      </RequirePaidTier>
     </div>
   );
 }

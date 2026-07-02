@@ -7,6 +7,7 @@ import {
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireTenantAuth } from "../middleware/tenantAuth";
+import { assertPaidTier } from "../lib/paidTierGate";
 
 const router = Router();
 
@@ -33,6 +34,13 @@ router.post("/departments", requireTenantAuth, async (req, res) => {
     return;
   }
   try {
+    // Paid-tier gate: creating departments is a paid feature. The client
+    // mirrors this gate for UX; this is the enforcement.
+    const gate = await assertPaidTier(tenantId, "Creating departments");
+    if (!gate.ok) {
+      res.status(gate.status).json({ error: gate.message, code: gate.code });
+      return;
+    }
     const rows = await db
       .insert(departmentsTable)
       .values({ tenantId, name, description: description || null })

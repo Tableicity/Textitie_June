@@ -37,9 +37,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 
 export function DepartmentsSection() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data: departments, isLoading } = useListDepartments({
     query: { queryKey: getListDepartmentsQueryKey() },
   });
@@ -55,6 +57,22 @@ export function DepartmentsSection() {
         setCreateName("");
         setCreateDesc("");
         queryClient.invalidateQueries({ queryKey: getListDepartmentsQueryKey() });
+      },
+      onError: (err) => {
+        // The server enforces the paid-tier gate (402 subscription_required);
+        // surface its message and guide the tenant to Price Packages.
+        const data = (err as { data?: { error?: string; code?: string } } | null)
+          ?.data;
+        toast({
+          variant: "destructive",
+          title:
+            data?.code === "subscription_required"
+              ? "Paid plan required"
+              : "Could not create department",
+          description:
+            data?.error ??
+            "Something went wrong creating the department. Please try again.",
+        });
       },
     },
   });

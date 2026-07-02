@@ -12,6 +12,7 @@ import {
 } from "../lib/phoneNumberRegistry";
 import { getPublicWebhookConfig } from "../lib/publicTwilioUrls";
 import { assertCanPurchaseNumber } from "../lib/phoneProvisioningGate";
+import { assertPaidTier } from "../lib/paidTierGate";
 import { syncCarrierBillingToStripe } from "../lib/carrierBilling";
 import { getNeighborAreaCodes } from "../lib/areaCodeNeighbors";
 import {
@@ -379,6 +380,15 @@ router.post("/phone-numbers/assign", requireTenantAuth, async (req, res) => {
     return;
   }
   try {
+    // Paid-tier gate: self-serve number assignment claims a platform-owned
+    // (Twilio-billed) number, so it is a paid feature just like purchase —
+    // without this, a trial tenant could claim unlimited pool numbers via
+    // direct API call even though the UI never offers it.
+    const paid = await assertPaidTier(tenantId, "Assigning a number");
+    if (!paid.ok) {
+      res.status(paid.status).json({ error: paid.message, code: paid.code });
+      return;
+    }
     const dept = await db
       .select({ id: departmentsTable.id })
       .from(departmentsTable)

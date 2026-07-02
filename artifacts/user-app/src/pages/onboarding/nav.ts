@@ -1,6 +1,13 @@
 export interface OnboardingNavItem {
   label: string;
   href: string;
+  /**
+   * Provisioning entries are paid-tier features: an unpaid (free-trial)
+   * tenant's click opens the upgrade dialog guiding to Price Packages
+   * instead of navigating (the target pages and the server enforce the
+   * same rule).
+   */
+  paidOnly?: boolean;
 }
 
 export interface OnboardingNavGroup {
@@ -17,8 +24,12 @@ export const ONBOARDING_NAV: OnboardingNavGroup[] = [
       { label: "Profile", href: "/profile" },
       { label: "Organization", href: "/organization" },
       { label: "Agent Settings", href: "/agents" },
-      { label: "+ Provision Number", href: "/departments" },
-      { label: "+ Provision Department", href: "/provision-department" },
+      { label: "+ Provision Number", href: "/departments", paidOnly: true },
+      {
+        label: "+ Provision Department",
+        href: "/provision-department",
+        paidOnly: true,
+      },
       { label: "Tools & Integrations", href: "/integrations" },
       { label: "Security", href: "/security" },
       { label: "Haylo Ai", href: "/haylo-ai" },

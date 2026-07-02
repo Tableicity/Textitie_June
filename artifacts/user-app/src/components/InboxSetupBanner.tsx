@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "wouter";
 import {
   Building2,
@@ -10,6 +11,10 @@ import {
   useListDepartments,
   useListPhoneNumbers,
 } from "@workspace/api-client-react";
+import {
+  useIsPaidTier,
+  UpgradeRequiredDialog,
+} from "@/components/PaidTierGate";
 import brainLogo from "@/assets/brain-logo.png";
 
 type StepState = "complete" | "active" | "upcoming";
@@ -58,16 +63,28 @@ export default function InboxSetupBanner() {
   const hasDepartment = (departments?.length ?? 0) > 0;
   const hasNumber = (phoneNumbers?.length ?? 0) > 0;
 
+  // Provisioning is a paid-tier feature: a free-trial tenant gets the demo
+  // department + pool number auto-assigned at signup, so for them the stepper
+  // is a permanent call-to-action whose clicks route through the upgrade
+  // dialog (Price Packages) instead of the provisioning pages.
+  const { isKnownUnpaid } = useIsPaidTier();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+
   // The branded strip is permanent; only the right-hand message slot changes.
-  // The setup stepper is that slot's current occupant: show it only once we
-  // know the real setup state AND it's still incomplete. Once a department + an
-  // assigned number both exist — or while the state is still loading or a query
-  // errored (so we never flash a false "incomplete") — the stepper retires and
-  // the slot sits empty, ready for the next message, while the blue strip +
-  // branding stay put.
+  // The setup stepper is that slot's current occupant. Show it once we know
+  // the real setup state (never flash a false "incomplete" while loading or
+  // after a query error) and either:
+  //   - setup is still incomplete (the original getting-started flow), or
+  //   - the tenant is NOT on a paid tier — trial signups auto-receive a demo
+  //     department + number, which used to retire the stepper instantly; now
+  //     it stays up as the Dept → Phone → Register call-to-action, gated on
+  //     upgrading.
+  // A paid tenant with full setup retires the stepper as before, leaving the
+  // slot ready for the next message.
   const settled =
     !loadingDepts && !loadingNumbers && !deptsError && !numbersError;
-  const showSetupStepper = settled && !(hasDepartment && hasNumber);
+  const showSetupStepper =
+    settled && (!(hasDepartment && hasNumber) || isKnownUnpaid);
 
   const steps: SetupStep[] = [
     {
@@ -141,6 +158,34 @@ export default function InboxSetupBanner() {
               {steps.map((step, i) => {
                 const Icon = step.icon;
                 const prevComplete = i > 0 && steps[i - 1].state === "complete";
+                const bubble = (
+                  <>
+                    <span
+                      className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                        step.state === "complete"
+                          ? "bg-white text-[#3e6996]"
+                          : step.state === "active"
+                            ? "bg-white text-[#3e6996] ring-2 ring-white/50"
+                            : "border-2 border-white/60 bg-white/10 text-white group-hover:bg-white/20"
+                      }`}
+                    >
+                      {step.state === "complete" ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Icon className="h-3.5 w-3.5" />
+                      )}
+                    </span>
+                    <span
+                      className={`whitespace-nowrap text-[11px] leading-none ${
+                        step.state === "upcoming"
+                          ? "text-white/70"
+                          : "font-medium text-white"
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                  </>
+                );
                 return (
                   <li key={step.key} className="flex items-start">
                     {i > 0 && (
@@ -151,37 +196,33 @@ export default function InboxSetupBanner() {
                         aria-hidden
                       />
                     )}
-                    <Link
-                      href={step.href}
-                      className="group flex flex-col items-center gap-1 px-1"
-                      data-testid={`setup-step-${step.key}`}
-                      aria-current={step.state === "active" ? "step" : undefined}
-                    >
-                      <span
-                        className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
-                          step.state === "complete"
-                            ? "bg-white text-[#3e6996]"
-                            : step.state === "active"
-                              ? "bg-white text-[#3e6996] ring-2 ring-white/50"
-                              : "border-2 border-white/60 bg-white/10 text-white group-hover:bg-white/20"
-                        }`}
+                    {isKnownUnpaid ? (
+                      // Paid-tier gate: intercept the click and guide the
+                      // tenant to Price Packages instead of the provisioning
+                      // pages (the server enforces the same rule).
+                      <button
+                        type="button"
+                        onClick={() => setUpgradeOpen(true)}
+                        className="group flex flex-col items-center gap-1 px-1"
+                        data-testid={`setup-step-${step.key}`}
+                        aria-current={
+                          step.state === "active" ? "step" : undefined
+                        }
                       >
-                        {step.state === "complete" ? (
-                          <Check className="h-3.5 w-3.5" />
-                        ) : (
-                          <Icon className="h-3.5 w-3.5" />
-                        )}
-                      </span>
-                      <span
-                        className={`whitespace-nowrap text-[11px] leading-none ${
-                          step.state === "upcoming"
-                            ? "text-white/70"
-                            : "font-medium text-white"
-                        }`}
+                        {bubble}
+                      </button>
+                    ) : (
+                      <Link
+                        href={step.href}
+                        className="group flex flex-col items-center gap-1 px-1"
+                        data-testid={`setup-step-${step.key}`}
+                        aria-current={
+                          step.state === "active" ? "step" : undefined
+                        }
                       >
-                        {step.label}
-                      </span>
-                    </Link>
+                        {bubble}
+                      </Link>
+                    )}
                   </li>
                 );
               })}
@@ -190,6 +231,7 @@ export default function InboxSetupBanner() {
           )}
         </div>
       </div>
+      <UpgradeRequiredDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} />
     </div>
   );
 }

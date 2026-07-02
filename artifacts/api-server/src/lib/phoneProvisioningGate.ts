@@ -1,14 +1,11 @@
-import { db, tenantsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { assertPaidTier } from "./paidTierGate";
 
 /**
  * Single chokepoint that decides whether a tenant may self-serve PURCHASE a new
  * number. Every billing/eligibility rule for purchase belongs HERE — do not
  * scatter checks across routes.
  *
- * Today billing is stubbed (Stripe keys arrive later). The structure is in
- * place so that when Stripe is wired, only the "billing gate" block below
- * changes. Two env switches:
+ * One env switch:
  *
  *   ENABLE_SELF_SERVE_PHONE_PURCHASE = "true"
  *     Master switch. DEFAULT OFF — a published environment must opt in. This
@@ -16,18 +13,17 @@ import { eq } from "drizzle-orm";
  *     billed to the platform's Twilio account, with no payment) closed in prod
  *     until self-serve is intentionally turned on.
  *
- *   ENFORCE_PURCHASE_BILLING = "true"
- *     Optional early billing enforcement (stub → real). When set, requires the
- *     tenant to have an active/trialing subscription before purchase. Left OFF
- *     until Stripe is live; flip on (and replace the stub with a real payment-
- *     method / credit check) once keys are configured.
+ * The billing gate is ALWAYS enforced (Stripe is live): purchasing a number is
+ * a paid-tier feature. Free-trial ("trialing") tenants get their demo number
+ * auto-assigned from the pool at signup and may NOT purchase more — paid =
+ * subscription status "active" or the operator billingBypass override (same
+ * rule as isTextingUnlocked). The legacy ENFORCE_PURCHASE_BILLING opt-in flag
+ * was removed 2026-07-02 when the gate became unconditional.
  */
 
 export type GateResult =
   | { ok: true }
   | { ok: false; status: number; code: string; message: string };
-
-const ACCEPTABLE_SUB_STATES = new Set(["active", "trialing"]);
 
 function selfServeEnabled(): boolean {
   return process.env["ENABLE_SELF_SERVE_PHONE_PURCHASE"] === "true";
@@ -61,36 +57,13 @@ export async function assertCanPurchaseNumber(
     };
   }
 
-  // --- Billing gate (STUB) ---------------------------------------------------
-  // No-op pass-through until Stripe is wired. When ENFORCE_PURCHASE_BILLING is
-  // set, do an interim subscription-status check; replace this with a real
-  // Stripe check (payment method on file + active subscription / sufficient
-  // credits) when keys are configured. Keep all of it inside this block.
-  if (process.env["ENFORCE_PURCHASE_BILLING"] === "true") {
-    const [tenant] = await db
-      .select({ subscriptionStatus: tenantsTable.subscriptionStatus })
-      .from(tenantsTable)
-      .where(eq(tenantsTable.id, tenantId))
-      .limit(1);
-
-    if (!tenant) {
-      return {
-        ok: false,
-        status: 404,
-        code: "tenant_not_found",
-        message: "Account not found.",
-      };
-    }
-
-    if (!ACCEPTABLE_SUB_STATES.has(tenant.subscriptionStatus ?? "")) {
-      return {
-        ok: false,
-        status: 402,
-        code: "subscription_required",
-        message:
-          "An active subscription is required to purchase a number. Please choose a plan first.",
-      };
-    }
+  // --- Billing gate (ALWAYS ON) ----------------------------------------------
+  // Purchasing a number is a paid-tier feature: active subscription or the
+  // operator billingBypass override (shared assertPaidTier chokepoint).
+  // Free-trial tenants are refused with a 402 guiding them to pick a plan.
+  const billing = await assertPaidTier(tenantId, "Purchasing a number");
+  if (!billing.ok) {
+    return billing;
   }
 
   return { ok: true };
