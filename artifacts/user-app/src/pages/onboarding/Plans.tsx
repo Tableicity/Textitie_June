@@ -75,7 +75,13 @@ export default function Plans() {
     },
   });
 
-  const isSubscribed = subscription?.status === "active" || subscription?.status === "trialing";
+  // Only a LIVE paid subscription counts as "subscribed" for the plan cards.
+  // A free-trial tenant (status "trialing") has NO Stripe subscription — the
+  // trial is app-level, stamped at signup — so every plan must stay purchasable
+  // and label as "Subscribe" (trialUsed is set at signup, so checkout charges
+  // immediately with no second trial).
+  const isSubscribed = subscription?.status === "active";
+  const isTrialing = subscription?.status === "trialing";
   const currentTier = subscription?.planTierCode;
   // `past_due` still has a live Stripe subscription (payment is retrying), so it
   // is treated as a holding/current plan below — NOT re-purchasable — to avoid
@@ -171,7 +177,7 @@ export default function Plans() {
                       {isEnterprise ? "Custom" : plan.monthlyPriceFormatted}
                       {!isEnterprise && <span className="text-sm font-normal text-slate-500">/mo</span>}
                     </p>
-                    {plan.trialDays > 0 && !isSubscribed && !isLapsed && !isEnterprise && (
+                    {plan.trialDays > 0 && !isSubscribed && !isLapsed && !isTrialing && !isEnterprise && (
                       <p className="text-xs text-green-600 font-medium mt-1">
                         {plan.trialDays}-day free trial included
                       </p>
@@ -224,7 +230,7 @@ export default function Plans() {
                       <><ExternalLink className="w-4 h-4 mr-2" /> Contact Sales</>
                     ) : isSubscribed ? (
                       isUpgrade ? "Upgrade →" : "Downgrade"
-                    ) : isLapsed ? (
+                    ) : isLapsed || isTrialing ? (
                       "Subscribe"
                     ) : (
                       "Start Free Trial"
@@ -250,7 +256,9 @@ export default function Plans() {
             </DialogTitle>
             <DialogDescription>
               {confirmDialog.type === "checkout"
-                ? "You'll be securely redirected to Stripe to complete payment. Your card won't be charged until after any free trial."
+                ? isTrialing || isLapsed
+                  ? "You'll be securely redirected to Stripe to complete payment. Your subscription starts right away."
+                  : "You'll be securely redirected to Stripe to complete payment. Your card won't be charged until after any free trial."
                 : "Your subscription will be canceled at the end of the current billing period."}
             </DialogDescription>
           </DialogHeader>
