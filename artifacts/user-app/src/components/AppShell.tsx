@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useSearch, Redirect } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall, User, Lock, ArrowRight } from "lucide-react";
+import { MessageSquare, Settings, LogOut, CreditCard, Zap, Megaphone, BarChart3, Users, PhoneCall, User, Lock, ArrowRight, Menu } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import HipaaBanner from "@/components/HipaaBanner";
 import TrialBanner from "@/components/TrialBanner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -98,6 +99,67 @@ function NavIcon({
   );
 }
 
+// One navigation destination, rendered by BOTH the desktop icon rail and the
+// mobile drawer so the two can never drift apart.
+type NavItemDef = {
+  href: string;
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  active: boolean;
+  locked: boolean;
+  testId?: string;
+};
+
+// Mobile-drawer variant of a nav entry — icon + label row inside the
+// slide-out sheet. Mirrors NavIcon's locked/active behavior exactly.
+function DrawerNavItem({
+  href,
+  title,
+  icon: Icon,
+  active,
+  locked,
+  testId,
+  onNavigate,
+}: {
+  href: string;
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  active: boolean;
+  locked: boolean;
+  testId?: string;
+  onNavigate: () => void;
+}) {
+  if (locked) {
+    return (
+      <div
+        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 opacity-40 cursor-not-allowed"
+        title={`${title} — upgrade to access`}
+        aria-disabled="true"
+        data-locked="true"
+        data-testid={testId ? `drawer-${testId}` : undefined}
+      >
+        <Icon className="w-5 h-5" />
+        {title}
+      </div>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+        active
+          ? "bg-blue-600 text-white shadow-md"
+          : "text-slate-300 hover:text-white hover:bg-slate-800"
+      }`}
+      data-testid={testId ? `drawer-${testId}` : undefined}
+    >
+      <Icon className="w-5 h-5" />
+      {title}
+    </Link>
+  );
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const search = useSearch();
@@ -189,6 +251,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setLocation("/login");
   };
 
+  // ── Mobile slide-out navigation drawer ───────────────────────────────────
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Safety net: close the drawer on any route change (each link also closes
+  // it directly so same-path query-param navigations are covered too).
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location]);
+
   // ── Profile dialog (A2P opt-in evidence) ─────────────────────────────────
   const { toast } = useToast();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -253,97 +323,128 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // Single source of truth for navigation destinations — the desktop icon
+  // rail and the mobile drawer both render from these lists.
+  const mainNavItems: NavItemDef[] = [
+    {
+      href: "/inbox",
+      title: "Messages",
+      icon: MessageSquare,
+      active: location === "/inbox" || location === "/",
+      locked: isTrialExpired,
+    },
+    {
+      href: "/analytics",
+      title: "Analytics",
+      icon: BarChart3,
+      active: location === "/analytics",
+      locked: isTrialExpired,
+      testId: "link-analytics",
+    },
+    {
+      href: "/automations",
+      title: "Automations",
+      icon: Zap,
+      active: location === "/automations",
+      locked: isTrialExpired,
+    },
+    {
+      href: "/campaigns",
+      title: "Campaigns",
+      icon: Megaphone,
+      active: location === "/campaigns",
+      locked: isTrialExpired,
+    },
+    {
+      href: "/billing",
+      title: "Billing",
+      icon: CreditCard,
+      active: location === "/billing",
+      locked: false,
+      testId: "link-billing",
+    },
+    {
+      href: "/settings",
+      title: "Workspace Settings",
+      icon: Settings,
+      active: settingsActive,
+      locked: isTrialExpired,
+    },
+    {
+      href: "/settings?tab=phone-numbers",
+      title: "Phone Numbers",
+      icon: PhoneCall,
+      active: phoneNumbersActive,
+      locked: isTrialExpired,
+      testId: "link-phone-numbers",
+    },
+  ];
+  const secondaryNavItems: NavItemDef[] = [
+    {
+      href: "/onboarding",
+      title: "Onboarding",
+      icon: User,
+      active: location.startsWith("/onboarding"),
+      locked: isTrialExpired,
+      testId: "link-onboarding",
+    },
+    {
+      href: "/contacts",
+      title: "Contacts",
+      icon: Users,
+      active: location === "/contacts",
+      locked: isTrialExpired,
+      testId: "link-contacts",
+    },
+  ];
+
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-300 overflow-hidden font-sans">
-      {/* Sidebar Navigation */}
-      <nav className="w-16 flex flex-col items-center py-4 border-r border-slate-800 bg-slate-900 z-20 flex-shrink-0">
+    <div className="flex flex-col md:flex-row h-screen bg-slate-900 text-slate-300 overflow-hidden font-sans">
+      {/* Mobile top bar — hamburger opens the slide-out nav drawer. The icon
+          rail below is desktop-only, so on phones this is the only chrome. */}
+      <header className="md:hidden flex items-center gap-3 h-12 px-3 bg-slate-900 border-b border-slate-800 flex-shrink-0 z-20">
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+          title="Open menu"
+          data-testid="button-mobile-nav"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <span className="text-white font-semibold text-sm">Textitie</span>
+      </header>
+
+      {/* Sidebar Navigation (desktop only — phones use the drawer) */}
+      <nav className="hidden md:flex w-16 flex-col items-center py-4 border-r border-slate-800 bg-slate-900 z-20 flex-shrink-0">
         <div className="flex flex-col gap-4 flex-1 w-full px-2">
-          <NavIcon
-            href="/inbox"
-            title="Messages"
-            active={location === "/inbox" || location === "/"}
-            locked={isTrialExpired}
-          >
-            <MessageSquare className="w-5 h-5" />
-          </NavIcon>
-
-          <NavIcon
-            href="/analytics"
-            title="Analytics"
-            active={location === "/analytics"}
-            locked={isTrialExpired}
-            testId="link-analytics"
-          >
-            <BarChart3 className="w-5 h-5" />
-          </NavIcon>
-
-          <NavIcon
-            href="/automations"
-            title="Automations"
-            active={location === "/automations"}
-            locked={isTrialExpired}
-          >
-            <Zap className="w-5 h-5" />
-          </NavIcon>
-
-          <NavIcon
-            href="/campaigns"
-            title="Campaigns"
-            active={location === "/campaigns"}
-            locked={isTrialExpired}
-          >
-            <Megaphone className="w-5 h-5" />
-          </NavIcon>
-
-          <NavIcon
-            href="/billing"
-            title="Billing"
-            active={location === "/billing"}
-            locked={false}
-            testId="link-billing"
-          >
-            <CreditCard className="w-5 h-5" />
-          </NavIcon>
-
-          <NavIcon
-            href="/settings"
-            title="Workspace Settings"
-            active={settingsActive}
-            locked={isTrialExpired}
-          >
-            <Settings className="w-5 h-5" />
-          </NavIcon>
-
-          <NavIcon
-            href="/settings?tab=phone-numbers"
-            title="Phone Numbers"
-            active={phoneNumbersActive}
-            locked={isTrialExpired}
-            testId="link-phone-numbers"
-          >
-            <PhoneCall className="w-5 h-5" />
-          </NavIcon>
+          {mainNavItems.map((item) => (
+            <NavIcon
+              key={item.href}
+              href={item.href}
+              title={item.title}
+              active={item.active}
+              locked={item.locked}
+              testId={item.testId}
+            >
+              <item.icon className="w-5 h-5" />
+            </NavIcon>
+          ))}
         </div>
 
         <div className="mt-auto w-full px-2 flex flex-col gap-2 items-center">
-          <NavIcon
-            href="/onboarding"
-            title="Onboarding"
-            active={location.startsWith("/onboarding")}
-            locked={isTrialExpired}
-            testId="link-onboarding"
-          >
-            <User className="w-5 h-5" />
-          </NavIcon>
-          <NavIcon
-            href="/contacts"
-            title="Contacts"
-            active={location === "/contacts"}
-            locked={isTrialExpired}
-            testId="link-contacts"
-          >
-            <Users className="w-5 h-5" />
-          </NavIcon>
+          {secondaryNavItems.map((item) => (
+            <NavIcon
+              key={item.href}
+              href={item.href}
+              title={item.title}
+              active={item.active}
+              locked={item.locked}
+              testId={item.testId}
+            >
+              <item.icon className="w-5 h-5" />
+            </NavIcon>
+          ))}
           <div className="relative w-full mb-2">
             <button
               type="button"
@@ -384,7 +485,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       {/* Main Content Area */}
-      <main className="flex-1 bg-white text-slate-900 rounded-tl-2xl overflow-hidden shadow-2xl z-10 border-l border-t border-slate-200 flex flex-col">
+      <main className="flex-1 min-h-0 bg-white text-slate-900 md:rounded-tl-2xl overflow-hidden shadow-2xl z-10 md:border-l md:border-t border-slate-200 flex flex-col">
         <TrialBanner
           status={subscription?.status}
           trialEndsAt={subscription?.trialEndsAt}
@@ -459,6 +560,79 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </main>
+
+      {/* Mobile navigation drawer — same destinations as the desktop rail */}
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <SheetContent
+          side="left"
+          className="w-72 max-w-[85vw] bg-slate-900 border-slate-800 text-slate-300 p-0 flex flex-col"
+        >
+          <SheetHeader className="px-4 pt-4 pb-2 text-left">
+            <SheetTitle className="text-white text-base">Textitie</SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-1">
+            {mainNavItems.map((item) => (
+              <DrawerNavItem
+                key={item.href}
+                {...item}
+                onNavigate={() => setMobileNavOpen(false)}
+              />
+            ))}
+            <div className="my-2 border-t border-slate-800" />
+            {secondaryNavItems.map((item) => (
+              <DrawerNavItem
+                key={item.href}
+                {...item}
+                onNavigate={() => setMobileNavOpen(false)}
+              />
+            ))}
+          </div>
+          <div className="border-t border-slate-800 p-3 flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setMobileNavOpen(false);
+                openProfile();
+              }}
+              disabled={isTrialExpired}
+              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-800 transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+              data-testid="drawer-profile"
+            >
+              <span className="relative flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center">
+                <span className="text-xs font-bold text-white uppercase">
+                  {data.user.name.substring(0, 2)}
+                </span>
+                <span
+                  className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-slate-900 ${STATUS_COLOR[status]}`}
+                />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm text-white truncate">{data.user.name}</span>
+                <span className="block text-xs text-slate-500">{STATUS_LABEL[status]}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={cycleStatus}
+              disabled={setStatusMutation.isPending || isTrialExpired}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              data-testid="drawer-status"
+            >
+              <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ml-1 ${STATUS_COLOR[status]}`} />
+              Status: {STATUS_LABEL[status]} — tap to change
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+              data-testid="drawer-logout"
+            >
+              <LogOut className="w-5 h-5" />
+              Log out
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Profile dialog — manages locally-stored A2P opt-in evidence */}
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
