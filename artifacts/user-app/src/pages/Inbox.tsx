@@ -33,6 +33,7 @@ import {
 } from "@workspace/api-client-react";
 import type { UpdateConversationInputEngagementModeOverride } from "@workspace/api-client-react";
 import { useSearch, useLocation } from "wouter";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   SEND_NOTICES,
   getSendNotice,
@@ -84,6 +85,8 @@ import {
   BellOff,
   BookUser,
   AlertCircle,
+  ArrowLeft,
+  ChevronDown,
 } from "lucide-react";
 import {
   Sheet,
@@ -193,7 +196,12 @@ export default function Inbox() {
   const searchString = useSearch();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Mobile-only: the composer starts collapsed into a slim "Tap to reply" bar
+  // so the message history gets the screen; tapping expands it (desktop is
+  // always expanded and ignores this state).
+  const [mobileComposerOpen, setMobileComposerOpen] = useState(false);
   const [composeText, setComposeText] = useState("");
   const [isWhisperMode, setIsWhisperMode] = useState(false);
   const [deptFilter, setDeptFilter] = useState<string>("all");
@@ -247,6 +255,12 @@ export default function Inbox() {
       if (!Number.isNaN(n)) setSelectedId(n);
     }
   }, [searchString]);
+
+  // Mobile: whenever the open conversation changes, start with the composer
+  // collapsed so the message history gets the screen.
+  useEffect(() => {
+    setMobileComposerOpen(false);
+  }, [selectedId]);
 
   // Debounce search input
   useEffect(() => {
@@ -308,13 +322,19 @@ export default function Inbox() {
       },
     });
 
-  // Auto-select the first (most recent) conversation if none is selected,
-  // so the conversation header + action buttons are always visible.
+  // Desktop only: auto-select the first (most recent) conversation if none is
+  // selected, so the conversation header + action buttons are always visible.
+  // On phones the list must own the screen until the user taps a conversation
+  // (and the back arrow must return to the list without bouncing into a
+  // thread), so never auto-select there. The direct window check covers the
+  // first render, before the useIsMobile hook has settled.
   useEffect(() => {
+    if (isMobile) return;
+    if (typeof window !== "undefined" && window.innerWidth < 768) return;
     if (selectedId == null && conversations && conversations.length > 0) {
       setSelectedId(conversations[0].id);
     }
-  }, [conversations, selectedId]);
+  }, [conversations, selectedId, isMobile]);
 
   const { data: dispositions } = useListDispositions({
     query: { queryKey: getListDispositionsQueryKey() },
@@ -944,8 +964,14 @@ export default function Inbox() {
           above the conversation list + conversation pane. */}
       <InboxSetupBanner />
       <div className="flex flex-1 min-h-0 bg-white divide-x divide-slate-200">
-      {/* Left Panel: Conversation List */}
-      <div className="relative w-80 flex flex-col bg-slate-50 flex-shrink-0">
+      {/* Left Panel: Conversation List. On phones the two panes stack: the
+          list is full-width and hides once a conversation is open (the thread
+          takes over, with a back arrow). Desktop keeps the side-by-side. */}
+      <div
+        className={`relative flex-col bg-slate-50 md:flex md:w-80 md:flex-shrink-0 ${
+          selectedId ? "hidden" : "flex w-full"
+        }`}
+      >
         <div className="p-4 border-b border-slate-200 bg-white space-y-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -1166,16 +1192,37 @@ export default function Inbox() {
         </button>
       </div>
 
-      {/* Right Panel: Selected Conversation */}
-      <div className="flex-1 flex flex-col bg-white min-w-0">
+      {/* Right Panel: Selected Conversation (hidden on phones until one is
+          selected — the list owns the screen there). */}
+      <div
+        className={`flex-1 flex-col bg-white min-w-0 md:flex ${
+          selectedId ? "flex" : "hidden"
+        }`}
+      >
         {selectedId ? (
           <>
             {/* Header */}
-            <div className="border-b border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0 bg-white z-10">
+            <div className="border-b border-slate-200 px-3 md:px-6 py-3 flex items-center justify-between flex-wrap gap-y-2 flex-shrink-0 bg-white z-10">
+              <div className="flex items-center gap-1 min-w-0">
+              {/* Mobile-only back arrow: returns to the conversation list */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedId(null);
+                  if (new URLSearchParams(searchString).get("conversation")) {
+                    setLocation("/inbox");
+                  }
+                }}
+                className="md:hidden h-9 w-9 rounded-lg flex items-center justify-center shrink-0 text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+                title="Back to conversations"
+                data-testid="button-back-to-list"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
               <button
                 type="button"
                 onClick={() => setShowContactCard(true)}
-                className="flex items-center gap-4 text-left rounded-lg -mx-1 px-1 py-0.5 hover:bg-slate-50 transition-colors group"
+                className="flex items-center gap-3 md:gap-4 text-left rounded-lg -mx-1 px-1 py-0.5 hover:bg-slate-50 transition-colors group min-w-0"
                 data-testid="button-open-contact-card"
                 title="View contact info"
               >
@@ -1226,8 +1273,9 @@ export default function Inbox() {
                 </div>
                 <MoreVertical className="w-5 h-5 text-slate-400 group-hover:text-blue-600 transition-colors flex-shrink-0 self-center" />
               </button>
+              </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 {/* Haylo Ai = per-conversation AI engagement selector (null = inherit
                     the tenant default). Branded "Mode: Haylo Ai"; the colored dot
                     reflects the active mode. Keeps the violet Haylo styling and sits
@@ -1669,7 +1717,38 @@ export default function Inbox() {
                 )}
               </div>
             )}
-            {/* Compose Area */}
+            {/* Compose Area — on phones it starts collapsed into a slim
+                "Tap to reply" bar so the message history keeps the screen;
+                tapping expands the full composer. Desktop always expanded. */}
+            {isMobile && !mobileComposerOpen ? (
+              <div className="p-2 border-t border-slate-200 bg-white">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileComposerOpen(true);
+                    setTimeout(() => inputRef.current?.focus(), 50);
+                  }}
+                  className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-4 flex items-center gap-2 text-sm text-left hover:bg-slate-100 transition-colors"
+                  data-testid="button-expand-composer"
+                >
+                  {aiDraftReady && (
+                    <Sparkles className="w-4 h-4 text-yellow-500 shrink-0" />
+                  )}
+                  <span
+                    className={`flex-1 truncate ${
+                      composeText.trim() ? "text-slate-700" : "text-slate-400"
+                    }`}
+                  >
+                    {composeText.trim()
+                      ? composeText
+                      : aiDraftReady
+                        ? "AI draft ready — tap to review"
+                        : "Tap to reply…"}
+                  </span>
+                  <PencilLine className="w-4 h-4 text-slate-400 shrink-0" />
+                </button>
+              </div>
+            ) : (
             <div className="p-4 border-t border-slate-200 bg-white">
               <div className="relative">
                 {showShortcuts && filteredShortcuts.length > 0 && (
@@ -1835,6 +1914,17 @@ export default function Inbox() {
                         </button>
                       </ConversationReminderPopover>
                     )}
+                    {isMobile && (
+                      <button
+                        type="button"
+                        onClick={() => setMobileComposerOpen(false)}
+                        className="ml-auto h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors border bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                        title="Hide the reply box"
+                        data-testid="button-collapse-composer"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                   <div className="flex items-end gap-2">
                     <div className="flex-1 relative">
@@ -1874,6 +1964,7 @@ export default function Inbox() {
                 </form>
               </div>
             </div>
+            )}
           </>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50/30">
